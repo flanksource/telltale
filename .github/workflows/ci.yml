@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GOWORK: "off"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: flanksource/deps@v1.0.47
+        with:
+          tools: |
+            task
+            actionlint
+      - run: make setup
+      - run: make build
+      - run: .bin/telltale --version
+      - uses: flanksource/gavel@ce8e88b2ad8b9dc62802ae4230bb086768d3d105 # v0.0.56
+        with:
+          version: v0.0.54
+          args: test --framework go,ginkgo,vitest --timeout 20m
+          comment: "false"
+          artifact-name: telltale-tests
+      - run: make lint
+
+  release:
+    needs: quality
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      source: ${{ github.sha }}

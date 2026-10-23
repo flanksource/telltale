@@ -1,0 +1,58 @@
+version: "3"
+
+vars:
+  VERSION: '{{.VERSION | default "dev"}}'
+
+env:
+  GOWORK: "off"
+
+tasks:
+  setup:
+    desc: Install locked Go and frontend dependencies
+    cmds:
+      - go mod download
+      - pnpm install --frozen-lockfile
+
+  dev:
+    desc: Start Go and Vite with local Clicky UI source
+    cmds:
+      - go run ./cmd/telltale serve --dev {{.CLI_ARGS}}
+
+  web:build:
+    desc: Build the frontend using published dependencies
+    cmds:
+      - pnpm typecheck
+      - pnpm --filter @flanksource/telltale-webapp build
+
+  binary:
+    desc: Compile the binary with existing embedded assets
+    cmds:
+      - mkdir -p .bin
+      - go build -trimpath -ldflags '-s -w -X main.version={{.VERSION}}' -o .bin/telltale ./cmd/telltale
+
+  build:
+    desc: Build the frontend and standalone Go binary
+    cmds:
+      - task: web:build
+      - task: binary
+
+  lint:
+    desc: Check Go, TypeScript, frontend lint, and workflow syntax
+    cmds:
+      - gavel lint golangci-lint
+      - pnpm lint
+      - pnpm typecheck
+      - actionlint
+      - bash -n hack/release.sh
+
+  test:
+    desc: Run Go, frontend, and live API integration tests
+    cmds:
+      - task: build
+      - gavel test --framework go,ginkgo
+      - pnpm test
+
+  clean:
+    desc: Remove generated assets and binaries while preserving the embed sentinel
+    cmds:
+      - go run ./hack/clean

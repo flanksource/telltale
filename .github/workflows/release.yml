@@ -1,0 +1,86 @@
+name: Release
+
+on:
+  workflow_call:
+    inputs:
+      source:
+        description: Exact main revision that passed CI
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GOWORK: "off"
+      SOURCE_SHA: ${{ inputs.source }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source }}
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: flanksource/deps@v1.0.47
+        with:
+          tools: |
+            task
+            svu
+      - name: Select or reuse release version
+        id: version
+        run: |
+          next=$(svu patch --tag.mode all --tag.pattern 'v*')
+          tags=$(git tag --list 'v*' --sort=-version:refname)
+          while IFS= read -r candidate; do
+            if [[ -z "$candidate" ]]; then
+              continue
+            fi
+            parent=$(git show -s --format=%P "$candidate")
+            if [[ "$parent" == "$SOURCE_SHA" ]]; then
+              next=$candidate
+              break
+            fi
+          done <<< "$tags"
+          echo "tag=$next" >> "$GITHUB_OUTPUT"
+      - run: make setup
+      - name: Build the release candidate
+        env:
+          VERSION: ${{ steps.version.outputs.tag }}
+        run: make build
+      - uses: flanksource/gavel@ce8e88b2ad8b9dc62802ae4230bb086768d3d105 # v0.0.56
+        with:
+          version: v0.0.54
+          args: test --framework go,ginkgo,vitest --timeout 20m
+          comment: "false"
+          artifact-name: telltale-release-tests
+      - name: Commit only assets on a detached release revision
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: bash hack/release.sh
+      - name: Rebuild from tagged source without frontend tooling
+        env:
+          VERSION: ${{ steps.version.outputs.tag }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git checkout --detach "$RELEASE_TAG"
+          make binary
+          .bin/telltale --version
+          pnpm exec vitest run --project api
+      - name: Push only the version tag
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: git push origin "refs/tags/$RELEASE_TAG"
