@@ -16,20 +16,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/flanksource/commons-db/connection/store"
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/commons-db/recordstore"
-	"github.com/flanksource/telltale/pkg/httpx"
 	"github.com/flanksource/telltale/pkg/traceserve"
 	"github.com/flanksource/telltale/pkg/tracing"
-	"github.com/flanksource/telltale/pkg/tracing/goprof"
-	tracehttp "github.com/flanksource/telltale/pkg/tracing/http"
-	"github.com/flanksource/telltale/pkg/tracing/httpproxy"
-	"github.com/flanksource/telltale/pkg/tracing/pgproxy"
 	"github.com/flanksource/telltale/pkg/tracing/process"
-	tracesql "github.com/flanksource/telltale/pkg/tracing/sql"
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
-	"github.com/flanksource/telltale/pkg/tracing/terminal"
 )
 
 // Dir is where a work dir keeps its runs' trace stores, one directory each.
@@ -52,6 +46,9 @@ type Host struct {
 	dir     string
 	runtime *tracing.Runtime
 	dumpers *stacks.Dumpers
+	// ctx is what each capture is started under, answering connection
+	// references from the host's connection store.
+	ctx dbcontext.Context
 }
 
 // RunPrefix and RunTimestampLayout name a run: run-<UTC start>, filesystem
@@ -67,18 +64,28 @@ func RunID(started time.Time) string {
 	return RunPrefix + started.UTC().Format(RunTimestampLayout)
 }
 
-// Open creates the run's store under workDir/.telltale/traces. A runID already
+// OpenOptions name the run a Host is opened for.
+type OpenOptions struct {
+	WorkDir string
+	RunID   string
+	// Connections answer the connection references its captures name, such
+	// as sql_xevent's connection, before any connections table; nil answers
+	// none.
+	Connections *store.Store
+}
+
+// Open creates the run's store under WorkDir/.telltale/traces. A RunID already
 // taken by an earlier run in the same second gets a -2, -3, … suffix, so a
 // run never writes into another's store; RunID reports the name used.
-func Open(workDir, runID string) (*Host, error) {
-	if workDir == "" || runID == "" {
-		return nil, fmt.Errorf("open trace store: a work dir and a run id are required (got %q, %q)", workDir, runID)
+func Open(options OpenOptions) (*Host, error) {
+	if options.WorkDir == "" || options.RunID == "" {
+		return nil, fmt.Errorf("open trace store: a work dir and a run id are required (got %q, %q)", options.WorkDir, options.RunID)
 	}
-	root := filepath.Join(workDir, Dir)
+	root := filepath.Join(options.WorkDir, Dir)
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, fmt.Errorf("open trace store: %w", err)
 	}
-	dir, name, err := claimRunDir(root, runID)
+	dir, name, err := claimRunDir(root, options.RunID)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +101,11 @@ func Open(workDir, runID string) (*Host, error) {
 	runtime.Sessions = query.NewSessionRegistry(query.RegistryOptions{
 		MaxDuration: maxDuration, BeforeRead: runtime.Results.Registry.BeforeRead,
 	})
-	return &Host{runID: name, dir: dir, runtime: runtime, dumpers: dumpers}, nil
+	ctx := dbcontext.New()
+	if options.Connections != nil {
+		ctx = options.Connections.Attach(ctx)
+	}
+	return &Host{runID: name, dir: dir, runtime: runtime, dumpers: dumpers, ctx: ctx}, nil
 }
 
 // RegisterDumper adds a stack transport the run's stacks are dumped over,
@@ -156,10 +167,11 @@ func claimRunDir(root, runID string) (string, string, error) {
 }
 
 // NewDumpers are the stack transports every run dumps over: the in-process
-// one for this process and the OS's native sampler for any process. A run
+// one for this process, the OS's native sampler for any process, and the gops
+// agent of a Go process that runs one, which only a dump naming it uses. A run
 // that supervises Go test binaries adds a sigquit dumper (RegisterDumper).
 func NewDumpers() (*stacks.Dumpers, error) {
-	return stacks.NewDumpers(stacks.InProcess(), stacks.Native(stacks.NativeOptions{}))
+	return stacks.NewDumpers(stacks.InProcess(), stacks.Native(stacks.NativeOptions{}), stacks.Gops(stacks.GopsAddress))
 }
 
 // Kinds is the catalog every trace store serves, its stacks dumped over
@@ -172,26 +184,13 @@ func Kinds() (*tracing.Kinds, error) {
 	return kindsWith(dumpers)
 }
 
-// kindsWith is the catalog over dumpers: the kinds a fixture can arm and the
-// process kinds the run-wide capture uses, sharing one process sampler and
-// the dumpers. The `http` and `sql_statements` kinds default to telltale's own
-// traffic: its HTTP feature and its own database. goprof reads profile files
-// only: the host knows no pprof or gops address.
+// kindsWith is the catalog over dumpers: every registered kind (Registrations),
+// sharing one process sampler and the dumpers.
 func kindsWith(dumpers *stacks.Dumpers) (*tracing.Kinds, error) {
 	kinds := tracing.NewKinds()
-	sampler := process.NewSampler()
-	for name, plugin := range map[string]tracing.TracePlugin{
-		"http":              tracehttp.Kind().WithDefaults(tracehttp.Params{Features: []string{httpx.Feature}}),
-		httpproxy.Kind:      httpproxy.NewKind(),
-		pgproxy.Kind:        pgproxy.NewKind(),
-		tracesql.RowKind:    tracesql.Kind().WithDefaults(tracesql.Params{Connections: []string{"self"}}),
-		terminal.Kind:       terminal.NewKind(),
-		process.TreeKind:    process.NewTreeKind(sampler, process.TreeOptions{Dumpers: dumpers}),
-		process.SamplesKind: process.NewSamplesKind(sampler),
-		stacks.Kind:         stacks.NewKind(dumpers),
-		goprof.Kind:         goprof.NewKind(nil),
-	} {
-		if err := kinds.RegisterKind(name, plugin); err != nil {
+	deps := KindDeps{Dumpers: dumpers, Sampler: process.NewSampler()}
+	for _, registration := range Registrations() {
+		if err := kinds.RegisterKind(registration.Name, registration.New(deps)); err != nil {
 			return nil, err
 		}
 	}
@@ -253,7 +252,7 @@ func (h *Host) Start(kind string, params json.RawMessage) (*Capture, error) {
 	if err := Validate(h.runtime.Kinds, kind, params); err != nil {
 		return nil, err
 	}
-	managed, err := h.runtime.Start(dbcontext.New(), tracing.StartRequest{Kind: kind, Params: params})
+	managed, err := h.runtime.Start(h.ctx, tracing.StartRequest{Kind: kind, Params: params})
 	if err != nil {
 		return nil, fmt.Errorf("start %s trace: %w", kind, err)
 	}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/process"
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
@@ -103,9 +104,14 @@ func (p *ProcessTrace) Sessions() ProcessSessions {
 }
 
 // CheckpointTree re-observes the tree, committing every change since its
-// latest tick.
+// latest tick. A tree whose root exited ended by itself with that last
+// observation committed, so there is nothing left to re-observe.
 func (p *ProcessTrace) CheckpointTree(ctx context.Context) error {
-	if err := p.host.runtime.Checkpoint(ctx, p.tree.managed); err != nil {
+	err := p.host.runtime.Checkpoint(ctx, p.tree.managed)
+	if session := p.tree.managed.Session(); errors.Is(err, query.ErrSessionEnded) && session.Snapshot().Error == "" {
+		return nil
+	}
+	if err != nil {
 		return fmt.Errorf("checkpoint the process tree: %w", err)
 	}
 	return nil

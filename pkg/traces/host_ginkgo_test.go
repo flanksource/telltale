@@ -19,7 +19,7 @@ import (
 )
 
 func openHost(workDir string) *traces.Host {
-	host, err := traces.Open(workDir, traces.RunID(time.Now()))
+	host, err := traces.Open(traces.OpenOptions{WorkDir: workDir, RunID: traces.RunID(time.Now())})
 	Expect(err).ToNot(HaveOccurred())
 	DeferCleanup(func() { Expect(host.Close(context.Background())).To(Succeed()) })
 	return host
@@ -47,10 +47,10 @@ var _ = Describe("trace host", func() {
 	It("keeps the run's store under .telltale/traces/<runID>, suffixing a run id already taken", func() {
 		workDir := GinkgoT().TempDir()
 		runID := traces.RunID(time.Date(2026, 10, 15, 9, 30, 0, 0, time.UTC))
-		first, err := traces.Open(workDir, runID)
+		first, err := traces.Open(traces.OpenOptions{WorkDir: workDir, RunID: runID})
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(func() { Expect(first.Close(context.Background())).To(Succeed()) })
-		second, err := traces.Open(workDir, runID)
+		second, err := traces.Open(traces.OpenOptions{WorkDir: workDir, RunID: runID})
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(func() { Expect(second.Close(context.Background())).To(Succeed()) })
 
@@ -85,7 +85,7 @@ var _ = Describe("trace host", func() {
 
 	It("reopens a finished run's store to serve it, and finds no store a prune removed", func() {
 		workDir := GinkgoT().TempDir()
-		host, err := traces.Open(workDir, traces.RunID(time.Now()))
+		host, err := traces.Open(traces.OpenOptions{WorkDir: workDir, RunID: traces.RunID(time.Now())})
 		Expect(err).ToNot(HaveOccurred())
 		capture, err := host.Start("http_proxy", nil)
 		Expect(err).ToNot(HaveOccurred())
@@ -109,7 +109,7 @@ var _ = Describe("trace host", func() {
 	It("refuses an unknown kind by naming the registered ones", func() {
 		host := openHost(GinkgoT().TempDir())
 		_, err := host.Start("smtp", nil)
-		Expect(err).To(MatchError(ContainSubstring(`unknown trace kind "smtp" (registered: goprof, http, http_proxy, pg_proxy, process_samples, process_tree, sql_statements, stacks, terminal)`)))
+		Expect(err).To(MatchError(ContainSubstring(`unknown trace kind "smtp" (registered: goprof, http, http_proxy, pg_proxy, process_groups, process_samples, process_tree, sql_statements, stacks, terminal)`)))
 	})
 
 	It("refuses params the kind refuses before starting anything", func() {

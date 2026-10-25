@@ -15,7 +15,7 @@ import (
 
 var _ = Describe("marking a capture whose session failed", func() {
 	It("names the failure that ended the session", func() {
-		host, err := Open(GinkgoT().TempDir(), RunID(time.Now()))
+		host, err := Open(OpenOptions{WorkDir: GinkgoT().TempDir(), RunID: RunID(time.Now())})
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(func() { Expect(host.Close(context.Background())).To(Succeed()) })
 		capture, err := host.startWith(process.SamplesKind, process.SampleParams{Params: process.Params{RootPID: os.Getpid(), Interval: time.Hour.String()}})

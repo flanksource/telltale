@@ -91,6 +91,26 @@ func startTrace(host *traces.Host, options traces.ProcessTraceOptions) *traces.P
 	return trace
 }
 
+var _ = Describe("process trace of a root that exited", func() {
+	It("checkpoints its tree as already committed, its last observation taken as it ended", func() {
+		root := exec.Command("sleep", "0.3")
+		Expect(root.Start()).To(Succeed())
+		host := openHost(GinkgoT().TempDir())
+		trace, err := host.StartProcessTrace(traces.ProcessTraceOptions{RootPID: root.Process.Pid, Interval: process.MinInterval})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(root.Wait()).To(Succeed())
+		Eventually(func() bool { return trace.Sessions().Tree != "" && treeEnded(host, trace) }, 10*time.Second).Should(BeTrue())
+		Expect(trace.CheckpointTree(context.Background())).To(Succeed())
+		Expect(trace.Stop(context.Background())).To(Succeed())
+	})
+})
+
+// treeEnded reports whether the trace's tree session ended by itself.
+func treeEnded(host *traces.Host, trace *traces.ProcessTrace) bool {
+	session, ok := host.Runtime().Sessions.Get(trace.Sessions().Tree)
+	return ok && session.Snapshot().State.Terminal()
+}
+
 var _ = Describe("process trace", func() {
 	It("serves the tree under the root and its processes' samples through query, reading no facet unarmed", func() {
 		root := startShell()

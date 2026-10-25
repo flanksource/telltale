@@ -1,0 +1,18 @@
+gui/501 = {
+	type = login
+	handle = 501
+	active count = 412
+	services = {
+		    3613      - 	application.com.example.Launcher.1583758.95743951
+		       0      - 	com.example.DesktopClient.Assistant
+		   59483   (pe) 	com.apple.syncdefaultsd
+		       0      0 	com.apple.DataDetectorsLocalSources
+		   12679      2 	homebrew.mxcl.postgresql@17
+		    3432      0 	com.acme.HealthMonitor
+	}
+
+	disabled services = {
+		"homebrew.mxcl.postgresql@14" => disabled
+		"homebrew.mxcl.valkey" => enabled
+	}
+}

@@ -1,0 +1,83 @@
+# The built-in process groups, matched in order: a process belongs to the first
+# rule any of whose matches it meets. .telltale/groups.yaml, or --groups, adds
+# rules ahead of these and replaces or disables one of these by its name.
+groups:
+  - name: claude
+    kind: agent
+    target: session
+    match:
+      - source: claude
+  - name: codex
+    kind: agent
+    target: session
+    match:
+      - source: codex
+      - contains: ["@openai/codex/bin/codex.js"]
+  - name: cmux
+    kind: agent
+    match:
+      - exec: [cmux]
+        exclude: [" hooks "]
+  - name: captain
+    kind: agent
+    target: positional
+    match:
+      - exec: [captain]
+  - name: gavel
+    kind: test
+    target: positional
+    match:
+      - exec: [gavel]
+  - name: go-test
+    kind: test
+    target: positional
+    match:
+      - exec: [go]
+        args: [test]
+      - exec: ["*.test"]
+  - name: vitest
+    kind: test
+    target: positional
+    match:
+      - exec: [vitest]
+      - contains: ["/vitest/", "/vitest.mjs"]
+  - name: playwright
+    kind: test
+    target: positional
+    match:
+      - exec: [playwright]
+      - contains: ["/playwright/cli.js", "@playwright/test/cli.js"]
+  - name: agent-browser
+    kind: browser
+    target: --session
+    match:
+      - exec: [agent-browser]
+      - contains: ["/agent-browser/"]
+  - name: lightpanda
+    kind: browser
+    target: positional
+    match:
+      - exec: [lightpanda]
+  - name: chrome
+    kind: browser
+    match:
+      - contains: ["Google Chrome", "Chromium.app", "chrome-headless-shell", "/chrome-linux/chrome"]
+  - name: vite
+    kind: build
+    match:
+      - contains: ["/vite/bin/vite.js"]
+  - name: make
+    kind: build
+    target: positional
+    match:
+      - exec: [make, gmake]
+  - name: pnpm
+    kind: build
+    target: positional
+    match:
+      - exec: [pnpm, npm, npx]
+      - contains: ["/pnpm.cjs", "/npm-cli.js", "/npx-cli.js"]
+  - name: gopls
+    kind: tool
+    match:
+      - exec: [gopls]
