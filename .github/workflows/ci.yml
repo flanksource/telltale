@@ -39,7 +39,7 @@ jobs:
       - run: make setup
       - run: make build
       - run: .bin/telltale --version
-      - uses: flanksource/gavel@3fd42b59e97272b2c5d04080fee31e8d05989d0b # v0.0.59
+      - uses: flanksource/gavel@2c08bfcf913a04f7f6adea45e362c87626d2e2fe # v0.0.62
         with:
           version: v0.0.54
           args: test --framework go,ginkgo,vitest --timeout 20m

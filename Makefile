@@ -1,3 +1,3 @@
-.PHONY: setup dev build binary lint test clean
-setup dev build binary lint test clean:
+.PHONY: setup dev build binary install lint test clean
+setup dev build binary install lint test clean:
 	@task $@

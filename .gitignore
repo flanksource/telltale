@@ -10,3 +10,6 @@ coverage/
 webapp/dist/*
 !webapp/dist/.gitkeep
 
+go.work
+go.work.sum
+.new

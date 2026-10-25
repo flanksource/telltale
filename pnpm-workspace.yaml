@@ -1,3 +1,4 @@
 packages:
   - webapp
-
+minimumReleaseAgeExclude:
+  - '@flanksource/clicky-ui@0.3.52'
