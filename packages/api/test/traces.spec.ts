@@ -51,8 +51,23 @@ afterAll(async () => {
   await rm(workDir, { recursive: true, force: true });
 });
 
+interface Captured {
+  kind: string;
+  ref: { kind: string; stream: string };
+  summary?: { count: number };
+}
+
+interface ListedRun {
+  runId: string;
+  mount: string;
+  status: string;
+  command: string[];
+  exitCode?: number;
+  captures: Captured[];
+}
+
 interface Listed {
-  runs: Array<{ runId: string; mount: string; run: { exitCode: number; captures: Array<{ kind: string; ref: { kind: string; stream: string }; summary: { count: number } }> } }>;
+  runs: ListedRun[];
 }
 
 describe("recorded trace runs", () => {
@@ -63,14 +78,14 @@ describe("recorded trace runs", () => {
     expect(listed.runs).toHaveLength(1);
     expect(listed.runs[0]).toMatchObject({
       mount: `/api/traces/${listed.runs[0].runId}`,
-      run: { exitCode: 0, captures: [{ kind: "http_proxy", summary: { count: 1 } }] },
+      status: "succeeded", exitCode: 0, captures: [{ kind: "http_proxy", summary: { count: 1 } }],
     });
   });
 
   it("exports the exchange the proxy relayed from the run's store", async () => {
     const listed = await (await fetch(`${apiURL}/api/traces`)).json() as Listed;
-    const { mount, run: recorded } = listed.runs[0];
-    const ref = recorded.captures[0].ref;
+    const { mount, captures } = listed.runs[0];
+    const ref = captures[0].ref;
     const response = await fetch(`${apiURL}${mount}/api/v1/traces/${ref.kind}/export?format=ndjson&stream=${ref.stream}`);
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toBe("application/x-ndjson");
@@ -81,5 +96,56 @@ describe("recorded trace runs", () => {
   it("returns 404 for a run it holds no store for", async () => {
     const response = await fetch(`${apiURL}/api/traces/run-missing/api/v1/traces/kinds`);
     expect(response.status).toBe(404);
+  });
+});
+
+async function start(body: unknown): Promise<Response> {
+  return fetch(`${apiURL}/api/traces`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+}
+
+// settled polls the run until it is no longer running.
+async function settled(runId: string): Promise<ListedRun> {
+  for (let attempt = 0; attempt < 150; attempt++) {
+    const listed = await (await fetch(`${apiURL}/api/traces?q=${encodeURIComponent(runId)}`)).json() as Listed;
+    if (listed.runs[0] && listed.runs[0].status !== "running") return listed.runs[0];
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error(`run ${runId} is still running`);
+}
+
+describe("runs started over the API", () => {
+  it("serves the start form", async () => {
+    const response = await fetch(`${apiURL}/api/traces/start`);
+    expect(response.status).toBe(200);
+    const form = await response.json() as { schema: { required: string[] }; defaults: { traces: Record<string, { enabled: boolean }> } };
+    expect(form.schema.required).toEqual(["command"]);
+    expect(form.defaults.traces.http_proxy.enabled).toBe(true);
+  });
+
+  it("runs a shell command under the proxy it arms and records its exchange", async () => {
+    const response = await start({ command: `curl -sS ${upstreamURL}`, traces: { http_proxy: { enabled: true } } });
+    expect(response.status).toBe(201);
+    const started = await response.json() as ListedRun;
+    expect(started).toMatchObject({ status: "running", command: ["sh", "-c", `curl -sS ${upstreamURL}`] });
+    expect(await settled(started.runId)).toMatchObject({ status: "succeeded", exitCode: 0, captures: [{ kind: "http_proxy", summary: { count: 1 } }] });
+  });
+
+  it("stops a running run, which still records how it ended", async () => {
+    const started = await (await start({ command: "sleep 60" })).json() as ListedRun;
+    expect((await fetch(`${apiURL}${started.mount}`, { method: "DELETE" })).status).toBe(202);
+    expect((await settled(started.runId)).status).toBe("failed");
+    expect((await fetch(`${apiURL}${started.mount}`, { method: "DELETE" })).status).toBe(409);
+  });
+
+  it("refuses a start request field by field", async () => {
+    const response = await start({ command: "", traces: { http_proxy: { enabled: true, mode: "sideways" } } });
+    expect(response.status).toBe(400);
+    const refused = await response.json() as { errors: Array<{ instancePath: string }> };
+    expect(refused.errors.map(error => error.instancePath).sort()).toEqual(["/command", "/traces/http_proxy"]);
+  });
+
+  it("filters the runs it lists", async () => {
+    const listed = await (await fetch(`${apiURL}/api/traces?status=failed&q=sleep`)).json() as Listed;
+    expect(listed.runs.map(listedRun => listedRun.command)).toEqual([["sh", "-c", "sleep 60"]]);
   });
 });

@@ -18,11 +18,13 @@ type HandlerOptions struct {
 	Version string
 	// Traces serves the run stores at TracesMount.
 	Traces http.Handler
+	// Top serves the live process groups at TopMount.
+	Top http.Handler
 }
 
 func NewHandler(options HandlerOptions) (http.Handler, error) {
-	if options.Root == nil || options.Assets == nil || options.Traces == nil {
-		return nil, fmt.Errorf("command root, asset filesystem and trace mount are required")
+	if options.Root == nil || options.Assets == nil || options.Traces == nil || options.Top == nil {
+		return nil, fmt.Errorf("command root, asset filesystem, trace mount and top mount are required")
 	}
 	if _, err := fs.ReadFile(options.Assets, "index.html"); err != nil {
 		return nil, fmt.Errorf("web assets unavailable; run make build or serve --dev: %w", err)
@@ -37,6 +39,9 @@ func routes(options HandlerOptions, ui http.Handler) http.Handler {
 	root := http.NewServeMux()
 	root.Handle(TracesMount, options.Traces)
 	root.Handle(TracesMount+"/", options.Traces)
+	root.Handle(TopMount, options.Top)
+	root.Handle(TopProcessesPath, options.Top)
+	root.Handle(TopFacetsPath, options.Top)
 	root.Handle("/api/", api)
 	root.Handle("/api", http.NotFoundHandler())
 	root.Handle("/health", api)
@@ -57,7 +62,9 @@ func assetHandler(assets fs.FS) http.Handler {
 			path = "index.html"
 		}
 		info, err := fs.Stat(assets, path)
-		if errors.Is(err, fs.ErrNotExist) && !strings.Contains(path, ".") && !strings.HasPrefix(path, "assets/") {
+		// A client route is the page: any path without an extension, and the
+		// /top/<program> pages, whose program names may hold dots.
+		if errors.Is(err, fs.ErrNotExist) && (!strings.Contains(path, ".") || strings.HasPrefix(path, "top/")) && !strings.HasPrefix(path, "assets/") {
 			path = "index.html"
 		} else if err != nil || info.IsDir() {
 			http.NotFound(w, r)

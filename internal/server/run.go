@@ -11,6 +11,7 @@ import (
 
 	"github.com/flanksource/clicky/task"
 	cctx "github.com/flanksource/commons/context"
+	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/webapp"
 	"github.com/spf13/cobra"
 )
@@ -46,18 +47,27 @@ func Run(ctx context.Context, options Options) (err error) {
 		}
 	}()
 	apiURL := "http://" + listener.Addr().String()
-	traceMount := NewTraceMount(options.WorkDir)
+	connections, err := telltale.OpenConnections()
+	if err != nil {
+		return err
+	}
+	traceMount, err := telltale.NewHandler(telltale.HandlerOptions{WorkDir: options.WorkDir, Prefix: TracesMount, Connections: connections})
+	if err != nil {
+		return err
+	}
 	defer func() { err = errors.Join(err, traceMount.Close()) }()
+	top := NewTopHandler(options.WorkDir)
+	defer func() { err = errors.Join(err, top.Close()) }()
 	var handler http.Handler
 	if options.Dev {
 		var vite *viteServer
 		vite, err = startVite(ctx, devOptions{Options: options, apiURL: apiURL, cancel: cancel})
 		if err == nil {
 			defer func() { err = errors.Join(err, vite.stop()) }()
-			handler = routes(HandlerOptions{Root: options.Root, Version: options.Version, Traces: traceMount}, vite.proxy())
+			handler = routes(HandlerOptions{Root: options.Root, Version: options.Version, Traces: traceMount, Top: top}, vite.proxy())
 		}
 	} else {
-		handler, err = servingHandler(options, traceMount)
+		handler, err = servingHandler(options, traceMount, top)
 	}
 	if err != nil {
 		return err
@@ -72,12 +82,12 @@ func Run(ctx context.Context, options Options) (err error) {
 	return err
 }
 
-func servingHandler(options Options, traces http.Handler) (http.Handler, error) {
+func servingHandler(options Options, traces, top http.Handler) (http.Handler, error) {
 	assets, err := webapp.Assets()
 	if err != nil {
 		return nil, err
 	}
-	return NewHandler(HandlerOptions{Root: options.Root, Version: options.Version, Assets: assets, Traces: traces})
+	return NewHandler(HandlerOptions{Root: options.Root, Version: options.Version, Assets: assets, Traces: traces, Top: top})
 }
 
 func serve(ctx context.Context, listener net.Listener, handler http.Handler) error {

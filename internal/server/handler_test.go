@@ -17,7 +17,7 @@ var _ = Describe("HTTP routing", func() {
 		var err error
 		handler, err = server.NewHandler(server.HandlerOptions{
 			Root: &cobra.Command{Use: "telltale"}, Version: "test-version",
-			Traces: server.NewTraceMount(GinkgoT().TempDir()),
+			Traces: http.NotFoundHandler(), Top: http.NotFoundHandler(),
 			Assets: fstest.MapFS{
 				"index.html":         &fstest.MapFile{Data: []byte("<html>Telltale</html>")},
 				"assets/app-ab12.js": &fstest.MapFile{Data: []byte("export default 'telltale'")},
@@ -35,6 +35,8 @@ var _ = Describe("HTTP routing", func() {
 		},
 		Entry("index", "GET", "/", 200, "no-cache"),
 		Entry("deep link", "GET", "/settings", 200, "no-cache"),
+		Entry("a program's top page, its name dotted", "GET", "/top/com.apple.WebKit.Networking", 200, "no-cache"),
+		Entry("a missing file beside the page", "GET", "/favicon.ico", 404, ""),
 		Entry("hashed asset", "GET", "/assets/app-ab12.js", 200, "public, max-age=31536000, immutable"),
 		Entry("missing asset", "GET", "/assets/missing.js", 404, ""),
 		Entry("extensionless missing asset", "GET", "/assets/missing", 404, ""),
@@ -56,7 +58,7 @@ var _ = Describe("HTTP routing", func() {
 	It("fails before startup when embedded assets are missing", func() {
 		_, err := server.NewHandler(server.HandlerOptions{
 			Root: &cobra.Command{Use: "telltale"}, Assets: fstest.MapFS{}, Version: "dev",
-			Traces: server.NewTraceMount(GinkgoT().TempDir()),
+			Traces: http.NotFoundHandler(), Top: http.NotFoundHandler(),
 		})
 		Expect(err).To(MatchError(ContainSubstring("make build")))
 	})
