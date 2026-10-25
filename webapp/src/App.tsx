@@ -3,6 +3,7 @@ import { AppShell, Button, Panel } from "@flanksource/clicky-ui/components";
 import { useTheme } from "@flanksource/clicky-ui/hooks";
 
 const Status = lazy(() => import("./Status"));
+const TracesPage = lazy(() => import("./traces/TracesPage"));
 
 export default function App() {
   const { resolvedTheme, setTheme } = useTheme();
@@ -19,6 +20,9 @@ export default function App() {
         </div>
         <Panel title="Backend connection">
           <Suspense fallback={<p role="status">Connecting to the backend…</p>}><Status /></Suspense>
+        </Panel>
+        <Panel title="Trace runs">
+          <Suspense fallback={<p role="status">Loading trace runs…</p>}><TracesPage /></Suspense>
         </Panel>
         <a className="text-sm underline underline-offset-4" href="/api/openapi.json">View the OpenAPI specification</a>
       </div>

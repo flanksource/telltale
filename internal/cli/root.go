@@ -7,9 +7,12 @@ import (
 )
 
 func NewRoot(version string) *cobra.Command {
-	root := &cobra.Command{Use: "telltale", Short: "Telltale", Version: version, SilenceUsage: true}
+	root := &cobra.Command{
+		Use: "telltale", Short: "Telltale", Version: version, SilenceUsage: true,
+		PersistentPreRunE: func(*cobra.Command, []string) error { return EnableHTTPWireLogging() },
+	}
 	clicky.BindAllFlags(root.PersistentFlags(), "format")
-	options := server.Options{Root: root, Version: version, Host: "localhost", Port: 8080, UIPort: 5173, WebDirectory: "webapp"}
+	options := server.Options{Root: root, Version: version, Host: "localhost", Port: 8080, UIPort: 5173, WebDirectory: "webapp", WorkDir: "."}
 	serve := &cobra.Command{
 		Use: "serve", Short: "Start the HTTP API and web UI", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -21,6 +24,7 @@ func NewRoot(version string) *cobra.Command {
 	serve.Flags().BoolVar(&options.Dev, "dev", false, "Start Vite with local Clicky UI source and HMR")
 	serve.Flags().IntVar(&options.UIPort, "ui-port", options.UIPort, "Vite port in development")
 	serve.Flags().StringVar(&options.WebDirectory, "web-dir", options.WebDirectory, "Frontend source directory for --dev")
-	root.AddCommand(serve)
+	serve.Flags().StringVar(&options.WorkDir, "work-dir", options.WorkDir, "Directory whose .telltale/traces run stores are served")
+	root.AddCommand(serve, newTraceCommand())
 	return root
 }
