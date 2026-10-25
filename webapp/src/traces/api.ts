@@ -1,8 +1,8 @@
 import type { ProcessNodeRow, ProcessSampleRow } from "@flanksource/clicky-ui/data";
 
-// The server lists the run stores `telltale trace run` recorded at
-// /api/traces, and serves each one's trace routes under its mount,
-// /api/traces/<run id> (traceserve.Handler).
+// The server lists, starts and stops runs at /api/traces (telltale.Handler),
+// and serves each one's trace routes under its mount, /api/traces/<run id>
+// (traceserve.Handler).
 
 export const TRACES_ENDPOINT = "/api/traces";
 
@@ -22,29 +22,63 @@ export interface ProcessTraceRefs {
   goprof?: TraceRef;
 }
 
-/** One armed capture of a run, with its kind's summary of the stream. */
+/** One armed capture of a run, with its kind's summary of the stream once the run finished. */
 export interface CaptureResult {
   kind: string;
   ref: TraceRef;
-  summary: Record<string, unknown>;
+  summary?: Record<string, unknown>;
 }
 
-/** What a finished run recorded (tracerun.Result). */
-export interface TraceRunResult {
-  runId: string;
-  dir: string;
-  command: string[];
-  exitCode: number;
-  captures: CaptureResult[];
-  process: ProcessTraceRefs;
-}
+export type RunStatus = "running" | "succeeded" | "failed" | "unfinished";
 
-/** One run's store as the browser reaches it. */
+export const RUN_STATUSES: RunStatus[] = ["running", "succeeded", "failed", "unfinished"];
+
+/** One run as the browser reaches it (telltale.MountedRun). */
 export interface RunTraces {
   runId: string;
   mount: string;
-  run?: TraceRunResult;
+  dir: string;
+  status: RunStatus;
+  command?: string[];
+  /** The process an attached run traced, in place of a command. */
+  pid?: number;
+  startedAt?: string;
+  endedAt?: string;
+  exitCode?: number;
+  captures?: CaptureResult[];
+  process?: ProcessTraceRefs;
+  /** Set while the run is running, with the sessions a checkpoint names. */
+  live?: { sessions: { tree: string; samples: string; stacks: string } };
+  /** Why an unfinished run has nothing to read. */
   unavailable?: string;
+  /** The checkpoints that failed, which fail the run. */
+  checkpointErrors?: string[];
+}
+
+/** Which runs a listing returns; empty fields keep every run. */
+export interface RunFilter {
+  q?: string;
+  status?: RunStatus | "";
+  kind?: string;
+}
+
+/** A field of a start request the server refused, at its JSON pointer ("" for the request as a whole). */
+export interface StartFieldError {
+  instancePath: string;
+  message: string;
+}
+
+/** A start request the server refused field by field (HTTP 400). */
+export class StartRunError extends Error {
+  constructor(readonly errors: StartFieldError[]) {
+    super(errors.map(error => (error.instancePath ? `${error.instancePath}: ` : "") + error.message).join("; "));
+  }
+}
+
+/** The start form's JSON schema and the values it starts from (telltale.StartForm). */
+export interface StartForm {
+  schema: Record<string, unknown>;
+  defaults: Record<string, unknown>;
 }
 
 export interface TracesStatus {
@@ -77,10 +111,43 @@ export async function failure(res: Response, what: string): Promise<Error> {
 }
 
 /** The run stores the server serves, newest first. */
-export async function fetchTraceRuns(): Promise<TracesStatus> {
-  const res = await fetch(TRACES_ENDPOINT, { headers: { Accept: "application/json" } });
+export async function fetchTraceRuns(filter: RunFilter = {}): Promise<TracesStatus> {
+  const query = runFilterQuery(filter);
+  const res = await fetch(query ? `${TRACES_ENDPOINT}?${query}` : TRACES_ENDPOINT, { headers: { Accept: "application/json" } });
   if (!res.ok) throw await failure(res, "list trace runs");
   return res.json() as Promise<TracesStatus>;
+}
+
+/** The query string of filter's non-empty fields. */
+export function runFilterQuery(filter: RunFilter): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filter)) if (value) params.set(key, String(value));
+  return params.toString();
+}
+
+/** The start form: its schema and the values it starts from. */
+export async function fetchStartForm(): Promise<StartForm> {
+  const res = await fetch(`${TRACES_ENDPOINT}/start`, { headers: { Accept: "application/json" } });
+  if (!res.ok) throw await failure(res, "load the start form");
+  return res.json() as Promise<StartForm>;
+}
+
+/** Starts the run value (a StartRequest) describes; a refused request throws StartRunError. */
+export async function startRun(value: Record<string, unknown>): Promise<RunTraces> {
+  const res = await fetch(TRACES_ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    body: JSON.stringify(value),
+  });
+  if (res.status === 400) throw new StartRunError((await res.json() as { errors: StartFieldError[] }).errors);
+  if (!res.ok) throw await failure(res, "start run");
+  return res.json() as Promise<RunTraces>;
+}
+
+/** Stops a running run; it still records how it ended. */
+export async function stopRun(run: RunTraces): Promise<void> {
+  const res = await fetch(run.mount, { method: "DELETE" });
+  if (!res.ok) throw await failure(res, "stop run");
 }
 
 function windowQuery(ref: TraceRef, extra: Record<string, string> = {}): string {

@@ -15,11 +15,11 @@ function useExportFormats(mount: string) {
 
 /** The windows of the captures a run armed, as TraceWindowList reads them. */
 export function captureWindows(run: RunTraces): TraceWindow[] {
-  return (run.run?.captures ?? []).map(capture => ({
+  return (run.captures ?? []).map(capture => ({
     ...capture.ref,
     run_id: run.runId,
-    count: Number(capture.summary.count ?? 0),
-    summary: capture.summary,
+    count: Number(capture.summary?.count ?? 0),
+    summary: capture.summary ?? {},
   }));
 }
 
