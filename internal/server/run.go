@@ -23,6 +23,8 @@ type Options struct {
 	Dev          bool
 	UIPort       int
 	WebDirectory string
+	// WorkDir holds the run stores `telltale trace run` recorded.
+	WorkDir string
 }
 
 func Run(ctx context.Context, options Options) (err error) {
@@ -44,16 +46,18 @@ func Run(ctx context.Context, options Options) (err error) {
 		}
 	}()
 	apiURL := "http://" + listener.Addr().String()
+	traceMount := NewTraceMount(options.WorkDir)
+	defer func() { err = errors.Join(err, traceMount.Close()) }()
 	var handler http.Handler
 	if options.Dev {
 		var vite *viteServer
 		vite, err = startVite(ctx, devOptions{Options: options, apiURL: apiURL, cancel: cancel})
 		if err == nil {
 			defer func() { err = errors.Join(err, vite.stop()) }()
-			handler = routes(HandlerOptions{Root: options.Root, Version: options.Version}, vite.proxy())
+			handler = routes(HandlerOptions{Root: options.Root, Version: options.Version, Traces: traceMount}, vite.proxy())
 		}
 	} else {
-		handler, err = servingHandler(options)
+		handler, err = servingHandler(options, traceMount)
 	}
 	if err != nil {
 		return err
@@ -68,12 +72,12 @@ func Run(ctx context.Context, options Options) (err error) {
 	return err
 }
 
-func servingHandler(options Options) (http.Handler, error) {
+func servingHandler(options Options, traces http.Handler) (http.Handler, error) {
 	assets, err := webapp.Assets()
 	if err != nil {
 		return nil, err
 	}
-	return NewHandler(HandlerOptions{Root: options.Root, Version: options.Version, Assets: assets})
+	return NewHandler(HandlerOptions{Root: options.Root, Version: options.Version, Assets: assets, Traces: traces})
 }
 
 func serve(ctx context.Context, listener net.Listener, handler http.Handler) error {

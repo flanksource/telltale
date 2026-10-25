@@ -16,11 +16,13 @@ type HandlerOptions struct {
 	Assets  fs.FS
 	Root    *cobra.Command
 	Version string
+	// Traces serves the run stores at TracesMount.
+	Traces http.Handler
 }
 
 func NewHandler(options HandlerOptions) (http.Handler, error) {
-	if options.Root == nil || options.Assets == nil {
-		return nil, fmt.Errorf("command root and asset filesystem are required")
+	if options.Root == nil || options.Assets == nil || options.Traces == nil {
+		return nil, fmt.Errorf("command root, asset filesystem and trace mount are required")
 	}
 	if _, err := fs.ReadFile(options.Assets, "index.html"); err != nil {
 		return nil, fmt.Errorf("web assets unavailable; run make build or serve --dev: %w", err)
@@ -33,6 +35,8 @@ func routes(options HandlerOptions, ui http.Handler) http.Handler {
 	rpc.NewSwaggerServer(&rpc.ServeConfig{Version: options.Version}, options.Root,
 		&rpc.OpenAPIConfig{Title: "Telltale", Version: options.Version}).RegisterRoutes(route.NewRouter(api))
 	root := http.NewServeMux()
+	root.Handle(TracesMount, options.Traces)
+	root.Handle(TracesMount+"/", options.Traces)
 	root.Handle("/api/", api)
 	root.Handle("/api", http.NotFoundHandler())
 	root.Handle("/health", api)

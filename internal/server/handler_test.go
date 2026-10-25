@@ -17,6 +17,7 @@ var _ = Describe("HTTP routing", func() {
 		var err error
 		handler, err = server.NewHandler(server.HandlerOptions{
 			Root: &cobra.Command{Use: "telltale"}, Version: "test-version",
+			Traces: server.NewTraceMount(GinkgoT().TempDir()),
 			Assets: fstest.MapFS{
 				"index.html":         &fstest.MapFile{Data: []byte("<html>Telltale</html>")},
 				"assets/app-ab12.js": &fstest.MapFile{Data: []byte("export default 'telltale'")},
@@ -55,6 +56,7 @@ var _ = Describe("HTTP routing", func() {
 	It("fails before startup when embedded assets are missing", func() {
 		_, err := server.NewHandler(server.HandlerOptions{
 			Root: &cobra.Command{Use: "telltale"}, Assets: fstest.MapFS{}, Version: "dev",
+			Traces: server.NewTraceMount(GinkgoT().TempDir()),
 		})
 		Expect(err).To(MatchError(ContainSubstring("make build")))
 	})
