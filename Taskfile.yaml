@@ -52,6 +52,45 @@ tasks:
       - gavel test --framework go,ginkgo
       - pnpm test
 
+  # The JFR fixture of pkg/tracing/jfr: the decode specs expect the counts of
+  # the committed fixture, so a new recording replaces jdk-profile.jfr.gz only
+  # along with those expectations.
+  jfr:record:
+    desc: Record a JDK Flight Recording of the jfr fixture workload into .tmp/jfr (JFR_SETTINGS, JFR_MILLIS, JFR_OUT)
+    vars:
+      JFR_OUT: '{{.JFR_OUT | default (print .ROOT_DIR "/.tmp/jfr/jdk-profile.jfr")}}'
+      JFR_SETTINGS: '{{.JFR_SETTINGS | default "profile"}}'
+      JFR_MILLIS: '{{.JFR_MILLIS | default "2000"}}'
+      JFR_CLASSES: '{{.ROOT_DIR}}/.tmp/jfr/classes'
+    cmds:
+      - mkdir -p {{dir .JFR_OUT}}
+      - rm -f {{.JFR_OUT}}
+      # Compiled first: since JDK 22 the source launcher refuses gen/Workload.java, whose path does not match its package.
+      - javac -d {{.JFR_CLASSES}} pkg/tracing/jfr/testdata/gen/Workload.java
+      - java -XX:StartFlightRecording=settings={{.JFR_SETTINGS}},filename={{.JFR_OUT}} -cp {{.JFR_CLASSES}} jfrfixture.Workload {{.JFR_MILLIS}}
+      - ls -l {{.JFR_OUT}}
+
+  jfr:fixture:
+    desc: Write the recording in .tmp/jfr (recorded unless present) to the jdk-profile.jfr.gz fixture, scrubbed down to the events the decoder reads
+    vars:
+      JFR_OUT: '{{.JFR_OUT | default (print .ROOT_DIR "/.tmp/jfr/jdk-profile.jfr")}}'
+      JFR_SCRUBBED: '{{.ROOT_DIR}}/.tmp/jfr/jdk-profile.scrubbed.jfr'
+      JFR_DECODED_EVENTS: jdk.ExecutionSample,jdk.ObjectAllocationSample,jdk.ObjectAllocationInNewTLAB,jdk.ObjectAllocationOutsideTLAB,jdk.JavaMonitorEnter,jdk.ThreadPark,jdk.ActiveSetting
+    cmds:
+      - test -f {{.JFR_OUT}} || task jfr:record JFR_OUT={{.JFR_OUT}}
+      - rm -f {{.JFR_SCRUBBED}}
+      - jfr scrub --include-events {{.JFR_DECODED_EVENTS}} {{.JFR_OUT}} {{.JFR_SCRUBBED}}
+      - gzip -9 -n -c {{.JFR_SCRUBBED}} > pkg/tracing/jfr/testdata/jdk-profile.jfr.gz
+      - ls -l pkg/tracing/jfr/testdata/jdk-profile.jfr.gz
+
+  jfr:compression:
+    desc: Benchmark codecs (gzip, zstd, brotli, s2, lz4, xz) on a JFR recording; JFR_FILE= benchmarks the testdata fixtures
+    vars:
+      JFR_FILE: '{{.JFR_FILE | default (print .ROOT_DIR "/.tmp/jfr/jdk-profile.jfr")}}'
+      JFR_BENCHTIME: '{{.JFR_BENCHTIME | default "5x"}}'
+    cmds:
+      - JFR_FILE={{.JFR_FILE}} go test ./pkg/tracing/jfr -run '^$' -bench BenchmarkCompression -benchtime {{.JFR_BENCHTIME}}
+
   clean:
     desc: Remove generated assets and binaries while preserving the embed sentinel
     cmds:

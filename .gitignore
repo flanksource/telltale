@@ -1,6 +1,7 @@
 .bin/
 .tmp/
 .gavel/
+.telltale/
 node_modules/
 *.tsbuildinfo
 coverage/

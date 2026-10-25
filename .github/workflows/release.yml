@@ -35,7 +35,7 @@ jobs:
         with:
           node-version-file: .node-version
           cache: pnpm
-      - uses: flanksource/deps@v1.0.47
+      - uses: flanksource/deps@v1.0.48
         with:
           tools: |
             task
@@ -61,7 +61,7 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.tag }}
         run: make build
-      - uses: flanksource/gavel@ce8e88b2ad8b9dc62802ae4230bb086768d3d105 # v0.0.56
+      - uses: flanksource/gavel@3fd42b59e97272b2c5d04080fee31e8d05989d0b # v0.0.59
         with:
           version: v0.0.54
           args: test --framework go,ginkgo,vitest --timeout 20m

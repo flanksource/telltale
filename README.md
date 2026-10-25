@@ -14,6 +14,28 @@ make build
 
 Open `http://localhost:8080`. The server exposes `/health` and `/api/openapi.json`. Use `--host` and `--port` to change the API listener; port `0` requests a free port. `--version` reports the build version, which defaults to `dev` outside releases.
 
+## Tracing a command
+
+`telltale trace run` runs a command under trace and keeps what it recorded in a run store at `.telltale/traces/<run id>` under `--work-dir` (default `.`). Each `--trace kind[:{json params}]` arms one capture and points the command at it through the environment it exports; the default is the `http_proxy` recording proxy. The process tree under telltale is always recorded.
+
+```sh
+# Record TLS traffic in full: the proxy terminates TLS with an ephemeral CA it exports to curl.
+telltale trace run --trace 'http_proxy:{"mode":"mitm"}' -- curl -sS https://example.com
+telltale serve
+```
+
+`telltale serve` lists the stored runs at `/api/traces` and serves each one's records, exports and checkpoints under `/api/traces/<run id>/api/v1/...`; the web UI shows the captures and the process tree. The 20 newest runs are kept. Set `-Phttp.har=<path>` on any command to capture telltale's own outbound HTTP as a HAR archive.
+
+The Go packages are importable from other modules:
+
+| Package | Purpose |
+|---|---|
+| `pkg/tracing` and its kinds (`http`, `httpproxy`, `pgproxy`, `sql`, `process`, `stacks`, `goprof`, `terminal`, `jfr`, `opensearch`, `sqlserver/*`) | Trace plugin framework and capture kinds |
+| `pkg/traces` | Per-run trace store host |
+| `pkg/traceserve` | Opens a trace store and serves its read, export and checkpoint routes |
+| `pkg/proxy/{credproxy,kubeproxy,mcpproxy,proxylog}` | Credential-injecting egress proxy, Kubernetes and MCP reverse proxies, JSONL request log |
+| `pkg/credentials` (vault), `pkg/credentials/{agentcreds,credsync,apitoken}` | Provider key vault, agent CLI logins, credential publishing, bearer tokens |
+
 ## Development with local Clicky UI
 
 Install the sibling Clicky UI checkout's dependencies using its own setup instructions, then start Telltale:
