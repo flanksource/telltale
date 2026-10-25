@@ -80,7 +80,7 @@ type samplesRun struct {
 
 // Prepare refuses a root that is not running, before the session starts.
 func (s samples) Prepare(ctx dbcontext.Context, params SampleParams, _ tracing.Emitter[Sample]) (dbcontext.Context, func() error, error) {
-	processes, _, err := s.sampler.subtree(ctx, params.root())
+	processes, _, err := s.sampler.Observe(ctx, params.root())
 	if err != nil {
 		return ctx, nil, err
 	}
@@ -136,7 +136,7 @@ func (s samples) Checkpoint(ctx dbcontext.Context, params SampleParams, records 
 // sample emits one tick of every live process of the tree, with the full
 // facet lists of the process keyed force.
 func (s samples) sample(ctx context.Context, run *samplesRun, force string, records tracing.Emitter[Sample]) error {
-	processes, listedAt, err := s.sampler.subtree(ctx, run.params.root())
+	processes, listedAt, err := s.sampler.Observe(ctx, run.params.root())
 	if err != nil {
 		return err
 	}
@@ -157,7 +157,7 @@ func (s samples) sample(ctx context.Context, run *samplesRun, force string, reco
 	for _, p := range processes {
 		sample := Sample{
 			SampledAt: listedAt, Tick: run.tick, Key: Key(p.Process), PID: p.PID,
-			CPUPercent: p.cpuPercent, MemoryPercent: p.MemoryPercent, RSSBytes: p.RSSBytes,
+			CPUPercent: p.IntervalCPUPercent, MemoryPercent: p.MemoryPercent, RSSBytes: p.RSSBytes,
 		}
 		reading := io[p.PID]
 		if counters := reading.IO; counters != nil {
@@ -174,7 +174,7 @@ func (s samples) sample(ctx context.Context, run *samplesRun, force string, reco
 	return nil
 }
 
-func hasKey(processes []observed, key string) bool {
+func hasKey(processes []Observed, key string) bool {
 	for _, p := range processes {
 		if Key(p.Process) == key {
 			return true

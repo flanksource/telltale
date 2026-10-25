@@ -24,19 +24,19 @@ var dsnEnvKeys = []string{"GAVEL_DB_DSN", "DATABASE_URL"}
 type Params struct {
 	// DSN is the upstream postgres://, with $VAR references expanded. Empty
 	// falls back to GAVEL_DB_DSN, then DATABASE_URL.
-	DSN string `json:"dsn,omitempty" clicky:"title=Upstream DSN"`
+	DSN string `json:"dsn,omitempty" clicky:"title=Upstream DSN,desc=The postgres:// URL to proxy with $VAR references expanded; empty reads GAVEL_DB_DSN then DATABASE_URL"`
 	// Env names the variable a process reads its DSN from, such as FIN_DB_URL.
 	// When DSN is unset the upstream is read from it, and the proxied DSN is
 	// exported under it so a process that reads only that variable is observed.
-	Env string `json:"env,omitempty" clicky:"title=DSN variable"`
+	Env string `json:"env,omitempty" clicky:"title=DSN variable,desc=Variable the command reads its DSN from; the upstream is read from it and the proxied DSN exported under it"`
 	// Params keeps bind parameter values in each statement's args. Off by
 	// default: bind values carry row data, the likeliest place for a secret.
-	Params bool `json:"params,omitempty" clicky:"title=Capture bind values"`
+	Params bool `json:"params,omitempty" clicky:"title=Capture bind values,desc=Keep bind parameter values which carry row data and may hold secrets"`
 	// Connection labels the statements, as sql_statements' connection column.
-	Connection string `json:"connection,omitempty" clicky:"title=Connection label"`
+	Connection string `json:"connection,omitempty" clicky:"title=Connection label,desc=Label the statements are recorded under"`
 	// MaxStatements bounds what one capture stores; reaching it marks the
 	// capture truncated rather than growing without limit.
-	MaxStatements int `json:"maxStatements,omitempty" clicky:"title=Maximum statements"`
+	MaxStatements int `json:"maxStatements,omitempty" clicky:"title=Maximum statements,desc=Most statements one capture stores before it is marked truncated"`
 }
 
 func (p Params) Validate() error {

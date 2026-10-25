@@ -171,6 +171,17 @@ func maskSecrets(keep []string) rowProcessor {
 	}
 }
 
+// MaskEnvironment is environment with its secrets masked as WithSecretMasking
+// masks a stored row's: the value of a sensitive variable replaced, and the
+// secrets inside any other's stripped.
+func MaskEnvironment(environment map[string]string) map[string]string {
+	masked := make(map[string]string, len(environment))
+	for key, value := range environment {
+		masked[key] = secretMasker{}.entry(key, value).(string)
+	}
+	return masked
+}
+
 type secretMasker struct{ keep []string }
 
 func (m secretMasker) entry(key string, value any) any {

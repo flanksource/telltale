@@ -23,10 +23,10 @@ const defaultInterval = time.Second
 // Params choose the process tree a capture follows and how often it looks.
 type Params struct {
 	// RootPID is the process whose tree is captured; zero is the host's own.
-	RootPID int `json:"rootPid,omitempty" clicky:"title=Root PID"`
+	RootPID int `json:"rootPid,omitempty" clicky:"title=Root PID,desc=Process whose tree is followed; 0 is telltale's own which holds the command"`
 	// Interval, a duration such as 1s, is how often the tree is sampled.
 	// Empty is a second.
-	Interval string `json:"interval,omitempty" clicky:"title=Interval"`
+	Interval string `json:"interval,omitempty" clicky:"title=Interval,desc=How often the tree is sampled such as 1s (at least 250ms)"`
 }
 
 func (p Params) Validate() error {
@@ -66,13 +66,13 @@ type TreeParams struct {
 	// Environment reads each process's environment once, as its node is
 	// created, limited to these keys and prefixes; empty ones read all of it.
 	// Absent reads none.
-	Environment *EnvironmentParams `json:"environment,omitempty" clicky:"title=Environment"`
+	Environment *EnvironmentParams `json:"environment,omitempty" clicky:"title=Environment,desc=Environment variables read onto each process"`
 }
 
 // EnvironmentParams name the environment variables a node is read with.
 type EnvironmentParams struct {
-	Keys     []string `json:"keys,omitempty"`
-	Prefixes []string `json:"prefixes,omitempty"`
+	Keys     []string `json:"keys,omitempty" clicky:"title=Keys,desc=Environment variables to read onto each process"`
+	Prefixes []string `json:"prefixes,omitempty" clicky:"title=Prefixes,desc=Prefixes of the environment variables to read onto each process"`
 }
 
 func (p EnvironmentParams) options() clickyprocess.EnvironmentOptions {
@@ -100,7 +100,7 @@ type SampleParams struct {
 	Params
 	// Facets are read of every process at each tick, with one lsof call for
 	// the whole tree: each one's count every tick, its list when it changed.
-	Facets []string `json:"facets,omitempty" clicky:"title=Facets"`
+	Facets []string `json:"facets,omitempty" clicky:"title=Facets,desc=Descriptors read of every process each tick with lsof: openFiles sockets ports or connections"`
 }
 
 func (p SampleParams) Validate() error {

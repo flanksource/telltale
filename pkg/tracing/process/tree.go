@@ -115,7 +115,7 @@ func (t tree) Prepare(ctx dbcontext.Context, params TreeParams, _ tracing.Emitte
 		root: params.root(), interval: interval, environment: params.Environment,
 		live: map[string]*Node{}, exited: map[string]*Node{},
 	}
-	processes, _, err := t.sampler.subtree(ctx, run.root)
+	processes, _, err := t.sampler.Observe(ctx, run.root)
 	if err != nil {
 		return ctx, nil, err
 	}
@@ -173,7 +173,7 @@ func (t tree) Checkpoint(ctx dbcontext.Context, _ TreeParams, records tracing.Em
 // tick, and every one that exited with when it was first missed. Once the
 // root is missed, every process left is exited and errRootGone ends the run.
 func (t tree) observe(ctx context.Context, run *treeRun, records tracing.Emitter[Node]) error {
-	processes, listedAt, err := t.sampler.subtree(ctx, run.root)
+	processes, listedAt, err := t.sampler.Observe(ctx, run.root)
 	if err != nil {
 		return err
 	}
@@ -184,7 +184,7 @@ func (t tree) observe(ctx context.Context, run *treeRun, records tracing.Emitter
 	for _, p := range processes {
 		keys[p.PID] = Key(p.Process)
 	}
-	var started []observed
+	var started []Observed
 	for _, p := range processes {
 		key := keys[p.PID]
 		seen[key] = true
@@ -222,7 +222,7 @@ func (t tree) observe(ctx context.Context, run *treeRun, records tracing.Emitter
 
 // start emits the processes seen for the first time, with their working
 // directories, stack transports and environments, which are read only once.
-func (t tree) start(ctx context.Context, run *treeRun, started []observed, keys map[int]string, listedAt time.Time, records tracing.Emitter[Node]) error {
+func (t tree) start(ctx context.Context, run *treeRun, started []Observed, keys map[int]string, listedAt time.Time, records tracing.Emitter[Node]) error {
 	if len(started) == 0 {
 		return nil
 	}
@@ -263,7 +263,7 @@ func (t tree) describe(ctx context.Context, run *treeRun, node *Node) {
 	node.Environment = environment
 }
 
-func newNode(p observed, parentKey string, isRoot bool, listedAt time.Time) *Node {
+func newNode(p Observed, parentKey string, isRoot bool, listedAt time.Time) *Node {
 	startedAt := listedAt
 	if p.StartedAt != nil {
 		startedAt = *p.StartedAt
@@ -278,13 +278,13 @@ func newNode(p observed, parentKey string, isRoot bool, listedAt time.Time) *Nod
 
 // update applies p's latest reading to n, reporting whether anything a
 // reader sees changed. Only a known CPU% can raise its peak.
-func (n *Node) update(p observed, parentKey string, listedAt time.Time) bool {
+func (n *Node) update(p Observed, parentKey string, listedAt time.Time) bool {
 	changed := n.ParentKey != parentKey || n.PPID != p.PPID || n.Status != p.Status ||
-		!equalPercent(n.CPUPercent, p.cpuPercent) || n.RSSBytes != p.RSSBytes
+		!equalPercent(n.CPUPercent, p.IntervalCPUPercent) || n.RSSBytes != p.RSSBytes
 	n.ParentKey, n.PPID, n.Status = parentKey, p.PPID, p.Status
-	n.CPUPercent, n.RSSBytes, n.LastSeenAt = p.cpuPercent, p.RSSBytes, listedAt
-	if p.cpuPercent != nil && (n.PeakCPUPercent == nil || *p.cpuPercent > *n.PeakCPUPercent) {
-		peak := *p.cpuPercent
+	n.CPUPercent, n.RSSBytes, n.LastSeenAt = p.IntervalCPUPercent, p.RSSBytes, listedAt
+	if p.IntervalCPUPercent != nil && (n.PeakCPUPercent == nil || *p.IntervalCPUPercent > *n.PeakCPUPercent) {
+		peak := *p.IntervalCPUPercent
 		n.PeakCPUPercent = &peak
 	}
 	n.PeakRSSBytes = max(n.PeakRSSBytes, p.RSSBytes)

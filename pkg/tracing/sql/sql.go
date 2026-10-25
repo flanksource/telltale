@@ -28,10 +28,10 @@ type Params struct {
 	// Connections name the connections to observe, as profiles reference
 	// them, "*" for every connection, or "self" for the server's own
 	// database, which "*" does not include.
-	Connections []string `json:"connections" clicky:"required,title=Connections"`
+	Connections []string `json:"connections" clicky:"required,title=Connections,desc=Connections to observe: names; * for every one; or self for telltale's own database"`
 	// MinDuration, a duration such as 100ms, records only statements that ran
 	// at least that long.
-	MinDuration string `json:"minDuration,omitempty" clicky:"title=Minimum duration"`
+	MinDuration string `json:"minDuration,omitempty" clicky:"title=Minimum duration,desc=Record only statements that ran at least this long such as 100ms"`
 }
 
 func (p Params) Validate() error {

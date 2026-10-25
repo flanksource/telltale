@@ -27,7 +27,7 @@ const maxRawBytes = 1 << 20
 // Params choose the tree whose processes a capture dumps.
 type Params struct {
 	// RootPID is the process whose tree is dumped; zero is the host's own.
-	RootPID int `json:"rootPid,omitempty" clicky:"title=Root PID"`
+	RootPID int `json:"rootPid,omitempty" clicky:"title=Root PID,desc=Process whose tree is dumped; 0 is telltale's own which holds the command"`
 }
 
 func (p Params) Validate() error {

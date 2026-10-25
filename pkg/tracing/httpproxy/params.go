@@ -21,6 +21,11 @@ const (
 	ModeMITM Mode = "mitm"
 )
 
+// JSONSchema offers the modes as a choice to a start form.
+func (Mode) JSONSchema() map[string]any {
+	return map[string]any{"type": "string", "enum": []any{ModeConnect, ModeMITM}}
+}
+
 // defaultBodies is how much of each body a capture keeps unless its params
 // say otherwise: bodies are the likeliest place for both a large payload and
 // a secret, so the default stays small enough to read.
@@ -32,27 +37,27 @@ const maxBodies = 4 << 20
 // Params configure the recording proxy a capture's processes are pointed at.
 // Plain (non-TLS) exchanges are recorded in full in either mode.
 type Params struct {
-	Mode Mode `json:"mode,omitempty" clicky:"title=Mode"`
+	Mode Mode `json:"mode,omitempty" clicky:"title=Mode,desc=connect records HTTPS tunnels by host; mitm decrypts and records each exchange"`
 	// Hosts are host globs (path.Match), without a port, limiting what is
 	// recorded and, under mitm, what is decrypted; empty records every host.
-	Hosts []string `json:"hosts,omitempty" clicky:"title=Hosts"`
+	Hosts []string `json:"hosts,omitempty" clicky:"title=Hosts,desc=Host globs without a port to record and decrypt; empty records every host"`
 	// Paths are URL-path globs (path.Match) limiting which exchanges are
 	// recorded; empty records every path. A tunnel has no path to match, so
 	// it is recorded on Hosts alone.
-	Paths []string `json:"paths,omitempty" clicky:"title=Paths"`
+	Paths []string `json:"paths,omitempty" clicky:"title=Paths,desc=URL path globs to record; empty records every path"`
 	// Bodies caps how much of each body is kept, as a size such as 64KiB or
 	// 4MiB, at most 4MiB; 0 keeps none.
-	Bodies string `json:"bodies,omitempty" clicky:"title=Bodies"`
+	Bodies string `json:"bodies,omitempty" clicky:"title=Bodies,desc=How much of each body to keep such as 64KiB (at most 4MiB; 0 keeps none)"`
 	// Redact names headers to blank on top of the built-in credential headers,
 	// which are always blanked.
-	Redact []string `json:"redact,omitempty" clicky:"title=Redact headers"`
+	Redact []string `json:"redact,omitempty" clicky:"title=Redact headers,desc=Headers to blank beside the credential headers that are always blanked"`
 	// NoProxy are host:port addresses the processes reach directly, such as a
 	// server the host started, beside the proxy itself.
-	NoProxy []string `json:"noProxy,omitempty" clicky:"title=No proxy"`
+	NoProxy []string `json:"noProxy,omitempty" clicky:"title=No proxy,desc=host:port addresses the command reaches directly"`
 	// UpstreamCA is a PEM file of authorities the proxy trusts beside the
 	// system roots when, under mitm, it connects to the real server, such as a
 	// local test server's own certificate. It is read when the capture starts.
-	UpstreamCA string `json:"upstreamCA,omitempty" clicky:"title=Upstream CA file"`
+	UpstreamCA string `json:"upstreamCA,omitempty" clicky:"title=Upstream CA file,desc=PEM file of authorities the proxy trusts beside the system roots under mitm"`
 }
 
 func (p Params) Validate() error {

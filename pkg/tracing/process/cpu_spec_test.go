@@ -70,12 +70,15 @@ var _ = Describe("cpuRates", func() {
 		Expect(rates.observe(listing(time.Second, started), at.Add(time.Second))).To(HaveKeyWithValue(key, HaveValue(BeNumerically("~", 100, 1e-9))))
 	})
 
-	It("fails when a process's CPU time goes backwards", func() {
+	It("is unknown for a pid reused within its holder's start second, which ps lists with the same start and less CPU time", func() {
 		rates := newCPURates()
-		_, err := rates.observe(listing(2*time.Second, started), at)
+		holderCPU, reuserCPU := 90*time.Millisecond, time.Duration(0)
+		_, err := rates.observe(listing(holderCPU, started), at)
 		Expect(err).ToNot(HaveOccurred())
-		_, err = rates.observe(listing(time.Second, started), at.Add(time.Second))
-		Expect(err).To(MatchError(ContainSubstring("went backwards")))
+
+		Expect(rates.observe(listing(reuserCPU, started), at.Add(time.Second))).To(HaveKeyWithValue(key, BeNil()))
+		Expect(rates.observe(listing(reuserCPU+time.Second, started), at.Add(2*time.Second))).
+			To(HaveKeyWithValue(key, HaveValue(BeNumerically("~", 100, 1e-9))), "rated from the reuser's first observation")
 	})
 })
 
@@ -83,11 +86,11 @@ var _ = Describe("Node.update", func() {
 	It("takes its peak CPU only from known readings", func() {
 		known := func(percent float64) *float64 { return &percent }
 		node := &Node{}
-		node.update(observed{Process: clickyprocess.Process{PID: 1}}, "", time.Now())
+		node.update(Observed{Process: clickyprocess.Process{PID: 1}}, "", time.Now())
 		Expect(node.CPUPercent).To(BeNil())
 		Expect(node.PeakCPUPercent).To(BeNil(), "an unknown reading is not a 0% peak")
-		Expect(node.update(observed{Process: clickyprocess.Process{PID: 1}, cpuPercent: known(30)}, "", time.Now())).To(BeTrue())
-		Expect(node.update(observed{Process: clickyprocess.Process{PID: 1}, cpuPercent: known(10)}, "", time.Now())).To(BeTrue())
+		Expect(node.update(Observed{Process: clickyprocess.Process{PID: 1}, IntervalCPUPercent: known(30)}, "", time.Now())).To(BeTrue())
+		Expect(node.update(Observed{Process: clickyprocess.Process{PID: 1}, IntervalCPUPercent: known(10)}, "", time.Now())).To(BeTrue())
 		Expect(node.CPUPercent).To(HaveValue(Equal(10.0)))
 		Expect(node.PeakCPUPercent).To(HaveValue(Equal(30.0)))
 	})

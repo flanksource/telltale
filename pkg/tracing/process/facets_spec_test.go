@@ -14,7 +14,7 @@ var _ = Describe("samplesRun.read", func() {
 		Expect(os.Geteuid()).NotTo(BeZero(), "pid 1 is readable as root, so this cannot observe EPERM")
 		const rootOwned = 1
 		run := &samplesRun{params: SampleParams{}}
-		listed := []observed{
+		listed := []Observed{
 			{Process: clickyprocess.Process{PID: os.Getpid(), Status: "active", Active: true}},
 			{Process: clickyprocess.Process{PID: rootOwned, Status: "sleeping", Active: true}},
 		}

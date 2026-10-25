@@ -39,7 +39,7 @@ const gopsCPUSeconds = 30
 // Params choose the tree whose processes a capture profiles.
 type Params struct {
 	// RootPID is the process whose tree is profiled; zero is the host's own.
-	RootPID int `json:"rootPid,omitempty" clicky:"title=Root PID"`
+	RootPID int `json:"rootPid,omitempty" clicky:"title=Root PID,desc=Process whose tree is profiled; 0 is telltale's own which holds the command"`
 }
 
 func (p Params) Validate() error {
@@ -131,8 +131,14 @@ func (p CheckpointParams) validateSource() error {
 	return nil
 }
 
+// Addresses are where a host finds a process's pprof server and its gops
+// agent; a nil one finds none, so that source reads nothing live.
+type Addresses struct {
+	PProf, Gops stacks.AddressFunc
+}
+
 type profiler struct {
-	address stacks.AddressFunc
+	addresses Addresses
 }
 
 func (profiler) Params() Params { return Params{} }
@@ -160,7 +166,7 @@ func (profiler) Handle(ctx dbcontext.Context, _ Params, _ tracing.Emitter[Sample
 }
 
 // NewKind is the goprof kind, reading pprof servers and gops agents at the
-// addresses address gives; nil reads only profile files.
-func NewKind(address stacks.AddressFunc) *tracing.Handler[Params, Sample] {
-	return tracing.NewHandler[Params, Sample](profiler{address: address}, tracing.Capabilities{Live: true})
+// addresses addresses gives; with none it reads only profile files.
+func NewKind(addresses Addresses) *tracing.Handler[Params, Sample] {
+	return tracing.NewHandler[Params, Sample](profiler{addresses: addresses}, tracing.Capabilities{Live: true})
 }

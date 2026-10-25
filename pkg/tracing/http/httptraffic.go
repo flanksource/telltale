@@ -34,10 +34,10 @@ const (
 type Params struct {
 	// Features name the transports to observe, as their HAR levels do:
 	// http, prometheus, loki, opensearch, git, ...
-	Features []string `json:"features" clicky:"required,title=Features"`
+	Features []string `json:"features" clicky:"required,title=Features,desc=Telltale's transports to observe by their HAR level: http prometheus loki opensearch git ..."`
 	// DedupWindow, a duration such as 1h, stores an exchange only once within
 	// it: the same method, URL, status and bodies. Empty stores every one.
-	DedupWindow string `json:"dedupWindow,omitempty" clicky:"title=Dedup window"`
+	DedupWindow string `json:"dedupWindow,omitempty" clicky:"title=Dedup window,desc=Store an identical exchange only once within this duration such as 1h"`
 }
 
 func (p Params) Validate() error {

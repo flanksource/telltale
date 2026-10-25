@@ -22,7 +22,7 @@ var _ = Describe("an observable client", func() {
 			_, _ = w.Write([]byte("ok"))
 		}))
 		DeferCleanup(upstream.Close)
-		host, err := traces.Open(GinkgoT().TempDir(), traces.RunID(time.Now()))
+		host, err := traces.Open(traces.OpenOptions{WorkDir: GinkgoT().TempDir(), RunID: traces.RunID(time.Now())})
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(func() { Expect(host.Close(context.Background())).To(Succeed()) })
 		get := func(client *http.Client, path string) {

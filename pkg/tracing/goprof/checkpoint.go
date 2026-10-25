@@ -75,10 +75,11 @@ func (p profiler) read(ctx context.Context, root int, request CheckpointParams, 
 		return nil, err
 	}
 	head.Key, head.PID = target.Key, target.PID
+	address := map[string]stacks.AddressFunc{SourcePProf: p.addresses.PProf, SourceGops: p.addresses.Gops}[request.Source]
 	var addr string
-	ok := p.address != nil
+	ok := address != nil
 	if ok {
-		addr, ok = p.address(target.PID)
+		addr, ok = address(target.PID)
 	}
 	if !ok {
 		return nil, fmt.Errorf("%w: process %d has no %s address", tracing.ErrCheckpointParams, target.PID, request.Source)

@@ -24,16 +24,16 @@ const (
 type Params struct {
 	// Width and Height are the terminal's size in cells, and the viewport the
 	// settled snapshots are bounded by.
-	Width  int `json:"width,omitempty" clicky:"title=Width"`
-	Height int `json:"height,omitempty" clicky:"title=Height"`
+	Width  int `json:"width,omitempty" clicky:"title=Width,desc=Terminal width in cells"`
+	Height int `json:"height,omitempty" clicky:"title=Height,desc=Terminal height in cells"`
 	// SnapshotInterval, a duration such as 100ms, is how often the settled
 	// screen is recorded.
-	SnapshotInterval string `json:"snapshotInterval,omitempty" clicky:"title=Snapshot interval"`
+	SnapshotInterval string `json:"snapshotInterval,omitempty" clicky:"title=Snapshot interval,desc=How often the settled screen is recorded such as 100ms"`
 	// MaxBytes, a size such as 4MiB, caps the output the capture records as
 	// events. The screen goes on settling past it.
-	MaxBytes string `json:"maxBytes,omitempty" clicky:"title=Max bytes"`
+	MaxBytes string `json:"maxBytes,omitempty" clicky:"title=Max bytes,desc=Most output recorded as events such as 4MiB"`
 	// Command is the command line the terminal runs, for the cast's header.
-	Command []string `json:"command,omitempty" clicky:"title=Command"`
+	Command []string `json:"command,omitempty" clicky:"title=Command,desc=Command line named in the cast's header"`
 }
 
 func (p Params) Validate() error {

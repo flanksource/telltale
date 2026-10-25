@@ -22,8 +22,8 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing/tracingtest"
 )
 
-func newEnv(address stacks.AddressFunc) (tracingtest.Env, *query.ManagedSession) {
-	env := tracingtest.NewEnv(map[string]tracing.TracePlugin{goprof.Kind: goprof.NewKind(address)})
+func newEnv(addresses goprof.Addresses) (tracingtest.Env, *query.ManagedSession) {
+	env := tracingtest.NewEnv(map[string]tracing.TracePlugin{goprof.Kind: goprof.NewKind(addresses)})
 	managed, err := env.Runtime.Start(dbcontext.New(), tracing.StartRequest{Kind: goprof.Kind, Params: json.RawMessage(`{}`)})
 	Expect(err).ToNot(HaveOccurred())
 	tracingtest.Running(managed.Session())
@@ -70,7 +70,7 @@ var _ = Describe("goprof", func() {
 		defer func() { Expect(original.Close()).To(Succeed()) }()
 		written, err := profile.Parse(original)
 		Expect(err).ToNot(HaveOccurred())
-		env, managed := newEnv(nil)
+		env, managed := newEnv(goprof.Addresses{})
 		key := strconv.Itoa(run.Process.Pid) + "@1"
 
 		Expect(checkpoint(env, managed, fmt.Sprintf(`{"key": %q, "source": "file", "profile": "cpu", "path": %q, "reason": "exit"}`, key, path))).To(Succeed())
@@ -94,9 +94,15 @@ var _ = Describe("goprof", func() {
 
 	It("reads a live heap profile over pprof and gops", func() {
 		child := tracingtest.StartGoChild(goChild, "-pprof", "-gops", GinkgoT().TempDir())
-		addresses := map[string]string{goprof.SourcePProf: child.Announced["pprof"], goprof.SourceGops: child.Announced["gops"]}
-		for source, addr := range addresses {
-			env := tracingtest.NewEnv(map[string]tracing.TracePlugin{goprof.Kind: goprof.NewKind(func(pid int) (string, bool) { return addr, pid == child.PID })})
+		at := func(addr string) stacks.AddressFunc {
+			return func(pid int) (string, bool) { return addr, pid == child.PID }
+		}
+		addresses := map[string]goprof.Addresses{
+			goprof.SourcePProf: {PProf: at(child.Announced["pprof"])},
+			goprof.SourceGops:  {Gops: at(child.Announced["gops"])},
+		}
+		for source, kindAddresses := range addresses {
+			env := tracingtest.NewEnv(map[string]tracing.TracePlugin{goprof.Kind: goprof.NewKind(kindAddresses)})
 			managed, err := env.Runtime.Start(dbcontext.New(), tracing.StartRequest{Kind: goprof.Kind, Params: json.RawMessage(`{"rootPid": ` + strconv.Itoa(child.PID) + `}`)})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(checkpoint(env, managed, `{"source": "`+source+`", "profile": "heap", "reason": "manual"}`)).To(Succeed())
@@ -105,9 +111,17 @@ var _ = Describe("goprof", func() {
 		}
 	})
 
+	It("reads a source only at that source's address", func() {
+		gopsOnly := goprof.Addresses{Gops: func(int) (string, bool) { return "127.0.0.1:1", true }}
+		env, managed := newEnv(gopsOnly)
+		err := checkpoint(env, managed, `{"source": "pprof", "profile": "heap"}`)
+		Expect(err).To(MatchError(tracing.ErrCheckpointParams))
+		Expect(err).To(MatchError(ContainSubstring("has no pprof address")))
+	})
+
 	DescribeTable("refuses a checkpoint it cannot read",
 		func(params, refusal string) {
-			env, managed := newEnv(nil)
+			env, managed := newEnv(goprof.Addresses{})
 			err := checkpoint(env, managed, params)
 			Expect(err).To(MatchError(tracing.ErrCheckpointParams))
 			Expect(err).To(MatchError(ContainSubstring(refusal)))

@@ -32,17 +32,18 @@ type Sampler struct {
 
 func NewSampler() *Sampler { return &Sampler{rates: newCPURates()} }
 
-// observed is a process at a listing and the CPU% it used over its latest
+// Observed is a process at a listing and the CPU% it used over its latest
 // window of at least cpuWindow; nil until that window has passed.
-type observed struct {
+type Observed struct {
 	clickyprocess.Process
-	cpuPercent *float64
+	IntervalCPUPercent *float64
 }
 
-// subtree is root and every process under it at a listing taken within
+// Observe is root and every process under it at a listing taken within
 // reuseWithin of now, each with its CPU%, and when that listing was taken. A
-// root that is not running returns no processes.
-func (s *Sampler) subtree(ctx context.Context, root int) ([]observed, time.Time, error) {
+// root that is not running returns no processes; a root of 0 is every
+// process on the host.
+func (s *Sampler) Observe(ctx context.Context, root int) ([]Observed, time.Time, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.listed == nil || time.Since(s.listedAt) >= reuseWithin {
@@ -53,14 +54,17 @@ func (s *Sampler) subtree(ctx context.Context, root int) ([]observed, time.Time,
 		s.listed, s.listedAt = listed, time.Now().UTC()
 		s.rates.forget(listed.All())
 	}
-	processes := s.listed.Subtree(root)
+	processes := s.listed.All()
+	if root != 0 {
+		processes = s.listed.Subtree(root)
+	}
 	cpu, err := s.rates.observe(processes, s.listedAt)
 	if err != nil {
 		return nil, time.Time{}, err
 	}
-	result := make([]observed, 0, len(processes))
+	result := make([]Observed, 0, len(processes))
 	for _, p := range processes {
-		result = append(result, observed{Process: p, cpuPercent: cpu[Key(p)]})
+		result = append(result, Observed{Process: p, IntervalCPUPercent: cpu[Key(p)]})
 	}
 	return result, s.listedAt, nil
 }
@@ -94,7 +98,7 @@ func (r *cpuRates) observe(processes []clickyprocess.Process, at time.Time) (map
 		baseline, ok := r.baselines[key]
 		switch {
 		case ok && baseline.observedAt.Equal(at):
-		case !ok || p.Status == "zombie" || p.Status == "exiting" || !samePID(baseline.sample.Process, p):
+		case !ok || p.Status == "zombie" || p.Status == "exiting" || !sameProcess(baseline.sample.Process, p):
 			baseline = cpuBaseline{sample: current}
 		case at.Sub(baseline.sample.At) >= cpuWindow:
 			percent, err := clickyprocess.IntervalCPUPercent(&baseline.sample, current)
@@ -126,9 +130,15 @@ func (r *cpuRates) forget(listed []clickyprocess.Process) {
 	}
 }
 
-// samePID reports whether two observations sharing a Key are one process,
-// not a pid reused within the second its first holder started.
-func samePID(previous, current clickyprocess.Process) bool {
+// sameProcess reports whether two observations sharing a Key are one live
+// process. ps gives the start to the second, so a pid reused within the
+// second its first holder started has an equal start; a process's CPU time
+// never falls, so one that fell is that new holder, or a task darwin tore
+// down before ps listed it as a zombie.
+func sameProcess(previous, current clickyprocess.Process) bool {
+	if current.CPUTime < previous.CPUTime {
+		return false
+	}
 	return previous.StartedAt == nil || current.StartedAt == nil || previous.StartedAt.Equal(*current.StartedAt)
 }
 

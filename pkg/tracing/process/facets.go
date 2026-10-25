@@ -36,11 +36,26 @@ var facets = []facet{
 	},
 }
 
+// FacetDescriptors are held split into each facet's list, by facet name
+// (Facets); a facet that holds none has an empty list.
+func FacetDescriptors(held []clickyprocess.Descriptor) map[string][]clickyprocess.Descriptor {
+	lists := make(map[string][]clickyprocess.Descriptor, len(facets))
+	for _, f := range facets {
+		lists[f.name] = []clickyprocess.Descriptor{}
+		for _, d := range held {
+			if f.holds(d) {
+				lists[f.name] = append(lists[f.name], d)
+			}
+		}
+	}
+	return lists
+}
+
 // read reads the disk IO of every process, and, when a facet is armed, the
 // descriptors of every one of them with one lsof call; a process that
 // exited before it was read has neither, and one the caller may not read has
 // its IOError.
-func (r *samplesRun) read(ctx context.Context, processes []observed) (map[int]clickyprocess.Process, map[int][]clickyprocess.Descriptor, error) {
+func (r *samplesRun) read(ctx context.Context, processes []Observed) (map[int]clickyprocess.Process, map[int][]clickyprocess.Descriptor, error) {
 	pids := make([]int, 0, len(processes))
 	listed := make([]clickyprocess.Process, 0, len(processes))
 	for _, p := range processes {
@@ -92,7 +107,7 @@ func (r *samplesRun) facets(sample *Sample, held []clickyprocess.Descriptor, ful
 }
 
 // forget drops the stored lists of processes no longer in the tree.
-func (r *samplesRun) forget(processes []observed) {
+func (r *samplesRun) forget(processes []Observed) {
 	live := make(map[string]bool, len(processes))
 	for _, p := range processes {
 		live[Key(p.Process)] = true
