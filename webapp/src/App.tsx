@@ -1,31 +1,32 @@
-import { lazy, Suspense } from "react";
-import { AppShell, Button, Panel } from "@flanksource/clicky-ui/components";
+import { AppShell, Button } from "@flanksource/clicky-ui/components";
 import { useTheme } from "@flanksource/clicky-ui/hooks";
+import { RouterProvider, useBrowserRouter, useRouter } from "@flanksource/clicky-ui/rpc";
+import { AppRoutes, matchRoute } from "./routes";
 
-const Status = lazy(() => import("./Status"));
-const TracesPage = lazy(() => import("./traces/TracesPage"));
-
-export default function App() {
+function Shell() {
   const { resolvedTheme, setTheme } = useTheme();
+  const { pathname } = useRouter();
+  const page = matchRoute(pathname).page;
   return (
     <AppShell
       brand={<span className="font-semibold">Telltale</span>}
       contentWidth="contained"
+      navSections={[{
+        items: [
+          { key: "overview", label: "Overview", to: "/", active: page === "overview" },
+          { key: "top", label: "Top", to: "/top", active: page === "top" || page === "process" },
+        ],
+      }]}
       actions={<Button variant="outline" onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}>Switch to {resolvedTheme === "dark" ? "light" : "dark"} theme</Button>}
     >
       <div className="space-y-8 px-4 py-12 md:px-8">
-        <div className="space-y-3">
-          <h1 className="text-3xl font-semibold tracking-tight">Telltale</h1>
-          <p className="text-muted-foreground">Your workspace is ready.</p>
-        </div>
-        <Panel title="Backend connection">
-          <Suspense fallback={<p role="status">Connecting to the backend…</p>}><Status /></Suspense>
-        </Panel>
-        <Panel title="Trace runs">
-          <Suspense fallback={<p role="status">Loading trace runs…</p>}><TracesPage /></Suspense>
-        </Panel>
-        <a className="text-sm underline underline-offset-4" href="/api/openapi.json">View the OpenAPI specification</a>
+        <AppRoutes />
       </div>
     </AppShell>
   );
+}
+
+export default function App() {
+  const router = useBrowserRouter();
+  return <RouterProvider adapter={router}><Shell /></RouterProvider>;
 }
