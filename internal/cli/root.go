@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"fmt"
+
 	"github.com/flanksource/clicky"
+	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/internal/server"
 	"github.com/spf13/cobra"
 )
@@ -9,7 +12,10 @@ import (
 func NewRoot(version string) *cobra.Command {
 	root := &cobra.Command{
 		Use: "telltale", Short: "Telltale", Version: version, SilenceUsage: true,
-		PersistentPreRunE: func(*cobra.Command, []string) error { return EnableHTTPWireLogging() },
+		PersistentPreRunE: func(*cobra.Command, []string) error {
+			clicky.Flags.UseFlags()
+			return EnableHTTPWireLogging()
+		},
 	}
 	clicky.BindAllFlags(root.PersistentFlags(), "format")
 	options := server.Options{Root: root, Version: version, Host: "localhost", Port: 8080, UIPort: 5173, WebDirectory: "webapp", WorkDir: "."}
@@ -25,6 +31,12 @@ func NewRoot(version string) *cobra.Command {
 	serve.Flags().IntVar(&options.UIPort, "ui-port", options.UIPort, "Vite port in development")
 	serve.Flags().StringVar(&options.WebDirectory, "web-dir", options.WebDirectory, "Frontend source directory for --dev")
 	serve.Flags().StringVar(&options.WorkDir, "work-dir", options.WorkDir, "Directory whose .telltale/traces run stores are served")
-	root.AddCommand(serve, newTraceCommand())
+	root.AddCommand(serve, newTraceCommand(), newConnectionCommand(), newRunCommand(), newTopCommand())
+	for _, preset := range telltale.Presets() {
+		if existing, _, err := root.Find([]string{preset.Name}); err == nil && existing != root {
+			panic(fmt.Sprintf("preset %q is named as the %q command", preset.Name, existing.CommandPath()))
+		}
+		root.AddCommand(newPresetCommand(preset))
+	}
 	return root
 }
