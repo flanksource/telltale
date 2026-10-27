@@ -16,11 +16,11 @@ Open `http://localhost:8080`. The server exposes `/health` and `/api/openapi.jso
 
 ## Tracing a command
 
-`telltale trace run` runs a command under trace and keeps what it recorded in a run store at `.telltale/traces/<run id>` under `--work-dir` (default `.`). Each `--trace kind[:{json params}]` arms one capture and points the command at it through the environment it exports; the default is the `http_proxy` recording proxy. The process tree under telltale is always recorded.
+`telltale trace run` runs a command under trace and keeps what it recorded in a run store at `.telltale/traces/<run id>` under `--work-dir` (default `.`). Each `--trace kind[:{json params}]` arms one capture and points the command at it through the environment it exports; the default is the `http` proxy seam. The process tree under telltale is always recorded.
 
 ```sh
 # Record TLS traffic in full: the proxy terminates TLS with an ephemeral CA it exports to curl.
-telltale trace run --trace 'http_proxy:{"mode":"mitm"}' -- curl -sS https://example.com
+telltale trace run --trace 'http:{"target":{"seam":"proxy"},"mode":"mitm"}' -- curl -sS https://example.com
 telltale trace list --status failed --since 2h
 telltale serve
 ```
@@ -32,13 +32,13 @@ telltale serve
 `telltale run <kind>` arms a single trace kind, its params as flags. There is one subcommand for every kind in the registry, which `pkg/traces` fills in `init()` before the CLI is built, so a kind registered by another package's `init()` gets its own command with no CLI change. `telltale run <kind> --help` shows what the kind records, its flags with their defaults and choices, the variables it exports and examples.
 
 ```sh
-telltale run http_proxy --mode mitm --hosts '*.example.com' -- curl -sS https://api.example.com
-telltale run pg_proxy --env ORDERS_DB_URL --params -- go test ./...
+telltale run http --seam proxy --mode mitm --hosts '*.example.com' -- curl -sS https://api.example.com
+telltale run sql --seam proxy --env ORDERS_DB_URL --params -- go test ./...
 telltale run stacks --every 10s -- ./server          # dump the server's stacks every 10s
 telltale run process_samples --pid 1234 --facets ports --duration 1m
 ```
 
-Kinds that observe a process tree (`process_tree`, `process_samples`, `stacks`, `goprof`) can attach to a running process with `--pid`, recording until Ctrl+C, `--duration`, or the process exits; the process is left running. Proxies (`http_proxy`, `pg_proxy`) only work on a command they are pointed at. `stacks` and `goprof` read at checkpoints: every `--every`, and once as an attached run stops. A checkpoint that fails fails the run, listed under `checkpointErrors`.
+Kinds that observe a process tree (`process_tree`, `process_samples`, `stacks`, `goprof`) can attach to a running process with `--pid`, recording until Ctrl+C, `--duration`, or the process exits; the process is left running. The `http` and `sql` proxy seams work on a command they are pointed at; their agent seams attach to instrumented processes. `stacks` and `goprof` read at checkpoints: every `--every`, and once as an attached run stops. A checkpoint that fails fails the run, listed under `checkpointErrors`.
 
 Presets are named runs of several kinds, each a top-level command:
 
@@ -55,7 +55,7 @@ Both also take `-- command [args...]`. A program registers its own with `telltal
 |---|---|
 | `GET /api/traces?q=&status=&kind=&since=&limit=` | Lists runs, newest first (`since` is RFC 3339) |
 | `GET /api/traces/start` | The start form: a JSON schema and its defaults |
-| `POST /api/traces` | Starts `{"command": "...", "facets": false, "traces": {"http_proxy": {"enabled": true, "mode": "mitm"}}}`; the command runs with `sh -c` in the work dir and its output goes to `output.log` in the run's store. A refused request is a 400 `{"errors": [{"instancePath", "message"}]}` |
+| `POST /api/traces` | Starts `{"command": "...", "facets": false, "traces": {"http": {"enabled": true, "target": {"seam": "proxy"}, "mode": "mitm"}}}`; the command runs with `sh -c` in the work dir and its output goes to `output.log` in the run's store. A refused request is a 400 `{"errors": [{"instancePath", "message"}]}` |
 | `DELETE /api/traces/<run id>` | Stops a run the server is running |
 | `/api/traces/<run id>/api/v1/...` | The run's records, exports and checkpoints, live from its running captures |
 
@@ -124,7 +124,7 @@ The module root package starts, stops, lists and serves runs for other Go progra
 ```go
 run, err := telltale.Start(ctx, telltale.StartOptions{
 	WorkDir: ".", Command: []string{"curl", "-sS", "https://example.com"},
-	Traces:    []telltale.TraceSpec{{Kind: "http_proxy"}},
+	Traces:    []telltale.TraceSpec{{Kind: "http", Params: json.RawMessage(`{"target":{"seam":"proxy"}}`)}},
 	TraceRoot: telltale.TraceRootCommand, // trace the command's own tree, in its own process group
 })
 result, err := run.Wait() // or run.Stop(), or telltale.Stop(telltale.StopOptions{WorkDir: ".", RunID: run.ID()})
@@ -184,6 +184,8 @@ The other Go packages are importable too:
 
 ## Development with local Clicky UI
 
+Go commands use the developer's local `go.work` when present; the Taskfile does not set `GOWORK`. CI explicitly selects the repository's `go.work.ci`, which includes the in-tree SDK modules and version-specific replacements needed for their unpublished `v0.0.0` requirements.
+
 Install the sibling Clicky UI checkout's dependencies using its own setup instructions, then start Telltale:
 
 ```sh
@@ -226,20 +228,14 @@ Vite 8 uses Rolldown for bundling. The app keeps the React runtime in a shared c
 
 ## Releases
 
-After main passes CI, a serialized release job checks out the exact verified source SHA, builds assets using locked published dependencies, and validates the release candidate. It creates one detached commit containing only `webapp/dist`, tags that commit, verifies the tagged Go build, and pushes only the tag. Main receives no generated asset commits.
+After main passes CI, a serialized release job checks out the exact verified source SHA, builds assets using locked published dependencies, and validates the release candidate. It creates one detached commit containing `webapp/dist` and release-version module requirements and checksums. Main receives no generated asset commits.
 
 ```text
 main:        A --- B --- C
                    \
-                    assets commit <- v0.0.1
+                    release commit <- sdk/v0.0.1, v0.0.1
 ```
 
-Versions use the same all-tags `svu patch` convention as Gavel, starting at `v0.0.1`. A retry reuses an existing tag only when its parent matches the verified source and its diff contains only assets. Tags are never force-moved. Release preparation is covered by disposable Git-repository tests and is not a command to run in a developer checkout.
+Versions start at `v0.0.1` and advance the patch version past stable versions already used by root or SDK tags. SDK module tags and the root tag point to the same release commit. Checksums are calculated from the tracked release tree before that commit is created, so the SDK tags can be pushed first and the root build can resolve them with `GOWORK=off` before the root tag is published. A retry reuses the release commit only when its parent matches the verified source and its changes are limited to assets and module files. Tags are never force-moved. Release preparation is covered by disposable Git-repository tests and is not a command to run in a developer checkout.
 
-Tagged source includes all embedded files, so installation needs only Go:
-
-```sh
-go install github.com/flanksource/telltale/cmd/telltale@v0.0.1
-```
-
-No release has been created by repository initialization. The example tag becomes usable only after the first successful release job.
+Tagged source includes the embedded files, but `go install github.com/flanksource/telltale/cmd/telltale@<version>` remains blocked by the root module's pre-existing `github.com/glebarez/sqlite` replacement. Go does not permit versioned installation of a main module whose `go.mod` contains directives that would change its interpretation as a dependency. Build from a checkout of the release tag instead.

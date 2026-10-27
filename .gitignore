@@ -12,4 +12,5 @@ webapp/dist/*
 
 go.work
 go.work.sum
+go.work.ci.sum
 .new
