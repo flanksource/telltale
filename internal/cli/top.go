@@ -25,6 +25,7 @@ type topFlags struct {
 	params   groups.Params
 	every    time.Duration
 	sort     string
+	groupBy  string
 	reverse  bool
 	record   bool
 	once     bool
@@ -33,7 +34,7 @@ type topFlags struct {
 }
 
 func newTopCommand() *cobra.Command {
-	flags := topFlags{every: groups.DefaultInterval, sort: groups.SortCPU, workDir: "."}
+	flags := topFlags{every: groups.DefaultInterval, sort: groups.SortCPU, groupBy: string(groups.GroupTree), workDir: "."}
 	cmd := &cobra.Command{
 		Use:   "top",
 		Short: "Show the CPU, memory, disk, sockets and network of each tool's processes: agents, tests, browsers, builds, services",
@@ -42,7 +43,7 @@ func newTopCommand() *cobra.Command {
 			"and shows what each group and those under it use, full screen. The processes no tool holds are kept under other (the user's) " +
 			"and system (root's and the role accounts'), by program.\n\n" +
 			"Keys: ↑↓ move, ←→ fold, enter lists the selected group's processes, s sorts, S reverses, / filters, o shows other processes, " +
-			"n reads network bytes, q quits.\n\n" +
+			"b cycles grouping, n reads network bytes, q quits.\n\n" +
 			"Nothing is kept unless --record records a run into .telltale/traces, which `telltale trace list` and `telltale serve` show. " +
 			"Rules come from the built-in catalog and .telltale/groups.yaml (or --catalog).",
 		Example: "  telltale top\n  telltale top --groups claude --sort mem\n  telltale top --record --duration 10m --net\n  telltale top --once --format json",
@@ -53,6 +54,7 @@ func newTopCommand() *cobra.Command {
 	}
 	cmd.Flags().DurationVar(&flags.every, "every", flags.every, "How often the groups are read (at least 1s)")
 	cmd.Flags().StringVar(&flags.sort, "sort", flags.sort, fmt.Sprintf("Sort siblings by, one of %v", groups.Sorts))
+	cmd.Flags().StringVar(&flags.groupBy, "group-by", flags.groupBy, fmt.Sprintf("Group by, one of %v", groups.Groupings))
 	cmd.Flags().BoolVar(&flags.reverse, "reverse", false, "Sort lowest first, or the name Z first")
 	cmd.Flags().BoolVar(&flags.params.All, "all", false, "Also show the processes no tool's group holds, by scope and program")
 	cmd.Flags().StringSliceVar(&flags.params.Groups, "groups", nil, "Show only these groups and those under them, e.g. claude,vitest")
@@ -68,6 +70,9 @@ func newTopCommand() *cobra.Command {
 func (f topFlags) order() groups.Order { return groups.Order{By: f.sort, Reverse: f.reverse} }
 
 func (f topFlags) run(cmd *cobra.Command) error {
+	if err := groups.GroupBy(f.groupBy).Validate(); err != nil {
+		return err
+	}
 	if f.record && f.once {
 		return errors.New("--once prints one frame without recording: drop --record or --once")
 	}
@@ -149,7 +154,11 @@ func (f topFlags) printOnce(ctx context.Context, top *groups.Top) error {
 	if err != nil {
 		return err
 	}
-	sorted, err := frame.Sorted(f.order())
+	projected, err := frame.Grouped(groups.GroupBy(f.groupBy))
+	if err != nil {
+		return err
+	}
+	sorted, err := projected.Sorted(f.order())
 	if err != nil {
 		return err
 	}
@@ -215,6 +224,7 @@ func ended(done <-chan struct{}) bool {
 // show runs the full-screen view until q, Ctrl+C, ctx ending or its source
 // ending, and returns why it failed, if it did.
 func (f topFlags) show(ctx context.Context, options topui.Options) error {
+	options.GroupBy = groups.GroupBy(f.groupBy)
 	model := topui.New(ctx, options)
 	final, err := tea.NewProgram(model, tea.WithContext(ctx)).Run()
 	if last, ok := final.(topui.Model); ok {

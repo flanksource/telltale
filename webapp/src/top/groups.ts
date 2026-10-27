@@ -1,4 +1,5 @@
 import type { Frame, GroupContext, GroupKind, GroupSample, Origin, Scope, Usage } from "./api";
+import { projectGroups, rollupGroups, type GroupBy } from "./grouping";
 
 // The pure side of the process groups view: which groups a view shows and in
 // what order (mirroring groups.Frame.Sorted), and how their values read.
@@ -11,6 +12,7 @@ export type SortDir = "asc" | "desc";
 
 /** What the filter bar and the column headers choose. */
 export interface GroupsView {
+  groupBy: GroupBy;
   /** Matches a group's name, target, repo or command. */
   q: string;
   kind: GroupKind | "";
@@ -22,7 +24,7 @@ export interface GroupsView {
   dir: SortDir;
 }
 
-export const DEFAULT_VIEW: GroupsView = { q: "", kind: "", scope: "", showOther: false, sort: "cpu", dir: "desc" };
+export const DEFAULT_VIEW: GroupsView = { groupBy: "tree", q: "", kind: "", scope: "", showOther: false, sort: "cpu", dir: "desc" };
 
 // Processes no tool holds hang under a synthetic group per scope, other:<scope>,
 // which holds none itself; its children are other:<scope>:<program>.
@@ -78,7 +80,7 @@ function sortValue(usage: Usage, key: Exclude<SortKey, "name">): number {
 function matchesText(group: GroupSample, q: string): boolean {
   const needle = q.trim().toLowerCase();
   if (!needle) return true;
-  return [group.name, group.target, group.context.repo, group.command].some(field => field?.toLowerCase().includes(needle));
+  return [group.name, group.target, group.context.repo, group.context.gitCommonDir, group.context.session, group.context.sessionTitle, group.command].some(field => field?.toLowerCase().includes(needle));
 }
 
 /** The groups the view shows: those it matches and their ancestors, so a match keeps its place in the tree. */
@@ -86,10 +88,13 @@ function visibleGroups(groups: GroupSample[], view: GroupsView): GroupSample[] {
   const byKey = new Map(groups.map(group => [group.key, group]));
   const keep = new Set<string>();
   for (const group of groups) {
+    if (group.kind === "bucket") continue;
     if (group.kind === "other" && !view.showOther) continue;
     if (view.kind && group.kind !== view.kind) continue;
     if (view.scope && group.origin.scope !== view.scope) continue;
-    if (!matchesText(group, view.q)) continue;
+    let bucket = group;
+    while (bucket.parentKey && byKey.has(bucket.parentKey)) bucket = byKey.get(bucket.parentKey)!;
+    if (!matchesText(group, view.q) && !(bucket.kind === "bucket" && matchesText(bucket, view.q))) continue;
     for (let at: GroupSample | undefined = group; at && !keep.has(at.key); at = at.parentKey ? byKey.get(at.parentKey) : undefined) keep.add(at.key);
   }
   return groups.filter(group => keep.has(group.key));
@@ -99,8 +104,13 @@ function visibleGroups(groups: GroupSample[], view: GroupsView): GroupSample[] {
  * The groups the view shows, as a tree again: each group's children, and the top-level groups, sorted by the view's column; a group whose parent is not shown is top-level.
  * The programs under a synthetic other:<scope> group are listed only when the key is in expanded, or a text filter is set (so a match is never hidden).
  */
-export function groupRows(groups: GroupSample[], view: GroupsView, expanded: ReadonlySet<string> = new Set()): GroupRow[] {
-  const shown = visibleGroups(groups, view);
+export function viewGroups(groups: GroupSample[], view: GroupsView): GroupSample[] {
+  const shown = visibleGroups(projectGroups(groups, view.groupBy), view);
+  return view.groupBy === "tree" ? shown : rollupGroups(shown);
+}
+
+export function groupRows(groups: GroupSample[], view: GroupsView, expanded: ReadonlySet<string> = new Set(), collapsed: ReadonlySet<string> = new Set()): GroupRow[] {
+  const shown = viewGroups(groups, view);
   const present = new Set(shown.map(group => group.key));
   const children = new Map<string, GroupSample[]>();
   for (const group of shown) {
@@ -116,6 +126,7 @@ export function groupRows(groups: GroupSample[], view: GroupsView, expanded: Rea
     for (const group of [...(children.get(parent) ?? [])].sort(compare)) {
       rows.push({ group, depth });
       if (isSyntheticOther(group) && !expanded.has(group.key) && !view.q.trim()) continue;
+      if (group.kind === "bucket" && collapsed.has(group.key) && !view.q.trim()) continue;
       walk(group.key, depth + 1);
     }
   };
@@ -154,6 +165,7 @@ function truncate(text: string, width: number): string {
 
 /** A group's name and target; an agent's target is its session id, cut to 8 characters. */
 export function groupLabel(group: GroupSample): string {
+  if (group.kind === "bucket") return group.name;
   const target = group.kind === "agent" && group.target ? group.target.slice(0, 8) : group.target;
   return [group.name, target].filter(Boolean).join(" ");
 }

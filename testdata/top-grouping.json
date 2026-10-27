@@ -1,0 +1,33 @@
+{
+  "frame": {
+    "sampledAt": "2026-01-01T00:00:00Z",
+    "tick": 1,
+    "groups": [
+      {"key":"agent-a","name":"claude","kind":"agent","pid":1,"context":{"repo":"/work/acme","gitCommonDir":"/work/acme/.git","branch":"main","agent":"claude","session":"session-a","sessionTitle":"Fix login"},"origin":{"scope":"user"},"self":{"processes":1,"cpuPercent":10,"rssBytes":100},"total":{"processes":99,"cpuPercent":999,"rssBytes":999}},
+      {"key":"tests","parentKey":"agent-a","name":"vitest","kind":"test","pid":2,"context":{"repo":"/work/acme-feature","gitCommonDir":"/work/acme/.git","branch":"feature"},"origin":{"scope":"user"},"self":{"processes":2,"cpuPercent":20,"rssBytes":200},"total":{"processes":99,"cpuPercent":999,"rssBytes":999}},
+      {"key":"codex","parentKey":"tests","name":"codex","kind":"agent","pid":3,"context":{"repo":"/work/other","gitCommonDir":"/work/other/.git","agent":"codex","session":"session-a"},"origin":{"scope":"user"},"self":{"processes":1,"cpuPercent":30,"rssBytes":300},"total":{"processes":99,"cpuPercent":999,"rssBytes":999}},
+      {"key":"agent-b","name":"claude","kind":"agent","pid":4,"context":{"repo":"/work/acme-feature","gitCommonDir":"/work/acme/.git","branch":"feature","agent":"claude","session":"session-b","sessionTitle":"Fix login"},"origin":{"scope":"user"},"self":{"processes":1,"cpuPercent":40,"rssBytes":400},"total":{"processes":99,"cpuPercent":999,"rssBytes":999}},
+      {"key":"build","parentKey":"agent-b","name":"go","kind":"build","pid":5,"context":{},"origin":{"scope":"user"},"self":{"processes":1,"rssBytes":50},"total":{"processes":99,"cpuPercent":999,"rssBytes":999}},
+      {"key":"orphan","parentKey":"gone","name":"tool","kind":"tool","pid":6,"context":{},"origin":{"scope":"user"},"self":{"processes":1,"cpuPercent":5,"rssBytes":50},"total":{"processes":99,"cpuPercent":999,"rssBytes":999}},
+      {"key":"apps","name":"applications","kind":"app","pid":0,"context":{},"origin":{},"self":{"processes":0,"rssBytes":0},"total":{"processes":99,"cpuPercent":999,"rssBytes":999}}
+    ]
+  },
+  "expected": {
+    "repo": [
+      {"target":"/work/acme/.git","members":["agent-a","tests","agent-b"],"processes":4,"cpuPercent":70,"rssBytes":700},
+      {"target":"/work/other/.git","members":["codex"],"processes":1,"cpuPercent":30,"rssBytes":300},
+      {"target":"","members":["build","orphan"],"processes":2,"cpuPercent":5,"rssBytes":100}
+    ],
+    "worktree": [
+      {"target":"/work/acme","members":["agent-a"],"processes":1,"cpuPercent":10,"rssBytes":100},
+      {"target":"/work/acme-feature","members":["tests","agent-b"],"processes":3,"cpuPercent":60,"rssBytes":600},
+      {"target":"/work/other","members":["codex"],"processes":1,"cpuPercent":30,"rssBytes":300},
+      {"target":"","members":["build","orphan"],"processes":2,"cpuPercent":5,"rssBytes":100}
+    ],
+    "claude-session": [
+      {"target":"session-a","members":["agent-a","tests"],"processes":3,"cpuPercent":30,"rssBytes":300},
+      {"target":"","members":["codex","orphan"],"processes":2,"cpuPercent":35,"rssBytes":350},
+      {"target":"session-b","members":["agent-b","build"],"processes":2,"cpuPercent":40,"rssBytes":450}
+    ]
+  }
+}

@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import { GroupsTable } from "./GroupsTable";
 import { DEFAULT_VIEW, type GroupsView } from "./groups";
 import { othersFrame, sampleFrame } from "./testFrames";
+import fixture from "../../../testdata/top-grouping.json";
+import type { Frame } from "./api";
 
 function renderTable(overrides: Partial<GroupsView> = {}, groups = sampleFrame().groups) {
   const onViewChange = vi.fn();
@@ -14,6 +16,17 @@ function renderTable(overrides: Partial<GroupsView> = {}, groups = sampleFrame()
 const cells = (name: RegExp) => within(screen.getByRole("row", { name })).getAllByRole("cell").map(cell => cell.textContent);
 
 describe("GroupsTable", () => {
+  it("shows aggregate repository buckets and folds their tools", () => {
+    renderTable({ groupBy: "repo" }, fixture.frame.groups as Frame["groups"]);
+    const bucket = screen.getByRole("button", { name: "Collapse acme" });
+    expect(cells(/^acme /).slice(1,4)).toEqual(["4", "70.0", "700 B"]);
+    fireEvent.click(bucket);
+    expect(screen.getByRole("button", { name: "Expand acme" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("vitest")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Expand acme" }));
+    expect(screen.getByText("vitest")).toBeInTheDocument();
+  });
+
   it("shows each group's total, and a dash for what is unknown rather than zero", () => {
     renderTable();
     // Group, Procs, CPU %, RSS, Disk read/s, Disk write/s, Net in/s, Net out/s, Sockets, Origin, Owner, Context

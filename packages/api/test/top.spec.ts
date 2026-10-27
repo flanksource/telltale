@@ -1,8 +1,7 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 let workDir: string;
@@ -25,7 +24,8 @@ function serve(): Promise<string> {
 }
 
 beforeAll(async () => {
-  workDir = await mkdtemp(join(tmpdir(), "telltale-top-"));
+  await mkdir(".tmp", { recursive: true });
+  workDir = await mkdtemp(resolve(".tmp", "telltale-top-"));
   apiURL = await serve();
 });
 
@@ -46,10 +46,19 @@ interface Usage {
 interface Frame {
   sampledAt: string;
   tick: number;
-  groups: Array<{ key: string; name: string; kind: string; pid: number; self: Usage; total: Usage }>;
+  groups: Array<{ key: string; name: string; kind: string; pid: number; context: { repo?: string; gitCommonDir?: string }; self: Usage; total: Usage }>;
 }
 
 describe("live process groups", () => {
+  it("carries Git identity in raw frames without adding presentation buckets", async () => {
+    const response = await fetch(`${apiURL}/api/top`);
+    expect(response.status).toBe(200);
+    const frame = await response.json() as Frame;
+    const ownGroup = frame.groups.find(group => group.pid === server.pid);
+    expect(ownGroup?.context).toMatchObject({ repo: resolve("."), gitCommonDir: resolve(".git") });
+    expect(frame.groups.some(group => group.kind === "bucket")).toBe(false);
+  });
+
   it("serves the latest frame of the host's groups, including the processes no tool owns", async () => {
     const response = await fetch(`${apiURL}/api/top?all=true`);
     expect(response.status).toBe(200);
@@ -134,5 +143,40 @@ describe("client routes", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("content-type")).toContain("text/html");
     expect(await response.text()).toContain('<div id="root">');
+  });
+});
+
+describe("process actions", () => {
+  it("renices and terminates a disposable child by its start-qualified identity", async () => {
+    const child = spawn("sleep", ["60"]);
+    const exited = once(child, "exit");
+    try {
+      let key = "";
+      await expect.poll(async () => {
+        const response = await fetch(`${apiURL}/api/top/processes?pid=${child.pid}&all=true`);
+        const reading = await response.json() as { processes: Array<{ pid: number; key: string }> };
+        key = reading.processes.find(p => p.pid === child.pid)?.key ?? "";
+        return key;
+      }, { timeout: 10000 }).toContain("@");
+      const act = (body: object) => fetch(`${apiURL}/api/top/action`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      expect((await act({ key: `${key}0`, action: "terminate" })).status).toBe(409);
+      expect((await act({ key, action: "renice", nice: 20 })).status).toBe(400);
+      expect((await act({ key, action: "renice", nice: 10 })).status).toBe(204);
+      expect((await act({ key, action: "terminate" })).status).toBe(204);
+      expect(await exited).toEqual([null, "SIGTERM"]);
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+      await exited;
+    }
+  });
+
+  it("rejects cross-origin actions, unsafe payloads and non-POST methods", async () => {
+    const actionURL = `${apiURL}/api/top/action`;
+    expect((await fetch(actionURL)).status).toBe(405);
+    expect((await fetch(actionURL, { method: "POST", body: "{}" })).status).toBe(415);
+    expect((await fetch(actionURL, { method: "POST", headers: { "Content-Type": "application/json", Origin: "https://untrusted.example" }, body: "{}" })).status).toBe(403);
+    for (const body of ['{"key":"1@1","action":"terminate"}', '{"key":"123@1","action":"kill"}', '{} {}', '{"extra":1}']) {
+      expect((await fetch(actionURL, { method: "POST", headers: { "Content-Type": "application/json" }, body })).status).toBe(400);
+    }
   });
 });

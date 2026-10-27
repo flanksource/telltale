@@ -75,7 +75,15 @@ telltale top --record --duration 10m           # record into .telltale/traces
 telltale trace list --kind process_groups
 ```
 
+Use `--group-by repo`, `--group-by worktree`, or `--group-by claude-session` to collect tool groups into expandable buckets; `--group-by tree` is the default process tree. Repository grouping combines a main checkout and its linked worktrees using their shared Git directory, while worktree grouping keeps each checkout separate and shows its branch. Claude session grouping uses the full session ID and displays its title when available; tools inherit their ancestor's session until another agent session begins. Missing metadata stays visible under `Unattributed`. Bucket totals count each tool group's own usage once and preserve unknown measurements.
+
+Press `b` in the terminal to cycle grouping without restarting sampling. The web `/top` page offers the same modes through **Group by**, persists the choice in `topGroupBy`, and applies it to tables and trends. Recordings retain raw tool groups, so grouping can change during playback; older recordings without shared Git directory metadata remain unattributed in repository mode, while their recorded checkout paths still support worktree grouping. For example, `telltale top --group-by repo --once --format json` prints one grouped frame, and `telltale top --group-by worktree --record --duration 1m` records raw groups while showing worktree buckets in an interactive terminal.
+
 In a terminal, `telltale top` takes the whole screen. The header shows the host's CPU split between processes (user), the kernel (system) and idle time and load, bars for memory and swap, and the disks' read and write IOPS and throughput. The title ends with telltale's own overhead: the CPU it and the commands it runs each tick (`ps`, `lsof`, `launchctl`) use, and how long a tick takes; JSON frames carry it as `overhead`. The groups fill the rest of the window as a tree, and the origin and context columns appear only when the window is wide enough. Keys: `↑↓` (or `j`/`k`, `g`/`G`, PgUp/PgDn) move; `←→` and space fold; `enter` lists the selected group's processes below the tree; `s` cycles the sort column and `S` reverses it; `/` filters by name, command, repo, owner or launchd label; `o` shows the processes no tool holds; `n` reads network bytes; `q` quits. When stdout is not a terminal, or with `--once`, it prints one frame instead.
+
+CPU hogs are highlighted when their CPU use exceeds 25% of all logical cores: on an 8-core host, the threshold is strictly greater than 200% in the per-core CPU column. In the terminal, open the process list with `enter`, choose a process with `[` / `]`, then press `x` to send SIGTERM or `r` to set its nice value to 10; `y` confirms and `n` / Escape cancels. The web process table offers **Terminate** and **Renice**, with a confirmation showing the PID and command and a nice value from -20 to 19 (higher means lower priority). These controls act on one live process, require OS permissions, and reject a process whose start-qualified identity changed. Recordings remain read-only.
+
+`POST /api/top/action` accepts an `application/json` body such as `{"key":"123@1793000000","action":"terminate"}` or `{"key":"123@1793000000","action":"renice","nice":10}`. Use the key returned by the live processes endpoint. Success is 204; invalid input is 400, stale identity is 409, and OS permission failures are 403. Cross-origin browser requests are refused. PID 1 and the Telltale server itself cannot be targeted.
 
 Each group also says where its process came from (`origin`):
 - the owner, and the scope: `system` for root and the role accounts, `user` otherwise;
@@ -188,6 +196,12 @@ Set `--ui-port` to change the Vite port and `--web-dir` when launching outside t
 
 ```sh
 task dev -- --port 8180 --ui-port 5174
+```
+
+To install a binary built against the same local Clicky UI source (honouring `TELLTALE_CLICKY_UI_DIR`):
+
+```sh
+task install:symlinked
 ```
 
 Production builds and normal frontend tests use published Clicky UI packages from the lockfile. A plain source checkout compiles with an embed sentinel but cannot serve the production UI until `make build` has generated it.

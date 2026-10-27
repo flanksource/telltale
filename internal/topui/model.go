@@ -10,6 +10,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/flanksource/telltale/internal/processcontrol"
 	"github.com/flanksource/telltale/pkg/tracing/groups"
 )
 
@@ -30,6 +31,7 @@ type Options struct {
 	Toggles Toggles
 	Every   time.Duration
 	Order   groups.Order
+	GroupBy groups.GroupBy
 	// Title says what is shown, such as where a recording goes.
 	Title string
 	// Done ends the view once closed, as a recording's run ends.
@@ -39,31 +41,40 @@ type Options struct {
 // Model is the view's state: the latest frame, the selected group and how
 // the tree is folded, filtered and sorted.
 type Model struct {
-	ctx      context.Context
-	options  Options
-	source   Source
-	toggles  Toggles
-	order    groups.Order
-	gen      int
-	frame    *groups.Frame
-	width    int
-	height   int
-	selected string
-	offset   int
-	folded   map[string]bool
-	query    string
-	typing   bool
-	detail   bool
-	status   string
-	err      error
-	failures int
+	ctx        context.Context
+	options    Options
+	source     Source
+	toggles    Toggles
+	order      groups.Order
+	gen        int
+	frame      *groups.Frame
+	raw        *groups.Frame
+	groupBy    groups.GroupBy
+	width      int
+	height     int
+	selected   string
+	offset     int
+	folded     map[string]bool
+	query      string
+	typing     bool
+	detail     bool
+	status     string
+	err        error
+	failures   int
+	processKey string
+	pending    *processcontrol.Request
+	acting     bool
 }
 
 // New is a Model reading options.Source until ctx ends.
 func New(ctx context.Context, options Options) Model {
+	if options.GroupBy == "" {
+		options.GroupBy = groups.GroupTree
+	}
 	return Model{
 		ctx: ctx, options: options, source: options.Source, toggles: options.Toggles, order: options.Order,
-		folded: map[string]bool{},
+		groupBy: options.GroupBy,
+		folded:  map[string]bool{},
 	}
 }
 
@@ -113,6 +124,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case doneMsg:
 		return m, tea.Quit
+	case actionMsg:
+		m.acting = false
+		m.status = msg.text
+		return m, nil
 	case tea.KeyPressMsg:
 		return m.pressed(msg)
 	}
@@ -144,14 +159,10 @@ func (m Model) received(msg frameMsg) (tea.Model, tea.Cmd) {
 		m.status = ""
 	}
 	if msg.ok {
-		sorted, err := msg.frame.Sorted(m.order)
-		if err != nil {
-			m.err = err
+		m.raw = &msg.frame
+		m.resort()
+		if m.err != nil {
 			return m, tea.Quit
-		}
-		m.frame = &sorted
-		if m.selected == "" && len(sorted.Groups) > 0 {
-			m.selected = sorted.Groups[0].Key
 		}
 	}
 	m.scroll()
@@ -164,6 +175,9 @@ func (m Model) pressed(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	if m.typing {
 		return m.typed(msg), nil
+	}
+	if m.pending != nil {
+		return m.confirmAction(msg)
 	}
 	rows := m.rows()
 	index := m.selectedIndex(rows)
@@ -204,6 +218,10 @@ func (m Model) command(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "q":
 		return m, tea.Quit
+	case "[", "]":
+		m.cycleProcess(key)
+	case "x", "r":
+		return m.prepareAction(key)
 	case "j", "k", "g", "G":
 		rows := m.rows()
 		index := m.selectedIndex(rows)
@@ -213,6 +231,9 @@ func (m Model) command(key string) (tea.Model, tea.Cmd) {
 		m.resort()
 	case "S":
 		m.order.Reverse = !m.order.Reverse
+		m.resort()
+	case "b":
+		m.groupBy = groups.Groupings[(slices.Index(groups.Groupings, m.groupBy)+1)%len(groups.Groupings)]
 		m.resort()
 	case "/":
 		m.typing = true
@@ -246,15 +267,23 @@ func (m Model) typed(msg tea.KeyPressMsg) Model {
 }
 
 func (m *Model) resort() {
-	if m.frame == nil {
+	if m.raw == nil {
 		return
 	}
-	sorted, err := m.frame.Sorted(m.order)
+	projected, err := m.raw.Grouped(m.groupBy)
 	if err != nil {
-		m.status = err.Error()
+		m.err, m.status = err, err.Error()
+		return
+	}
+	sorted, err := projected.Sorted(m.order)
+	if err != nil {
+		m.err, m.status = err, err.Error()
 		return
 	}
 	m.frame = &sorted
+	if rows := m.rows(); m.selectedIndex(rows) < 0 && len(rows) > 0 {
+		m.selected = rows[0].group.Key
+	}
 }
 
 // reopen reads with toggles from a new source, its frames replacing the
@@ -287,41 +316,59 @@ type row struct {
 	folded bool
 }
 
-// rows are the groups shown: those the query matches and their ancestors,
-// or every one, without those under a folded group. The groups that hold
-// no tool's processes start folded.
-func (m Model) rows() []row {
+func (m Model) matchingGroups() []groups.GroupSample {
 	if m.frame == nil {
 		return nil
 	}
+	if m.query == "" {
+		return m.frame.Groups
+	}
 	byKey := map[string]groups.GroupSample{}
-	parents := map[string]bool{}
 	for _, group := range m.frame.Groups {
 		byKey[group.Key] = group
-		parents[group.ParentKey] = true
 	}
 	shown := map[string]bool{}
 	query := strings.ToLower(m.query)
 	for _, group := range m.frame.Groups {
-		if query != "" && !matches(group, query) {
+		match := matches(group, query)
+		for parent := byKey[group.ParentKey]; !match && parent.Key != ""; parent = byKey[parent.ParentKey] {
+			match = parent.Kind == groups.KindBucket && matches(parent, query)
+		}
+		if query != "" && !match {
 			continue
 		}
 		for key := group.Key; key != "" && !shown[key]; key = byKey[key].ParentKey {
 			shown[key] = true
 		}
 	}
+	var displayed []groups.GroupSample
+	for _, group := range m.frame.Groups {
+		if shown[group.Key] {
+			displayed = append(displayed, group)
+		}
+	}
+	if m.groupBy != groups.GroupTree {
+		return groups.Rollup(displayed)
+	}
+	return displayed
+}
+
+// rows applies folding to the matching group forest.
+func (m Model) rows() []row {
+	displayed := m.matchingGroups()
+	parents := map[string]bool{}
+	for _, group := range displayed {
+		parents[group.ParentKey] = true
+	}
 	var rows []row
 	depth := map[string]int{}
 	hidden := map[string]bool{}
-	for _, group := range m.frame.Groups {
+	for _, group := range displayed {
 		level, known := depth[group.ParentKey]
 		if known {
 			level++
 		}
 		depth[group.Key] = level
-		if !shown[group.Key] {
-			continue
-		}
 		folded := m.isFolded(group, parents[group.Key])
 		if hidden[group.ParentKey] {
 			hidden[group.Key] = true
@@ -344,7 +391,7 @@ func (m Model) isFolded(group groups.GroupSample, parent bool) bool {
 }
 
 func matches(group groups.GroupSample, query string) bool {
-	for _, text := range []string{groups.Label(group), group.Command, group.Context.Repo, group.Origin.Label, group.Origin.Service, group.Origin.Owner} {
+	for _, text := range []string{groups.Label(group), group.Command, group.Context.Repo, group.Context.GitCommonDir, group.Context.Session, group.Context.SessionTitle, group.Origin.Label, group.Origin.Service, group.Origin.Owner} {
 		if strings.Contains(strings.ToLower(text), query) {
 			return true
 		}
@@ -401,11 +448,14 @@ func (m Model) selectedProcesses() ([]groups.ProcessSample, bool) {
 	}
 	under := map[string]bool{m.selected: true}
 	var processes []groups.ProcessSample
-	for _, group := range m.frame.Groups {
+	for _, group := range m.matchingGroups() {
 		if group.Key != m.selected && !under[group.ParentKey] {
 			continue
 		}
 		under[group.Key] = true
+		if group.Kind == groups.KindBucket {
+			continue
+		}
 		read, ok := m.source.Processes(groups.ProcessFilter{GroupKey: group.Key})
 		if !ok {
 			return nil, false

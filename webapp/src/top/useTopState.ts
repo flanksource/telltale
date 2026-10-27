@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { GROUP_KINDS, SCOPES, type GroupKind, type Scope } from "./api";
 import { DEFAULT_VIEW, SORT_KEYS, type GroupsView, type SortDir, type SortKey } from "./groups";
+import { GROUPINGS, type GroupBy } from "./grouping";
 
 export type TopTab = "live" | "recorded";
 
@@ -13,7 +14,7 @@ export interface TopState extends GroupsView {
 }
 
 // The parameters are prefixed so they stay clear of the trace runs' own (q, status, kind, run).
-const PARAMS = ["topTab", "topQ", "topKind", "topScope", "topOther", "topSort", "topDir", "topNet", "topRun"];
+const PARAMS = ["topTab", "topQ", "topKind", "topScope", "topOther", "topSort", "topDir", "topNet", "topRun", "topGroupBy"];
 
 function readTopState(): TopState {
   const params = new URLSearchParams(window.location.search);
@@ -22,7 +23,10 @@ function readTopState(): TopState {
   const sort = params.get("topSort") ?? "";
   const dir = params.get("topDir") ?? "";
   const run = params.get("topRun");
+  const groupBy = params.get("topGroupBy") ?? "tree";
+  if (!(GROUPINGS as readonly string[]).includes(groupBy)) throw new Error(`Unknown topGroupBy "${groupBy}"`);
   return {
+    groupBy: groupBy as GroupBy,
     tab: params.get("topTab") === "recorded" ? "recorded" : "live",
     q: params.get("topQ") ?? "",
     kind: (GROUP_KINDS as readonly string[]).includes(kind) ? kind as GroupKind : "",
@@ -47,6 +51,7 @@ function topParams(state: TopState): Array<[string, string]> {
     ["topDir", state.dir !== DEFAULT_VIEW.dir && state.dir],
     ["topNet", state.net && "1"],
     ["topRun", state.run ?? ""],
+    ["topGroupBy", state.groupBy !== "tree" && state.groupBy],
   ];
   return entries.filter((entry): entry is [string, string] => !!entry[1]);
 }

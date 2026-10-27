@@ -31,6 +31,8 @@ export interface Usage {
 export interface GroupContext {
   cwd?: string;
   repo?: string;
+  /** Canonical shared Git directory: identical across a repository's worktrees. */
+  gitCommonDir?: string;
   branch?: string;
   agent?: string;
   session?: string;
@@ -69,7 +71,7 @@ export interface GroupSample {
   key: string;
   parentKey?: string;
   name: string;
-  kind: GroupKind;
+  kind: GroupKind | "bucket";
   target?: string;
   pid: number;
   command: string;

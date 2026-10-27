@@ -4,7 +4,7 @@ import { Button, Tabs } from "@flanksource/clicky-ui/components";
 import { fetchTraceRuns } from "../traces/api";
 import { fetchTopFrame, PROCESS_GROUPS_KIND, type Frame } from "./api";
 import { GroupsFilterBar, GroupsTable } from "./GroupsTable";
-import { appendFrame, cpuTrend } from "./groups";
+import { appendFrame, cpuTrend, viewGroups } from "./groups";
 import { HostStrip } from "./HostStrip";
 import { RecordedGroups } from "./RecordedGroups";
 import { useTopState, type TopState, type TopTab } from "./useTopState";
@@ -41,7 +41,7 @@ function LiveGroups({ state, setState, query }: TabProps & { query: ReturnType<t
   useEffect(() => {
     if (query.data) setHistory(previous => appendFrame(previous, query.data, HISTORY_FRAMES));
   }, [query.data]);
-  const trend = useMemo(() => cpuTrend(history), [history]);
+  const trend = useMemo(() => cpuTrend(history.map(frame => ({ ...frame, groups: viewGroups(frame.groups, state) }))), [history, state]);
   return (
     <div className="space-y-4">
       <GroupsFilterBar view={state} onChange={setState}>
@@ -60,7 +60,8 @@ function LiveGroups({ state, setState, query }: TabProps & { query: ReturnType<t
       {query.data && (
         <>
           <p className="text-sm text-muted-foreground">tick {query.data.tick} · {new Date(query.data.sampledAt).toLocaleTimeString()}</p>
-          <GroupsTable groups={query.data.groups} view={state} onViewChange={setState} trend={trend} linkGroups />
+          <p className="text-sm text-muted-foreground">CPU hogs use more than 25% of all cores. Open a group to terminate or renice individual processes.</p>
+          <GroupsTable groups={query.data.groups} view={state} onViewChange={setState} trend={trend} linkGroups cores={query.data.host?.cores} />
         </>
       )}
     </div>

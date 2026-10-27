@@ -5,9 +5,26 @@ import type { RunTraces } from "../traces/api";
 import type { Frame, HostUsage } from "./api";
 import { othersFrame, sampleFrame } from "./testFrames";
 import TopPage from "./TopPage";
+import groupingFixture from "../../../testdata/top-grouping.json";
 
 beforeEach(() => window.history.replaceState(null, "", "/"));
 afterEach(() => vi.unstubAllGlobals());
+
+describe("grouping controls", () => {
+  it("switches grouping and restores the selected mode from the URL", async () => {
+    window.history.replaceState(null, "", "/top?topGroupBy=repo");
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(json(groupingFixture.frame))));
+    const page = renderPage();
+    expect(await screen.findByRole("button", { name: "Collapse acme" })).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Group by" })).toHaveValue("repo");
+    fireEvent.change(screen.getByRole("combobox", { name: "Group by" }), { target: { value: "worktree" } });
+    expect(window.location.search).toBe("?topGroupBy=worktree");
+    expect(screen.getByRole("button", { name: "Collapse acme-feature@feature" })).toBeInTheDocument();
+    page.unmount();
+    renderPage();
+    expect(await screen.findByRole("combobox", { name: "Group by" })).toHaveValue("worktree");
+  });
+});
 
 function json(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } });

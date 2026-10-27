@@ -21,7 +21,7 @@ var _ = Describe("RepoOf", func() {
 		nested := filepath.Join(root, "pkg", "deep")
 		Expect(os.MkdirAll(nested, 0o755)).To(Succeed())
 
-		Expect(groups.RepoOf(nested)).To(Equal(groups.Repo{Root: root, Branch: "feature/top"}))
+		Expect(groups.RepoOf(nested)).To(Equal(groups.Repo{Root: root, Branch: "feature/top", GitCommonDir: filepath.Join(root, ".git")}))
 	})
 
 	It("reads a worktree's branch through its .git file, and a detached head as its short commit", func() {
@@ -29,7 +29,7 @@ var _ = Describe("RepoOf", func() {
 		writeFile(filepath.Join(root, ".git"), "gitdir: "+gitDir+"\n")
 		writeFile(filepath.Join(gitDir, "HEAD"), "0123456789abcdef0123456789abcdef01234567\n")
 
-		Expect(groups.RepoOf(root)).To(Equal(groups.Repo{Root: root, Branch: "0123456"}))
+		Expect(groups.RepoOf(root)).To(Equal(groups.Repo{Root: root, Branch: "0123456", GitCommonDir: gitDir}))
 	})
 
 	It("is empty for a directory in no checkout", func() {

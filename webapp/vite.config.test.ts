@@ -48,6 +48,14 @@ describe("Clicky UI resolution", () => {
     expect(config.resolve?.alias).toEqual([]);
   });
 
+  it("builds against local source in local-ui mode", async () => {
+    vi.stubEnv("TELLTALE_CLICKY_UI_DIR", uiDirectory);
+    const config = await viteConfig({ command: "build", mode: "local-ui" });
+    const aliases = config.resolve?.alias;
+    if (!Array.isArray(aliases)) throw new Error("Expected alias array");
+    expect(aliases.find((alias) => new RegExp(alias.find).test("@flanksource/clicky-ui/components"))?.replacement).toBe(`${uiDirectory}/packages/ui/src/components.ts`);
+  });
+
   it("keeps production builds on installed dependencies", () => {
     const config = createViteConfig(options);
     expect(config.resolve?.alias).toEqual([]);

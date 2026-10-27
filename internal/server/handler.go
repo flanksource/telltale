@@ -42,6 +42,7 @@ func routes(options HandlerOptions, ui http.Handler) http.Handler {
 	root.Handle(TopMount, options.Top)
 	root.Handle(TopProcessesPath, options.Top)
 	root.Handle(TopFacetsPath, options.Top)
+	root.Handle(TopActionPath, options.Top)
 	root.Handle("/api/", api)
 	root.Handle("/api", http.NotFoundHandler())
 	root.Handle("/health", api)

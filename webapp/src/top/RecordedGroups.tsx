@@ -5,7 +5,7 @@ import { fetchLatestSeq, fetchTraceRecords, type CaptureResult, type RunTraces, 
 import { framesFromRecords, PROCESS_GROUPS_KIND, type Frame } from "./api";
 import { CpuChart } from "./charts";
 import { GroupsFilterBar, GroupsTable } from "./GroupsTable";
-import type { GroupsView } from "./groups";
+import { viewGroups, type GroupsView } from "./groups";
 
 const RECORDED_POLL_MS = 2000;
 
@@ -94,7 +94,7 @@ function RecordedFrames({ run, capture, view, onViewChange }: RecordedGroupsProp
             {run.status === "running" && <span role="status" className="rounded bg-blue-100 px-2 py-0.5 text-blue-800 dark:bg-blue-900 dark:text-blue-100">recording</span>}
           </div>
           <GroupsTable groups={frame.groups} view={view} onViewChange={onViewChange} />
-          <CpuChart frames={frames} />
+          <CpuChart frames={frames.map(frame => ({ ...frame, groups: viewGroups(frame.groups, view) }))} />
         </>
       )}
     </div>

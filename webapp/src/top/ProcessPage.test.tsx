@@ -190,8 +190,8 @@ describe("ProcessPage", () => {
     await screen.findByRole("row", { name: /--child/ });
     const cells = (name: RegExp) => within(screen.getByRole("row", { name })).getAllByRole("cell").map(cell => cell.textContent);
     // PID, PPID, Name, Owner, Scope, Origin, CPU %, RSS, Disk read/s, Disk write/s, Net in/s, Net out/s, Sockets, Command
-    expect(cells(/^101/)).toEqual(["101", "1", "launchd", "root", "system", "launchd:com.example.launchd root", "150.0", "2 GiB", "2 KiB/s", "1 KiB/s", "4 KiB/s", "512 B/s", "3", "/usr/bin/launchd"]);
-    expect(cells(/^202/)).toEqual(["202", "101", "launchd", "moshe", "user", "", "50.0", "1 GiB", "–", "–", "–", "–", "–", "launchd --child"]);
+    expect(cells(/^101/)).toEqual(["101", "1", "launchd", "root", "system", "launchd:com.example.launchd root", "150.0", "2 GiB", "2 KiB/s", "1 KiB/s", "4 KiB/s", "512 B/s", "3", "/usr/bin/launchd", "TerminateRenice"]);
+    expect(cells(/^202/)).toEqual(["202", "101", "launchd", "moshe", "user", "", "50.0", "1 GiB", "–", "–", "–", "–", "–", "launchd --child", "TerminateRenice"]);
     expect(screen.getAllByRole("row").slice(1).map(row => within(row).getAllByRole("cell")[0]!.textContent)).toEqual(["101", "202"]);
   });
 

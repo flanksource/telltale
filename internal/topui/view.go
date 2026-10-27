@@ -87,8 +87,8 @@ func (m Model) header() []string {
 	if m.order.Reverse {
 		direction = "↑"
 	}
-	title := fmt.Sprintf("telltale top · %s · %s · tick %d · %d groups · %d processes · sort %s%s",
-		m.options.Title, m.frame.SampledAt.Local().Format("15:04:05"), m.frame.Tick, len(m.frame.Groups), processes, m.order.By, direction)
+	title := fmt.Sprintf("telltale top · %s · %s · tick %d · %d groups · %d processes · by %s · sort %s%s",
+		m.options.Title, m.frame.SampledAt.Local().Format("15:04:05"), m.frame.Tick, len(m.frame.Groups), processes, m.groupBy, m.order.By, direction)
 	if overhead := m.frame.Overhead; overhead != nil {
 		title += fmt.Sprintf(" · overhead %s%% CPU %.0fms/tick", groups.Percent(overhead.CPUPercent), overhead.TickMillis)
 	}
@@ -208,11 +208,18 @@ func (m Model) renderRow(c columns, r row) string {
 		}
 	}
 	usage := r.group.Total
-	text := fit(c.line(strings.Repeat("  ", r.depth)+glyph+groups.Label(r.group), fmt.Sprint(usage.Processes), groups.Percent(usage.CPUPercent),
+	label := groups.Label(r.group)
+	if m.cpuHog(usage.CPUPercent) {
+		label = "! CPU hog · " + label
+	}
+	text := fit(c.line(strings.Repeat("  ", r.depth)+glyph+label, fmt.Sprint(usage.Processes), groups.Percent(usage.CPUPercent),
 		groups.Size(float64(usage.RSSBytes)), groups.Rate(usage.DiskRead), groups.Rate(usage.DiskWrite), groups.Rate(usage.NetRx),
 		groups.Rate(usage.NetTx), groups.Count(usage.Sockets), groups.OriginText(r.group.Origin), groups.ContextText(r.group.Context)), m.width)
 	if r.group.Key == m.selected {
 		return selectedStyle.Render(text)
+	}
+	if m.cpuHog(usage.CPUPercent) {
+		return statusStyle.Render(text)
 	}
 	if style, ok := kindStyles[r.group.Kind]; ok {
 		return style.Render(text)
@@ -241,11 +248,28 @@ func (m Model) renderDetail() []string {
 	commandWidth := max(10, m.width-(8+12+7+8+9+9+9+9+6+24))
 	lines = append(lines, headStyle.Render(fit(fmt.Sprintf("%8s %-11s%7s%8s%9s%9s%9s%9s%6s  %-22s%s",
 		"PID", "USER", "CPU%", "RSS", "DISK R/s", "DISK W/s", "NET IN/s", "NET OUT/s", "SOCK", "ORIGIN", "COMMAND"), m.width)))
-	for _, p := range processes[:min(len(processes), height-2)] {
-		lines = append(lines, fit(fmt.Sprintf("%8d %-11s%7s%8s%9s%9s%9s%9s%6s  %-22s%s",
+	start := 0
+	for index, p := range processes {
+		if p.Key == m.processKey {
+			start = max(0, index-(height-3))
+		}
+	}
+	for index := start; index < min(len(processes), start+height-2); index++ {
+		p := processes[index]
+		command := p.Command
+		if m.cpuHog(p.CPUPercent) {
+			command = "! CPU hog · " + command
+		}
+		text := fit(fmt.Sprintf("%8d %-11s%7s%8s%9s%9s%9s%9s%6s  %-22s%s",
 			p.PID, groups.Truncate(p.Origin.Owner, 10), groups.Percent(p.CPUPercent), groups.Size(float64(p.RSSBytes)),
 			groups.Rate(p.DiskRead), groups.Rate(p.DiskWrite), groups.Rate(p.NetRx), groups.Rate(p.NetTx), groups.Count(p.Sockets),
-			groups.Truncate(groups.OriginText(p.Origin), 21), groups.Truncate(p.Command, commandWidth)), m.width))
+			groups.Truncate(groups.OriginText(p.Origin), 21), groups.Truncate(command, commandWidth)), m.width)
+		if p.Key == m.processKey || (m.processKey == "" && index == 0) {
+			text = selectedStyle.Render(text)
+		} else if m.cpuHog(p.CPUPercent) {
+			text = statusStyle.Render(text)
+		}
+		lines = append(lines, text)
 	}
 	return padLines(strings.Join(lines, "\n"), height)
 }
@@ -257,8 +281,11 @@ func (m Model) footer() string {
 	if m.typing {
 		return mutedStyle.Render(fit("type to filter · enter keeps it · esc clears it", m.width))
 	}
+	if m.detail {
+		return mutedStyle.Render(fit("[ ] choose process  x terminate  r nice=10  y confirm  esc cancel · ! CPU hog >25% of all cores", m.width))
+	}
 	toggles := fmt.Sprintf("o other:%s  n net:%s", onOff(m.toggles.All), onOff(m.toggles.Net))
-	return mutedStyle.Render(fit("↑↓ move  ←→ fold  enter processes  s sort  S reverse  / filter  "+toggles+"  q quit", m.width))
+	return mutedStyle.Render(fit("↑↓ move  ←→ fold  enter processes  b group  s sort  S reverse  / filter  "+toggles+"  q quit", m.width))
 }
 
 func onOff(on bool) string {

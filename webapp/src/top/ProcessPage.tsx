@@ -7,6 +7,8 @@ import { fetchTopProcesses, type HostUsage, type ProcessSample, type TopProcesse
 import { appendFrame, formatBytes, formatCount, formatPercent, formatRate, originText } from "./groups";
 import { FacetsPanel } from "./FacetsPanel";
 import { toneOf } from "./HostStrip";
+import { isCPUHog } from "./cpu";
+import { ProcessActions } from "./ProcessActions";
 import {
   filterProcesses, metricSeries, metricValue, parseTarget, sortProcesses, sumProcesses, type Metric, type ProcessSortKey,
 } from "./processes";
@@ -68,6 +70,7 @@ function SortHeader({ label, active, onClick }: { label: string; active: boolean
 }
 
 interface ProcessTableProps {
+  cores: number | undefined;
   processes: ProcessSample[];
   sort: ProcessSortKey;
   onSort: (key: ProcessSortKey) => void;
@@ -76,7 +79,7 @@ interface ProcessTableProps {
   onSelect: (pid: number) => void;
 }
 
-function ProcessTable({ processes, sort, onSort, selected, onSelect }: ProcessTableProps) {
+function ProcessTable({ processes, sort, onSort, selected, onSelect, cores }: ProcessTableProps) {
   const { renderLink } = useRouter();
   const muted = "whitespace-nowrap px-2 py-1 text-muted-foreground";
   const number = "whitespace-nowrap px-2 py-1 text-right tabular-nums";
@@ -99,6 +102,7 @@ function ProcessTable({ processes, sort, onSort, selected, onSelect }: ProcessTa
             <th scope="col" className="px-2 py-1 text-right font-medium">Net out/s</th>
             <th scope="col" className="px-2 py-1 text-right font-medium">Sockets</th>
             <th scope="col" className="px-2 py-1 text-left font-medium">Command</th>
+            <th scope="col" className="px-2 py-1 text-left font-medium">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -107,7 +111,7 @@ function ProcessTable({ processes, sort, onSort, selected, onSelect }: ProcessTa
               key={process.key}
               aria-selected={process.pid === selected}
               title="Show this process's environment, files and connections"
-              className={`cursor-pointer border-t border-border align-top hover:bg-muted/40 ${process.pid === selected ? "bg-muted/60" : ""}`}
+              className={`cursor-pointer border-t border-border align-top hover:bg-muted/40 ${isCPUHog(process.cpuPercent, cores) ? "bg-destructive/10" : process.pid === selected ? "bg-muted/60" : ""}`}
               onClick={() => onSelect(process.pid)}
             >
               <td className={number}>{renderLink({ to: `/top/${process.pid}`, className: "hover:underline", children: process.pid, title: `Process ${process.pid} and those under it` })}</td>
@@ -116,7 +120,7 @@ function ProcessTable({ processes, sort, onSort, selected, onSelect }: ProcessTa
               <td className={muted}>{process.origin.owner ?? ""}</td>
               <td className={muted}>{process.origin.scope ?? ""}</td>
               <td className={muted}>{originText(process.origin)}</td>
-              <td className={number}>{formatPercent(process.cpuPercent)}</td>
+              <td className={number}>{formatPercent(process.cpuPercent)}{isCPUHog(process.cpuPercent, cores) && <span className="ml-2 font-semibold text-destructive">CPU hog</span>}</td>
               <td className={number}>{formatBytes(process.rssBytes)}</td>
               <td className={number}>{formatRate(process.diskReadBps)}</td>
               <td className={number}>{formatRate(process.diskWriteBps)}</td>
@@ -124,6 +128,7 @@ function ProcessTable({ processes, sort, onSort, selected, onSelect }: ProcessTa
               <td className={number}>{formatRate(process.netTxBps)}</td>
               <td className={number}>{formatCount(process.sockets)}</td>
               <td className="px-2 py-1 text-muted-foreground"><span className="block max-w-[28rem] truncate" title={process.command}>{process.command}</span></td>
+              <td className="px-2 py-1"><ProcessActions process={process} /></td>
             </tr>
           ))}
         </tbody>
@@ -182,10 +187,11 @@ function ProcessView({ target }: { target: string }) {
           <div className="flex flex-wrap gap-3">
             {METRIC_VIEWS.map(view => <MetricTile key={view.metric} view={view} usage={total} host={latest.host} series={series[view.metric]} />)}
           </div>
+          <p className="text-sm text-muted-foreground">CPU hogs use more than 25% of all cores. Terminate sends SIGTERM to one process; renice changes its scheduling priority.</p>
           {selected !== undefined && <FacetsPanel key={selected} pid={selected} />}
           {shown.length === 0
             ? <p className="text-sm text-muted-foreground">No process matches these filters.</p>
-            : <ProcessTable processes={shown} sort={sort} onSort={setSort} selected={selected} onSelect={setSelected} />}
+            : <ProcessTable processes={shown} sort={sort} onSort={setSort} selected={selected} onSelect={setSelected} cores={latest.host?.cores} />}
         </>
       )}
     </div>

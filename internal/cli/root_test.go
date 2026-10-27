@@ -31,6 +31,12 @@ func captureStdout(run func()) string {
 }
 
 var _ = Describe("command boundaries", func() {
+	It("rejects an invalid top grouping before sampling processes", func() {
+		root := cli.NewRoot("dev")
+		root.SetArgs([]string{"top", "--group-by", "invalid", "--once"})
+		Expect(root.Execute()).To(MatchError(ContainSubstring("group-by")))
+	})
+
 	DescribeTable("rejects invalid serve options",
 		func(args []string, expected string) {
 			root := cli.NewRoot("dev")

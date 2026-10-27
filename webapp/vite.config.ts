@@ -53,7 +53,7 @@ export function createViteConfig(options: ViteOptions): UserConfig {
 }
 
 export default defineConfig(({ command, mode }) => createViteConfig({
-  localUI: command === "serve" && mode !== "test" && process.env.TELLTALE_DEV === "1",
+  localUI: mode === "local-ui" || (command === "serve" && mode !== "test" && process.env.TELLTALE_DEV === "1"),
   uiDirectory: process.env.TELLTALE_CLICKY_UI_DIR ? resolve(process.env.TELLTALE_CLICKY_UI_DIR) : resolve(appRoot, "../../clicky-ui"),
   apiURL: process.env.TELLTALE_API_URL ?? "http://localhost:8080",
 }));

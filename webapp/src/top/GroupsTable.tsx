@@ -2,6 +2,8 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Sparkline } from "@flanksource/clicky-ui/data";
 import { useRouter } from "@flanksource/clicky-ui/rpc";
 import { GROUP_KINDS, SCOPES, type GroupKind, type GroupSample, type Scope, type Usage } from "./api";
+import { GROUPINGS, GROUPING_LABELS, type GroupBy } from "./grouping";
+import { isCPUHog } from "./cpu";
 import {
   contextText, formatBytes, formatCount, formatPercent, formatRate, groupLabel, groupPath, groupRows, isSyntheticOther, originText,
   type GroupsView, type SortKey,
@@ -24,7 +26,8 @@ const COLUMNS: Column[] = [
   { key: "sockets", label: "Sockets", value: usage => formatCount(usage.sockets) },
 ];
 
-const KIND_CLASS: Record<GroupKind, string> = {
+const KIND_CLASS: Record<GroupSample["kind"], string> = {
+  bucket: "font-medium",
   agent: "text-blue-600 dark:text-blue-400",
   browser: "text-purple-600 dark:text-purple-400",
   test: "text-green-700 dark:text-green-400",
@@ -43,6 +46,12 @@ const input = "rounded border border-border bg-background px-2 py-1";
 export function GroupsFilterBar({ view, onChange, children }: { view: GroupsView; onChange: (next: Partial<GroupsView>) => void; children?: ReactNode }) {
   return (
     <div className="flex flex-wrap items-center gap-3 text-sm">
+      <label className="flex items-center gap-2">
+        Group by
+        <select className={input} value={view.groupBy} onChange={event => onChange({ groupBy: event.target.value as GroupBy })}>
+          {GROUPINGS.map(by => <option key={by} value={by}>{GROUPING_LABELS[by]}</option>)}
+        </select>
+      </label>
       <label className="flex items-center gap-2">
         Filter
         <input type="search" className={`${input} w-64`} placeholder="Name, target, repo or command" value={view.q} onChange={event => onChange({ q: event.target.value })} />
@@ -81,6 +90,7 @@ function ownerText(group: GroupSample): string {
 }
 
 interface GroupRowProps {
+  cores: number | undefined;
   group: GroupSample;
   depth: number;
   trend: number[] | undefined;
@@ -89,16 +99,16 @@ interface GroupRowProps {
   onToggle: () => void;
 }
 
-function GroupRowView({ group, depth, trend, link, expanded, onToggle }: GroupRowProps) {
+function GroupRowView({ group, depth, trend, link, expanded, onToggle, cores }: GroupRowProps) {
   const { renderLink } = useRouter();
   const label = groupLabel(group);
   const path = link ? groupPath(group) : undefined;
   const origin = originText(group.origin);
   return (
-    <tr data-depth={depth} className="border-t border-border align-top hover:bg-muted/40" title={group.command}>
+    <tr data-depth={depth} className={`border-t border-border align-top hover:bg-muted/40 ${isCPUHog(group.total.cpuPercent, cores) ? "bg-destructive/10" : ""}`} title={group.command}>
       <td className={`py-1 pr-3 ${KIND_CLASS[group.kind]}`}>
         <span data-indent className="flex max-w-[22rem] items-center gap-1" style={{ paddingLeft: `${depth * INDENT_REM}rem` }}>
-          {isSyntheticOther(group) && (
+          {(isSyntheticOther(group) || group.kind === "bucket") && (
             <button type="button" aria-expanded={expanded} aria-label={`${expanded ? "Collapse" : "Expand"} ${label}`} className="w-4 text-left" onClick={onToggle}>
               <span aria-hidden>{expanded ? "▾" : "▸"}</span>
             </button>
@@ -106,6 +116,7 @@ function GroupRowView({ group, depth, trend, link, expanded, onToggle }: GroupRo
           <span className="truncate" title={label}>
             {path ? renderLink({ to: path, className: "hover:underline", children: label, title: `Processes of ${label}` }) : label}
           </span>
+          {isCPUHog(group.total.cpuPercent, cores) && <span className="font-semibold text-destructive">CPU hog</span>}
         </span>
       </td>
       {trend !== undefined && (
@@ -130,6 +141,7 @@ function GroupRowView({ group, depth, trend, link, expanded, onToggle }: GroupRo
 }
 
 export interface GroupsTableProps {
+  cores?: number;
   groups: GroupSample[];
   view: GroupsView;
   onViewChange: (next: Partial<GroupsView>) => void;
@@ -140,12 +152,13 @@ export interface GroupsTableProps {
 }
 
 /** One frame's groups as a tree table: each group's total (its own use as the title of a cell), sorted within each parent by the view's column. The processes no tool holds hang under a collapsed other:<scope> group. */
-export function GroupsTable({ groups, view, onViewChange, trend, linkGroups = false }: GroupsTableProps) {
+export function GroupsTable({ groups, view, onViewChange, trend, linkGroups = false, cores }: GroupsTableProps) {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
-  const rows = useMemo(() => groupRows(groups, view, expanded), [groups, view, expanded]);
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const rows = useMemo(() => groupRows(groups, view, expanded, collapsed), [groups, view, expanded, collapsed]);
   if (groups.length === 0) return <p className="text-sm text-muted-foreground">No process groups yet.</p>;
   if (rows.length === 0) return <p className="text-sm text-muted-foreground">No group matches these filters.</p>;
-  const toggle = (key: string) => setExpanded(previous => {
+  const toggle = (key: string, bucket: boolean) => (bucket ? setCollapsed : setExpanded)(previous => {
     const next = new Set(previous);
     if (!next.delete(key)) next.add(key);
     return next;
@@ -179,11 +192,12 @@ export function GroupsTable({ groups, view, onViewChange, trend, linkGroups = fa
             <GroupRowView
               key={group.key}
               group={group}
+              cores={cores}
               depth={depth}
               trend={trend ? trend[group.key] ?? [] : undefined}
               link={linkGroups}
-              expanded={expanded.has(group.key) || !!view.q.trim()}
-              onToggle={() => toggle(group.key)}
+              expanded={(group.kind === "bucket" ? !collapsed.has(group.key) : expanded.has(group.key)) || !!view.q.trim()}
+              onToggle={() => toggle(group.key, group.kind === "bucket")}
             />
           ))}
         </tbody>

@@ -133,6 +133,9 @@ func (f Frame) Pretty() api.Text {
 // Label names a group: its rule and what it runs against, an agent's
 // session cut to 8 characters.
 func Label(group GroupSample) string {
+	if group.Kind == KindBucket {
+		return group.Name
+	}
 	target := group.Target
 	if group.Kind == KindAgent && len(target) > 8 {
 		target = target[:8]

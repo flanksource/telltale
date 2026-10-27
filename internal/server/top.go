@@ -63,6 +63,10 @@ func NewTopHandler(workDir string) *TopHandler {
 }
 
 func (h *TopHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == TopActionPath {
+		processAction(w, r)
+		return
+	}
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

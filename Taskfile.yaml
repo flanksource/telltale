@@ -16,10 +16,10 @@ tasks:
       - go run ./cmd/telltale serve --dev {{.CLI_ARGS}}
 
   web:build:
-    desc: Build the frontend using published dependencies
+    desc: Build the frontend using published dependencies, or local Clicky UI source with LOCAL_UI=true
     cmds:
       - pnpm typecheck
-      - pnpm --filter @flanksource/telltale-webapp build
+      - pnpm --filter @flanksource/telltale-webapp build{{if .LOCAL_UI}} --mode local-ui{{end}}
 
   binary:
     desc: Compile the binary with existing embedded assets
@@ -31,6 +31,7 @@ tasks:
     desc: Build the frontend and standalone Go binary
     cmds:
       - task: web:build
+        vars: { LOCAL_UI: "{{.LOCAL_UI}}" }
       - task: binary
 
   install:
@@ -40,8 +41,15 @@ tasks:
         sh: d=$(go env GOBIN); echo "${d:-$(go env GOPATH)/bin}"
     cmds:
       - task: build
+        vars: { LOCAL_UI: "{{.LOCAL_UI}}" }
       - mkdir -p {{.BINDIR}}
       - install -m 0755 .bin/telltale {{.BINDIR}}/telltale
+
+  install:symlinked:
+    desc: Build and install the binary against local Clicky UI source (../clicky-ui or TELLTALE_CLICKY_UI_DIR)
+    cmds:
+      - task: install
+        vars: { LOCAL_UI: "true" }
 
   lint:
     desc: Check Go, TypeScript, frontend lint, and workflow syntax

@@ -2,6 +2,7 @@ package groups
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -17,9 +18,10 @@ import (
 // Context is where a group runs and on whose behalf: its anchor's working
 // directory and checkout, the agent session and cmux surface it runs in.
 type Context struct {
-	CWD    string `json:"cwd,omitempty"`
-	Repo   string `json:"repo,omitempty"`
-	Branch string `json:"branch,omitempty"`
+	CWD          string `json:"cwd,omitempty"`
+	Repo         string `json:"repo,omitempty"`
+	GitCommonDir string `json:"gitCommonDir,omitempty"`
+	Branch       string `json:"branch,omitempty"`
 	// Agent and Session are the claude or codex session the anchor runs
 	// under, from its environment, or that it is, from its command line;
 	// SessionTitle is what the session is called.
@@ -180,6 +182,10 @@ func (c *contexts) anchors(ctx context.Context, processes []clickyprocess.Proces
 				c.repos[anchor.CWD] = repo
 			}
 			result.Repo, result.Branch = repo.Root, repo.Branch
+			result.GitCommonDir = repo.GitCommonDir
+			if repo.Error != "" {
+				errs = append(errs, errors.New(repo.Error))
+			}
 		}
 		environment, err := clickyprocess.Environment(ctx, p.PID, contextEnvironment)
 		if err != nil {
@@ -187,6 +193,7 @@ func (c *contexts) anchors(ctx context.Context, processes []clickyprocess.Proces
 		}
 		result.Agent, result.Session = sessionprocess.IdentityFromEnvironment(environment)
 		if source := sessionprocess.Source(p.Command); result.Session == "" && source != "" {
+			result.Agent = source
 			if id := sessionprocess.SessionIDFromCommand(p.Command); id != "" {
 				result.Agent, result.Session = source, id
 			}
@@ -204,18 +211,35 @@ func (c *contexts) anchors(ctx context.Context, processes []clickyprocess.Proces
 
 // Repo is the git checkout a directory is in, and what it has checked out.
 type Repo struct {
-	Root   string `json:"root,omitempty"`
-	Branch string `json:"branch,omitempty"`
+	Root         string `json:"root,omitempty"`
+	Branch       string `json:"branch,omitempty"`
+	GitCommonDir string `json:"gitCommonDir,omitempty"`
+	Error        string `json:"error,omitempty"`
 }
 
-// RepoOf is the checkout holding dir, from the nearest .git above it: its
-// branch, or the short commit of a detached head. A directory in no
-// checkout, or one whose HEAD cannot be read, has none.
+// RepoOf reads the nearest checkout, its shared Git directory and branch.
+// A directory outside Git has no repository; unreadable Git metadata has Error.
 func RepoOf(dir string) Repo {
-	for current := filepath.Clean(dir); ; current = filepath.Dir(current) {
+	canonical, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return Repo{Error: fmt.Sprintf("git directory %s: %v", dir, err)}
+	}
+	canonical, err = filepath.Abs(canonical)
+	if err != nil {
+		return Repo{Error: fmt.Sprintf("git directory %s: %v", dir, err)}
+	}
+	for current := canonical; ; current = filepath.Dir(current) {
 		gitPath := filepath.Join(current, ".git")
-		if info, err := os.Stat(gitPath); err == nil {
-			return Repo{Root: current, Branch: headOf(gitPath, info.IsDir())}
+		info, err := os.Stat(gitPath)
+		if err == nil {
+			repo, err := readRepo(current, gitPath, info.IsDir())
+			if err != nil {
+				repo.Error = fmt.Sprintf("git checkout %s: %v", current, err)
+			}
+			return repo
+		}
+		if !errors.Is(err, os.ErrNotExist) {
+			return Repo{Root: current, Error: fmt.Sprintf("git metadata %s: %v", gitPath, err)}
 		}
 		if parent := filepath.Dir(current); parent == current {
 			return Repo{}
@@ -223,32 +247,72 @@ func RepoOf(dir string) Repo {
 	}
 }
 
-func headOf(gitPath string, isDir bool) string {
+func readRepo(root, gitPath string, isDir bool) (Repo, error) {
+	repo := Repo{Root: root}
 	gitDir := gitPath
 	if !isDir {
 		pointer, err := os.ReadFile(gitPath)
 		if err != nil {
-			return ""
+			return repo, err
 		}
 		target, ok := strings.CutPrefix(strings.TrimSpace(string(pointer)), "gitdir: ")
-		if !ok {
-			return ""
+		if !ok || target == "" {
+			return repo, fmt.Errorf("invalid gitdir pointer in %s", gitPath)
 		}
-		if !filepath.IsAbs(target) {
-			target = filepath.Join(filepath.Dir(gitPath), target)
-		}
-		gitDir = target
+		gitDir = relativePath(root, target)
 	}
+	gitDir, err := filepath.EvalSymlinks(gitDir)
+	if err != nil {
+		return repo, fmt.Errorf("gitdir: %w", err)
+	}
+	common := gitDir
+	pointer, err := os.ReadFile(filepath.Join(gitDir, "commondir"))
+	if err == nil {
+		target := strings.TrimSpace(string(pointer))
+		if target == "" {
+			return repo, errors.New("empty common directory pointer")
+		}
+		common = relativePath(gitDir, target)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return repo, fmt.Errorf("common directory: %w", err)
+	}
+	common, err = filepath.EvalSymlinks(common)
+	if err != nil {
+		return repo, fmt.Errorf("common directory: %w", err)
+	}
+	info, err := os.Stat(common)
+	if err != nil {
+		return repo, fmt.Errorf("common directory: %w", err)
+	}
+	if !info.IsDir() {
+		return repo, fmt.Errorf("common directory %s is not a directory", common)
+	}
+	repo.Branch, err = checkoutHead(gitDir)
+	if err != nil {
+		return repo, err
+	}
+	repo.GitCommonDir = common
+	return repo, nil
+}
+
+func relativePath(base, target string) string {
+	if filepath.IsAbs(target) {
+		return target
+	}
+	return filepath.Join(base, target)
+}
+
+func checkoutHead(gitDir string) (string, error) {
 	head, err := os.ReadFile(filepath.Join(gitDir, "HEAD"))
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("HEAD: %w", err)
 	}
 	text := strings.TrimSpace(string(head))
-	if branch, ok := strings.CutPrefix(text, "ref: refs/heads/"); ok {
-		return branch
+	if branch, ok := strings.CutPrefix(text, "ref: refs/heads/"); ok && branch != "" {
+		return branch, nil
 	}
-	if len(text) >= 7 {
-		return text[:7]
+	if _, err := hex.DecodeString(text); err != nil || (len(text) != 40 && len(text) != 64) {
+		return "", fmt.Errorf("invalid HEAD in %s", gitDir)
 	}
-	return text
+	return text[:7], nil
 }
