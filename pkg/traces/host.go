@@ -190,7 +190,12 @@ func kindsWith(dumpers *stacks.Dumpers) (*tracing.Kinds, error) {
 	kinds := tracing.NewKinds()
 	deps := KindDeps{Dumpers: dumpers, Sampler: process.NewSampler()}
 	for _, registration := range Registrations() {
-		if err := kinds.RegisterKind(registration.Name, registration.New(deps)); err != nil {
+		plugin := registration.New(deps)
+		seams, defaultSeam := plugin.TargetSeams()
+		if !slices.Equal(seams, registration.Seams) || defaultSeam != registration.DefaultSeam {
+			return nil, fmt.Errorf("trace kind %q: handler seams %v and default %q do not match registration", registration.Name, seams, defaultSeam)
+		}
+		if err := kinds.RegisterKind(registration.Name, plugin); err != nil {
 			return nil, err
 		}
 	}

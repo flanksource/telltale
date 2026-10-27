@@ -48,7 +48,7 @@ func (e exporting) Handle(ctx dbcontext.Context, _ tickParams, records tracing.E
 
 func exportingEnv(kind exporting) tracingtest.Env {
 	return tracingtest.NewEnv(map[string]tracing.TracePlugin{
-		"exporting": tracing.NewHandler[tickParams, tick](kind, tracing.Capabilities{Live: true}),
+		"exporting": tracing.NewHandler[tickParams, tick](kind, tracing.Capabilities{Live: true}, "self"),
 	})
 }
 
@@ -89,7 +89,7 @@ var _ = Describe("a capture's seq windows", func() {
 
 	BeforeEach(func() {
 		env = tracingtest.NewEnv(map[string]tracing.TracePlugin{
-			"readings": tracing.NewHandler[tickParams, tick](readings{taken: &atomic.Int64{}}, tracing.Capabilities{Live: true}),
+			"readings": tracing.NewHandler[tickParams, tick](readings{taken: &atomic.Int64{}}, tracing.Capabilities{Live: true}, "self"),
 			"ticks":    liveTicks(),
 		})
 		var err error

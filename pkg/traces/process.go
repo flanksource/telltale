@@ -11,6 +11,7 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/process"
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 )
 
 // ProcessTrace is the run-scope capture of the process kinds over one root:
@@ -57,7 +58,7 @@ func (h *Host) StartProcessTrace(options ProcessTraceOptions) (*ProcessTrace, er
 	if options.Interval == 0 {
 		options.Interval = time.Second
 	}
-	base := process.Params{RootPID: options.RootPID, Interval: options.Interval.String()}
+	base := process.Params{Target: target.Target{PID: options.RootPID}, Interval: options.Interval.String()}
 	tree, samples := process.TreeParams{Params: base}, process.SampleParams{Params: base}
 	if options.Facets {
 		tree.Environment, samples.Facets = &process.EnvironmentParams{}, process.Facets
@@ -71,7 +72,7 @@ func (h *Host) StartProcessTrace(options ProcessTraceOptions) (*ProcessTrace, er
 	}{
 		{&trace.tree, process.TreeKind, tree},
 		{&trace.samples, process.SamplesKind, samples},
-		{&trace.stacks, stacks.Kind, stacks.Params{RootPID: options.RootPID}},
+		{&trace.stacks, stacks.Kind, stacks.Params{Target: target.Target{PID: options.RootPID}}},
 	} {
 		if *start.capture, err = h.startWith(start.kind, start.params); err != nil {
 			return nil, errors.Join(err, trace.Stop(context.Background()))

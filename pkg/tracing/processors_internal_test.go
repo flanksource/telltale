@@ -83,6 +83,10 @@ var _ = Describe("Row processors", func() {
 	})
 
 	Describe("maskSecrets", func() {
+		It("leaves JSON text without secrets exactly as it was", func() {
+			out := maskSecrets(nil)(recordstore.Row{"raw": `{"a": 1}`})
+			Expect(out["raw"]).To(Equal(`{"a": 1}`))
+		})
 		It("masks sensitive keys at any depth, name/value pairs, and secrets inside strings", func() {
 			out := maskSecrets(nil)(recordstore.Row{
 				"password": "hunter2",

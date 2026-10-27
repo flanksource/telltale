@@ -54,7 +54,8 @@ func liveTicks() tracing.TracePlugin {
 		}
 		<-ctx.Done()
 		return nil
-	}}, tracing.Capabilities{Live: true})
+	}}, tracing.Capabilities{Live: true}, "self")
+
 }
 
 func numbers(rows []recordstore.Row) []string {
@@ -89,7 +90,7 @@ var _ = Describe("Runtime", func() {
 		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{
 			"ticks": tracing.NewHandler[tickParams, tick](scripted{handle: func(ctx dbcontext.Context, p tickParams, records tracing.Emitter[tick], _ tracing.Records[tick]) error {
 				return emitTicks(ctx, records, p.Count)
-			}}, tracing.Capabilities{Historical: true}),
+			}}, tracing.Capabilities{Historical: true}, "self"),
 		})
 		info := tracingtest.Ended(env.Start("ticks", ""))
 		Expect(info.State).To(Equal(query.SessionCompleted))
@@ -103,7 +104,7 @@ var _ = Describe("Runtime", func() {
 			"ticks": tracing.NewHandler[tickParams, tick](scripted{handle: func(ctx dbcontext.Context, _ tickParams, records tracing.Emitter[tick], _ tracing.Records[tick]) error {
 				<-ctx.Done()
 				return emitTicks(context.Background(), records, 2)
-			}}, tracing.Capabilities{Live: true}),
+			}}, tracing.Capabilities{Live: true}, "self"),
 		})
 		session := env.Start("ticks", "")
 		tracingtest.Running(session)
@@ -132,7 +133,7 @@ var _ = Describe("Runtime", func() {
 					return err
 				}
 				return errors.New("source broke")
-			}}, tracing.Capabilities{Historical: true}),
+			}}, tracing.Capabilities{Historical: true}, "self"),
 		})
 		info := tracingtest.Ended(env.Start("ticks", ""))
 		Expect(info.State).To(Equal(query.SessionFailed))
@@ -161,7 +162,7 @@ var _ = Describe("Runtime", func() {
 					}
 				}
 				return nil
-			}}, tracing.Capabilities{Historical: true}).
+			}}, tracing.Capabilities{Historical: true}, "self").
 				WithDeduplication(func(t tick) string { return string(rune('0' + t.N)) }, func(tickParams) time.Duration { return time.Hour }),
 		})
 		info := tracingtest.Ended(env.Start("ticks", ""))
@@ -178,14 +179,14 @@ var _ = Describe("Runtime", func() {
 					}
 				}
 				return nil
-			}}, tracing.Capabilities{Historical: true}),
+			}}, tracing.Capabilities{Historical: true}, "self"),
 		})
 		Expect(numbers(env.Rows(tracingtest.Ended(env.Start("ticks", ""))))).To(Equal([]string{"1", "1", "1"}))
 	})
 
 	It("truncates, parses embedded JSON and masks secrets before a record is stored", func() {
 		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{
-			"exchanges": tracing.NewHandler[tickParams, exchange](exchanges{}, tracing.Capabilities{Historical: true}).
+			"exchanges": tracing.NewHandler[tickParams, exchange](exchanges{}, tracing.Capabilities{Historical: true}, "self").
 				WithTruncation(64).WithJSONProcessor("body.text").WithSecretMasking(),
 		})
 		info := tracingtest.Ended(env.Start("exchanges", ""))
@@ -202,7 +203,7 @@ var _ = Describe("Runtime", func() {
 	It("reads a record back with the JSON it parsed as text again", func() {
 		read := make(chan exchange, 1)
 		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{
-			"exchanges": tracing.NewHandler[tickParams, exchange](readback{read: read}, tracing.Capabilities{Historical: true}).
+			"exchanges": tracing.NewHandler[tickParams, exchange](readback{read: read}, tracing.Capabilities{Historical: true}, "self").
 				WithJSONProcessor("body.text").WithSecretMasking(),
 		})
 		info := tracingtest.Ended(env.Start("exchanges", ""))
@@ -212,7 +213,7 @@ var _ = Describe("Runtime", func() {
 
 	DescribeTable("refuses JSON parsing of anything but text its records declare",
 		func(paths []string, message string) {
-			Expect(tracing.NewKinds().RegisterKind("exchanges", tracing.NewHandler[tickParams, exchange](exchanges{}, tracing.Capabilities{Historical: true}).
+			Expect(tracing.NewKinds().RegisterKind("exchanges", tracing.NewHandler[tickParams, exchange](exchanges{}, tracing.Capabilities{Historical: true}, "self").
 				WithJSONProcessor(paths...))).To(MatchError(ContainSubstring(message)))
 		},
 		Entry("no paths", []string{}, "names no fields"),
@@ -223,7 +224,7 @@ var _ = Describe("Runtime", func() {
 	)
 
 	It("refuses truncation for a kind whose records cannot list what was cut", func() {
-		Expect(tracing.NewKinds().RegisterKind("ticks", tracing.NewHandler[tickParams, tick](ticker{}, tracing.Capabilities{Live: true}).WithTruncation(16))).
+		Expect(tracing.NewKinds().RegisterKind("ticks", tracing.NewHandler[tickParams, tick](ticker{}, tracing.Capabilities{Live: true}, "self").WithTruncation(16))).
 			To(MatchError(ContainSubstring("traces.Truncation")))
 	})
 
@@ -231,7 +232,7 @@ var _ = Describe("Runtime", func() {
 		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{
 			"ticks": tracing.NewHandler[tickParams, tick](scripted{handle: func(ctx dbcontext.Context, _ tickParams, records tracing.Emitter[tick], _ tracing.Records[tick]) error {
 				return emitTicks(ctx, records, 10)
-			}}, tracing.Capabilities{Historical: true}),
+			}}, tracing.Capabilities{Historical: true}, "self"),
 		}, func(r *tracing.Runtime) { r.BufferRows = 2 })
 		info := tracingtest.Ended(env.Start("ticks", ""))
 		Expect(info.State).To(Equal(query.SessionCompleted))
@@ -249,7 +250,7 @@ var _ = Describe("Runtime", func() {
 				attempts <- taken
 				<-ctx.Done()
 				return nil
-			}}, tracing.Capabilities{Live: true}),
+			}}, tracing.Capabilities{Live: true}, "self"),
 		}, func(r *tracing.Runtime) { r.BufferRows = 2; r.PollEvery = time.Hour })
 		session := env.Start("ticks", "")
 		Eventually(attempts).Should(Receive(Equal([]bool{true, true, false})))
@@ -269,10 +270,7 @@ var _ = Describe("Runtime", func() {
 				}
 				for {
 					var ns []int
-					if err := store.Scan(ctx, 0, func(_ int64, t tick) error {
-						ns = append(ns, t.N)
-						return nil
-					}); err != nil {
+					if err := store.Scan(ctx, 0, func(_ int64, t tick) error { ns = append(ns, t.N); return nil }); err != nil {
 						return err
 					}
 					if len(ns) == 2 {
@@ -286,7 +284,7 @@ var _ = Describe("Runtime", func() {
 					case <-time.After(10 * time.Millisecond):
 					}
 				}
-			}}, tracing.Capabilities{Live: true}),
+			}}, tracing.Capabilities{Live: true}, "self"),
 		})
 		session := env.Start("ticks", "")
 		Eventually(seen).WithTimeout(5*time.Second).Should(Receive(Equal([]int{1, 2})), func() string { return fmt.Sprintf("%+v", session.Snapshot().SessionStatus) })
@@ -310,7 +308,7 @@ var _ = Describe("Runtime", func() {
 	It("runs a prepared capture only once it observes its source, handing Handle what Prepare set up", func() {
 		released := make(chan struct{})
 		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{
-			"ticks": tracing.NewHandler[tickParams, tick](prepared{released: released}, tracing.Capabilities{Live: true}),
+			"ticks": tracing.NewHandler[tickParams, tick](prepared{released: released}, tracing.Capabilities{Live: true}, "self"),
 		})
 		managed, err := env.Runtime.Start(dbcontext.New(), tracing.StartRequest{Kind: "ticks"})
 		Expect(err).ToNot(HaveOccurred())
@@ -327,7 +325,7 @@ var _ = Describe("Runtime", func() {
 
 	It("records on the session that what Prepare set up could not be released, keeping its records", func() {
 		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{
-			"ticks": tracing.NewHandler[tickParams, tick](prepared{released: make(chan struct{}), releaseErr: errors.New("could not drop")}, tracing.Capabilities{Live: true}),
+			"ticks": tracing.NewHandler[tickParams, tick](prepared{released: make(chan struct{}), releaseErr: errors.New("could not drop")}, tracing.Capabilities{Live: true}, "self"),
 		})
 		session := env.Start("ticks", "")
 		Eventually(func() int64 { return session.Snapshot().EventCount }).WithTimeout(5 * time.Second).Should(Equal(int64(2)))
@@ -342,7 +340,7 @@ var _ = Describe("Runtime", func() {
 
 	It("refuses to start a capture it cannot prepare", func() {
 		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{
-			"ticks": tracing.NewHandler[tickParams, tick](prepared{fail: errors.New("server refused")}, tracing.Capabilities{Live: true}),
+			"ticks": tracing.NewHandler[tickParams, tick](prepared{fail: errors.New("server refused")}, tracing.Capabilities{Live: true}, "self"),
 		})
 		_, err := env.Runtime.Start(dbcontext.New(), tracing.StartRequest{Kind: "ticks"})
 		Expect(err).To(MatchError(ContainSubstring("server refused")))
@@ -355,7 +353,7 @@ var _ = Describe("Runtime", func() {
 		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{
 			"ticks": tracing.NewHandler[tickParams, tick](scripted{handle: func(ctx dbcontext.Context, p tickParams, records tracing.Emitter[tick], _ tracing.Records[tick]) error {
 				return emitTicks(ctx, records, p.Count)
-			}}, tracing.Capabilities{Historical: true}),
+			}}, tracing.Capabilities{Historical: true}, "self"),
 		})
 		previous := tracingtest.Ended(env.Start("ticks", `{"count": 2}`))
 		restarted, err := env.Sessions.Restart(context.Background(), previous.ID, query.RestartOverrides{})
@@ -488,7 +486,7 @@ func (keyed) Handle(ctx dbcontext.Context, _ tickParams, records tracing.Emitter
 var _ = Describe("Runtime with a keyed kind", func() {
 	It("stores a key emitted twice once, however its records were batched", func() {
 		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{
-			"ticks": tracing.NewHandler[tickParams, tick](keyed{}, tracing.Capabilities{Historical: true}),
+			"ticks": tracing.NewHandler[tickParams, tick](keyed{}, tracing.Capabilities{Historical: true}, "self"),
 		})
 		info := tracingtest.Ended(env.Start("ticks", ""))
 		Expect(info.Error).To(BeEmpty())
@@ -525,7 +523,7 @@ func (repeating) Handle(dbcontext.Context, tickParams, tracing.Emitter[tick], tr
 var _ = Describe("Runtime with a key repeated many times", func() {
 	It("stores a long run of one key once rather than failing its capture", func() {
 		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{
-			"ticks": tracing.NewHandler[tickParams, tick](repeating{count: 500}, tracing.Capabilities{Historical: true}),
+			"ticks": tracing.NewHandler[tickParams, tick](repeating{count: 500}, tracing.Capabilities{Historical: true}, "self"),
 		})
 		info := tracingtest.Ended(env.Start("ticks", ""))
 		Expect(info.Error).To(BeEmpty())
@@ -535,7 +533,7 @@ var _ = Describe("Runtime with a key repeated many times", func() {
 
 	It("stores the last of a key's copies for a kind that replaces", func() {
 		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{
-			"ticks": tracing.NewHandler[tickParams, tick](repeating{count: 500, onConflict: recordstore.OnConflictReplace}, tracing.Capabilities{Historical: true}),
+			"ticks": tracing.NewHandler[tickParams, tick](repeating{count: 500, onConflict: recordstore.OnConflictReplace}, tracing.Capabilities{Historical: true}, "self"),
 		})
 		info := tracingtest.Ended(env.Start("ticks", ""))
 		Expect(info.Error).To(BeEmpty())
@@ -550,7 +548,7 @@ var _ = Describe("Runtime stopping a capture with a large final drain", func() {
 			"ticks": tracing.NewHandler[tickParams, tick](scripted{handle: func(ctx dbcontext.Context, _ tickParams, records tracing.Emitter[tick], _ tracing.Records[tick]) error {
 				<-ctx.Done()
 				return emitTicks(context.Background(), records, 70_000)
-			}}, tracing.Capabilities{Live: true}),
+			}}, tracing.Capabilities{Live: true}, "self"),
 		})
 		// Draining tens of thousands of rows outlasts the registry's default
 		// stop timeout under the race detector on a loaded machine.

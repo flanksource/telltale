@@ -11,30 +11,8 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/process"
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 )
-
-// Target is what a kind observes of a traced run, which decides how a run of
-// it is aimed: at a command, at a running process, or at neither.
-type Target string
-
-const (
-	// TargetCommand kinds are pointed at by the command, through the
-	// environment they export, such as a proxy; they cannot attach to a
-	// running process.
-	TargetCommand Target = "command"
-	// TargetProcess kinds observe a process tree through their rootPid param:
-	// telltale's own tree, which holds the command, or an attached process's.
-	TargetProcess Target = "process"
-	// TargetSelf kinds record telltale's own sources, such as its outbound
-	// HTTP, not the command's.
-	TargetSelf Target = "self"
-	// TargetHost kinds observe every process on the host, so a run of them
-	// alone needs neither a command nor a process.
-	TargetHost Target = "host"
-)
-
-// RootPIDParam is the param a TargetProcess kind is aimed at a process with.
-const RootPIDParam = "rootPid"
 
 // KindDeps are what a run's kinds share: one process sampler and the stack
 // transports.
@@ -61,7 +39,8 @@ type Registration struct {
 	// Description says what the kind records of a traced command and what
 	// it does not.
 	Description string
-	Target      Target
+	Seams       []target.Seam
+	DefaultSeam target.Seam
 	// Exports are the environment variables a capture hands the command.
 	Exports  []string
 	Examples []Example
@@ -82,8 +61,13 @@ func (r Registration) validate() error {
 	if r.New == nil {
 		errs = append(errs, errors.New("a New func is required"))
 	}
-	if !slices.Contains([]Target{TargetCommand, TargetProcess, TargetSelf, TargetHost}, r.Target) {
-		errs = append(errs, fmt.Errorf("target %q: expected %q, %q, %q or %q", r.Target, TargetCommand, TargetProcess, TargetSelf, TargetHost))
+	for _, seam := range r.Seams {
+		if !slices.Contains([]target.Seam{target.Self, target.Agent, target.Process, target.Proxy, target.Host}, seam) {
+			errs = append(errs, fmt.Errorf("unknown seam %q", seam))
+		}
+	}
+	if !slices.Contains(r.Seams, r.DefaultSeam) {
+		errs = append(errs, fmt.Errorf("default seam %q must be among supported seams %v", r.DefaultSeam, r.Seams))
 	}
 	if strings.TrimSpace(r.Title) == "" || strings.TrimSpace(r.Summary) == "" {
 		errs = append(errs, errors.New("a title and a summary are required"))

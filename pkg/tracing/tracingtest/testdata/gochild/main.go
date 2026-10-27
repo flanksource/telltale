@@ -6,8 +6,11 @@ package main
 
 import (
 	"bufio"
+	"context"
+	"database/sql"
 	"flag"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
@@ -17,6 +20,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/flanksource/commons-db/models"
+	"github.com/flanksource/commons-db/observability"
+	"github.com/flanksource/commons-db/query"
+	"github.com/flanksource/commons-db/query/providers/sqlite"
+	telltale "github.com/flanksource/telltale/sdk"
+	_ "github.com/flanksource/telltale/sdk/commonsdb"
 	"github.com/google/gops/agent"
 )
 
@@ -26,6 +35,7 @@ func main() {
 	cpuProfile := flag.String("cpuprofile", "", "burn CPU into this CPU profile, then exit")
 	hold := flag.String("hold", "", "hold this file open")
 	listen := flag.Bool("listen", false, "listen on a TCP port and dial it")
+	agentDir := flag.String("agent-config", "", "start a telltale agent in this config directory")
 	flag.Parse()
 
 	if *cpuProfile != "" {
@@ -33,6 +43,16 @@ func main() {
 		return
 	}
 	go parkedForever(make(chan struct{}))
+	if *agentDir != "" {
+		capture, err := telltale.Start(telltale.Options{ConfigDir: *agentDir, Listen: "tcp"})
+		must(err)
+		defer capture.Close()
+		go func() {
+			for {
+				burnCPU(time.Second)
+			}
+		}()
+	}
 	var held []any
 	if *serve {
 		listener := mustListen()
@@ -59,8 +79,34 @@ func main() {
 
 // commands opens the file each "open <path>" line names until stdin closes.
 func commands(held []any) {
+	logger := slog.New(telltale.SlogHandler(slog.NewTextHandler(os.Stderr, nil))).With("logger", "child")
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
+		if address, ok := strings.CutPrefix(scanner.Text(), "http "); ok {
+			client := http.Client{Transport: observability.ApplyHTTPObservability(context.Background(), "http", nil, nil)}
+			request, err := http.NewRequest(http.MethodGet, address, nil)
+			must(err)
+			request.Header.Set("Authorization", "Bearer authorization-secret")
+			request.Header.Set("Cookie", "session=cookie-secret")
+			response, err := client.Do(request)
+			must(err)
+			must(response.Body.Close())
+			announce("http", "done")
+			continue
+		}
+		if scanner.Text() == "sql" {
+			db, err := sql.Open("sqlite", ":memory:")
+			must(err)
+			_, err = sqlite.ReadSQLPage(context.Background(), db, models.ConnectionTypeSQLite, sqlite.SQLPageRequest{Connection: "parity", Query: "SELECT 1", Page: query.PageRequest{Limit: 10}})
+			must(err)
+			must(db.Close())
+			announce("sql", "done")
+			continue
+		}
+		if message, ok := strings.CutPrefix(scanner.Text(), "log "); ok {
+			logger.Info(message)
+			continue
+		}
 		if path, ok := strings.CutPrefix(scanner.Text(), "open "); ok {
 			file, err := os.Create(path)
 			must(err)
