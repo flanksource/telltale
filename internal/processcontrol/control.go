@@ -15,9 +15,11 @@ var ErrInvalid = errors.New("invalid process action")
 var ErrStale = errors.New("process exited or identity changed")
 
 type Request struct {
-	Key    string `json:"key"`
-	Action string `json:"action"`
-	Nice   *int   `json:"nice,omitempty"`
+	Key       string `json:"key"`
+	Action    string `json:"action"`
+	Nice      *int   `json:"nice,omitempty"`
+	Signal    string `json:"signal,omitempty"`
+	LowerOnly bool   `json:"lowerOnly,omitempty"`
 }
 
 func Apply(ctx context.Context, request Request) error {
@@ -34,8 +36,15 @@ func Apply(ctx context.Context, request Request) error {
 		if request.Nice == nil || *request.Nice < -20 || *request.Nice > 19 {
 			return fmt.Errorf("%w: nice must be -20..19", ErrInvalid)
 		}
+	case "signal":
+		if request.Nice != nil || !validSignal(request.Signal) {
+			return fmt.Errorf("%w: signal must be SIGHUP, SIGINT, SIGTERM or SIGKILL", ErrInvalid)
+		}
 	default:
-		return fmt.Errorf("%w: action must be terminate or renice", ErrInvalid)
+		return fmt.Errorf("%w: action must be terminate, renice or signal", ErrInvalid)
+	}
+	if request.Action != "signal" && request.Signal != "" || request.Action != "renice" && request.LowerOnly {
+		return fmt.Errorf("%w: incompatible action parameters", ErrInvalid)
 	}
 	snapshot, err := clickyprocess.Discover(ctx, clickyprocess.SnapshotOptions{})
 	if err != nil {

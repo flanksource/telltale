@@ -9,6 +9,7 @@ import (
 
 	"github.com/flanksource/clicky/route"
 	"github.com/flanksource/clicky/rpc"
+	"github.com/flanksource/telltale/internal/rules"
 	"github.com/spf13/cobra"
 )
 
@@ -19,7 +20,8 @@ type HandlerOptions struct {
 	// Traces serves the run stores at TracesMount.
 	Traces http.Handler
 	// Top serves the live process groups at TopMount.
-	Top http.Handler
+	Top   http.Handler
+	Rules *rules.Service
 }
 
 func NewHandler(options HandlerOptions) (http.Handler, error) {
@@ -35,7 +37,7 @@ func NewHandler(options HandlerOptions) (http.Handler, error) {
 func routes(options HandlerOptions, ui http.Handler) http.Handler {
 	api := http.NewServeMux()
 	rpc.NewSwaggerServer(&rpc.ServeConfig{Version: options.Version}, options.Root,
-		&rpc.OpenAPIConfig{Title: "Telltale", Version: options.Version}).RegisterRoutes(route.NewRouter(api))
+		&rpc.OpenAPIConfig{Title: "Telltale", Version: options.Version, Extensions: []func(*rpc.OpenAPISpec){addRulesPaths}}).RegisterRoutes(route.NewRouter(api))
 	root := http.NewServeMux()
 	root.Handle(TracesMount, options.Traces)
 	root.Handle(TracesMount+"/", options.Traces)
@@ -43,6 +45,8 @@ func routes(options HandlerOptions, ui http.Handler) http.Handler {
 	root.Handle(TopProcessesPath, options.Top)
 	root.Handle(TopFacetsPath, options.Top)
 	root.Handle(TopActionPath, options.Top)
+	root.Handle(RulesMount, rulesHandler{service: options.Rules})
+	root.Handle(RulesMount+"/", rulesHandler{service: options.Rules})
 	root.Handle("/api/", api)
 	root.Handle("/api", http.NotFoundHandler())
 	root.Handle("/health", api)

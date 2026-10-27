@@ -6,8 +6,7 @@ import { framesFromRecords, PROCESS_GROUPS_KIND, type Frame } from "./api";
 import { CpuChart } from "./charts";
 import { GroupsFilterBar, GroupsTable } from "./GroupsTable";
 import { viewGroups, type GroupsView } from "./groups";
-
-const RECORDED_POLL_MS = 2000;
+import { useRefreshInterval } from "../monitoring/RefreshControl";
 
 /** The process_groups capture a host run armed, if it did. */
 export function processGroupsCapture(run: RunTraces): CaptureResult | undefined {
@@ -26,6 +25,7 @@ interface Loaded {
  * last seq it read.
  */
 function useRecordedFrames(run: RunTraces, capture: CaptureResult) {
+  const interval = useRefreshInterval();
   const { ref } = capture;
   const running = run.status === "running";
   const loaded = useRef<Loaded>({ seq: ref.afterSeq ?? 0, rows: [], frames: [] });
@@ -41,7 +41,7 @@ function useRecordedFrames(run: RunTraces, capture: CaptureResult) {
       }
       return loaded.current.frames;
     },
-    refetchInterval: running ? RECORDED_POLL_MS : false,
+    refetchInterval: running ? interval : false,
     retry: false,
   });
 }

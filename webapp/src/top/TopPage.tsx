@@ -8,9 +8,9 @@ import { appendFrame, cpuTrend, viewGroups } from "./groups";
 import { HostStrip } from "./HostStrip";
 import { RecordedGroups } from "./RecordedGroups";
 import { useTopState, type TopState, type TopTab } from "./useTopState";
-
-const LIVE_POLL_MS = 1000;
-const RUNS_POLL_MS = 2000;
+import { RefreshControl, useRefreshInterval } from "../monitoring/RefreshControl";
+import { RulesPanel } from "../rules/RulesPanel";
+import { EventsPanel } from "../rules/EventsPanel";
 
 // HISTORY_FRAMES is how many readings the live tab keeps for its CPU trends.
 const HISTORY_FRAMES = 60;
@@ -18,6 +18,8 @@ const HISTORY_FRAMES = 60;
 const TABS: Array<{ id: TopTab; label: string }> = [
   { id: "live", label: "Live" },
   { id: "recorded", label: "Recorded" },
+  { id: "rules", label: "Rules" },
+  { id: "events", label: "Events" },
 ];
 
 interface TabProps {
@@ -26,13 +28,14 @@ interface TabProps {
 }
 
 function useLiveFrame({ showOther, net }: TopState, enabled: boolean) {
+  const interval = useRefreshInterval();
   return useQuery({
     queryKey: ["top-live", { all: showOther, net }],
     queryFn: ({ signal }) => fetchTopFrame({ all: showOther, net }, signal),
     enabled,
     retry: false,
     // A refused reading is not polled again until Retry: the server would refuse it every second.
-    refetchInterval: current => current.state.status === "error" ? false : LIVE_POLL_MS,
+    refetchInterval: current => current.state.status === "error" ? false : interval,
   });
 }
 
@@ -69,11 +72,12 @@ function LiveGroups({ state, setState, query }: TabProps & { query: ReturnType<t
 }
 
 function RecordedRuns({ state, setState }: TabProps) {
+  const interval = useRefreshInterval();
   const query = useQuery({
     queryKey: ["top-runs"],
     queryFn: () => fetchTraceRuns({ kind: PROCESS_GROUPS_KIND }),
     retry: false,
-    refetchInterval: current => current.state.data?.runs.some(run => run.status === "running") ? RUNS_POLL_MS : false,
+    refetchInterval: current => current.state.data?.runs.some(run => run.status === "running") ? interval : false,
   });
   if (query.isPending) return <p role="status">Loading recordings…</p>;
   if (query.isError) return (
@@ -110,8 +114,14 @@ export default function TopPage() {
   return (
     <div className="space-y-4">
       {live && query.data?.host && <HostStrip host={query.data.host} overhead={query.data.overhead} />}
-      <Tabs tabs={TABS} value={state.tab} onChange={tab => setState({ tab: tab as TopTab })} />
-      {live ? <LiveGroups state={state} setState={setState} query={query} /> : <RecordedRuns state={state} setState={setState} />}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Tabs tabs={TABS} value={state.tab} onChange={tab => setState({ tab: tab as TopTab })} />
+        <RefreshControl />
+      </div>
+      {live && <LiveGroups state={state} setState={setState} query={query} />}
+      {state.tab === "recorded" && <RecordedRuns state={state} setState={setState} />}
+      {state.tab === "rules" && <RulesPanel />}
+      {state.tab === "events" && <EventsPanel />}
     </div>
   );
 }

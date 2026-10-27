@@ -3,7 +3,7 @@ import { GROUP_KINDS, SCOPES, type GroupKind, type Scope } from "./api";
 import { DEFAULT_VIEW, SORT_KEYS, type GroupsView, type SortDir, type SortKey } from "./groups";
 import { GROUPINGS, type GroupBy } from "./grouping";
 
-export type TopTab = "live" | "recorded";
+export type TopTab = "live" | "recorded" | "rules" | "events";
 
 /** The process groups panel's state, which lives in the URL: the tab, the view, the network choice and the selected recording. */
 export interface TopState extends GroupsView {
@@ -27,7 +27,7 @@ function readTopState(): TopState {
   if (!(GROUPINGS as readonly string[]).includes(groupBy)) throw new Error(`Unknown topGroupBy "${groupBy}"`);
   return {
     groupBy: groupBy as GroupBy,
-    tab: params.get("topTab") === "recorded" ? "recorded" : "live",
+    tab: ["recorded", "rules", "events"].includes(params.get("topTab") ?? "") ? params.get("topTab") as TopTab : "live",
     q: params.get("topQ") ?? "",
     kind: (GROUP_KINDS as readonly string[]).includes(kind) ? kind as GroupKind : "",
     scope: (SCOPES as readonly string[]).includes(scope) ? scope as Scope : "",
@@ -58,6 +58,11 @@ function topParams(state: TopState): Array<[string, string]> {
 
 export function useTopState(): [TopState, (next: Partial<TopState>) => void] {
   const [state, setState] = useState(readTopState);
+  useEffect(() => {
+    const onPop = () => setState(readTopState());
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     for (const name of PARAMS) params.delete(name);

@@ -1,0 +1,38 @@
+version: 1
+rules:
+  - name: agent-cpu
+    groupBy: session
+    match: 'group.context.agent == "claude" && cores > 1'
+    for: 30s
+    recover: cores < 0.8
+    recoverFor: 10s
+    steps:
+      - wait: 0s
+        hook:
+          type: renice
+          targets: group.members
+          nice: 10
+      - wait: 15s
+        hook:
+          type: session-interrupt
+          targets: group.sessions
+          via: cmux
+          key: Escape
+
+  - name: repository-memory
+    groupBy: repo
+    match: rss > 4 * 1024 * 1024 * 1024
+    for: 10s
+    recover: rss < 3 * 1024 * 1024 * 1024
+    recoverFor: 10s
+    steps:
+      - wait: 0s
+        hook:
+          type: signal
+          targets: group.members.filter(p, p.rss > 1024 * 1024 * 1024)
+          signal: SIGTERM
+      - wait: 10s
+        hook:
+          type: signal
+          targets: group.members
+          signal: SIGKILL

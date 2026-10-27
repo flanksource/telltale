@@ -111,6 +111,12 @@ groups:
 
 `telltale serve` serves the latest live frame, with the host's use, at `GET /api/top?all=true&net=true`, and keeps reading it every 2s while it is asked for. `GET /api/top/processes?name=<program>` returns the processes running a program, and `?pid=<n>` a process and every process under it. The web UI's Top page (`/top`) shows the groups live with gauges for the host, and recorded `process_groups` runs over time. `/top/<program>` and `/top/<pid>` show one program's or one process tree's processes, with gauges and their history. `GET /api/top/facets?pid=<n>` reads a process the latest frame listed, and answers 404 for one it did not. It returns the process's context with those names, its environment with its secrets masked as stored traces mask them, and its open files, sockets, listening ports and connections: the facets `process_samples` and `process_tree` record. `/top/<pid>` shows these facets for its process every 5s, and clicking a process in the table shows that process's.
 
+### Resource rules
+
+Monitor groups continuously with CEL triggers such as `cores > 1`, `cpu > 25`, or `rss > 4 * 1024 * 1024 * 1024`. Hooks select targets with CEL and can renice, signal, interrupt a Captain/cmux session, or invoke an executable. `telltale serve --rules examples/rules.yaml` observes by default; `--enforce-rules` enables hooks. [Concurrency policies](examples/concurrency-rules.yaml) cover excessive agent-browser, Vitest, and Go build/test jobs across the host. See [resource rule configuration and commands](docs/rules.md).
+
+The Top page includes Rules and Events tabs for conditions, escalation steps, live targets and hook results. A saved refresh interval, pause and manual refresh control apply across the monitoring views.
+
 ### Go API
 
 The module root package starts, stops, lists and serves runs for other Go programs:

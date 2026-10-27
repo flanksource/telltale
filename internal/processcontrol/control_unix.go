@@ -2,11 +2,20 @@
 
 package processcontrol
 
-import "syscall"
+import (
+	"syscall"
+)
+
+func validSignal(name string) bool { _, ok := signals[name]; return ok }
+
+var signals = map[string]syscall.Signal{"SIGHUP": syscall.SIGHUP, "SIGINT": syscall.SIGINT, "SIGTERM": syscall.SIGTERM, "SIGKILL": syscall.SIGKILL}
 
 func act(pid int, request Request) error {
 	if request.Action == "terminate" {
 		return syscall.Kill(pid, syscall.SIGTERM)
 	}
-	return syscall.Setpriority(syscall.PRIO_PROCESS, pid, *request.Nice)
+	if request.Action == "signal" {
+		return syscall.Kill(pid, signals[request.Signal])
+	}
+	return renice(pid, request)
 }

@@ -4,4 +4,6 @@ package processcontrol
 
 import "errors"
 
+func validSignal(string) bool { return false }
+
 func act(_ int, _ Request) error { return errors.New("process control requires macOS or Linux") }

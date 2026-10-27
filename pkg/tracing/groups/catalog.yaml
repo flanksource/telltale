@@ -35,6 +35,16 @@ groups:
       - exec: [go]
         args: [test]
       - exec: ["*.test"]
+  - name: go-build
+    kind: build
+    target: positional
+    match:
+      - exec: [go]
+        args: [build]
+      - exec: [go]
+        args: [install]
+      - exec: [go]
+        args: [run]
   - name: vitest
     kind: test
     target: positional
@@ -51,7 +61,7 @@ groups:
     kind: browser
     target: --session
     match:
-      - exec: [agent-browser]
+      - exec: [agent-browser, agent-browser-*]
       - contains: ["/agent-browser/"]
   - name: lightpanda
     kind: browser

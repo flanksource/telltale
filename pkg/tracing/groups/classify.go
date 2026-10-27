@@ -29,7 +29,7 @@ const (
 var appBundle = regexp.MustCompile(`^((?:/System|/Users/[^/]+)?/Applications/(?:[^/]+/)*?([^/]+)\.app)/`)
 
 // appOf is the bundle path and name of the app command runs, or "".
-func appOf(command string) (string, string) {
+func ApplicationOf(command string) (string, string) {
 	match := appBundle.FindStringSubmatch(command)
 	if match == nil {
 		return "", ""
@@ -151,7 +151,7 @@ func (c *classifier) owner(pid int) string {
 	case !ok && origin.Source == SourceBrewService:
 		rule, match, ok = Rule{Name: origin.Service, Kind: KindService}, Match{}, true
 	}
-	if bundle, name := appOf(p.Command); !ok && bundle != "" && (parent == "" || c.groups[parent].Rule.Kind == KindApp) {
+	if bundle, name := ApplicationOf(p.Command); !ok && bundle != "" && (parent == "" || c.groups[parent].Rule.Kind == KindApp) {
 		key = c.app(bundle, name, parent, p, origin)
 		c.owners[pid] = key
 		return key

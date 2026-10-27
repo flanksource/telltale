@@ -9,11 +9,10 @@ import { FacetsPanel } from "./FacetsPanel";
 import { toneOf } from "./HostStrip";
 import { isCPUHog } from "./cpu";
 import { ProcessActions } from "./ProcessActions";
+import { RefreshControl, useRefreshInterval } from "../monitoring/RefreshControl";
 import {
   filterProcesses, metricSeries, metricValue, parseTarget, sortProcesses, sumProcesses, type Metric, type ProcessSortKey,
 } from "./processes";
-
-const POLL_MS = 1000;
 
 /** How many readings the page keeps for its trends. */
 export const HISTORY_READINGS = 120;
@@ -140,6 +139,7 @@ function ProcessTable({ processes, sort, onSort, selected, onSelect, cores }: Pr
 const input = "rounded border border-border bg-background px-2 py-1";
 
 function ProcessView({ target }: { target: string }) {
+  const interval = useRefreshInterval();
   const { renderLink } = useRouter();
   const parsed = useMemo(() => parseTarget(target), [target]);
   const query = useQuery({
@@ -147,7 +147,7 @@ function ProcessView({ target }: { target: string }) {
     queryFn: ({ signal }) => fetchTopProcesses(parsed, signal),
     retry: false,
     // A refused reading is not polled again until Retry: the server would refuse it every second.
-    refetchInterval: current => current.state.status === "error" ? false : POLL_MS,
+    refetchInterval: current => current.state.status === "error" ? false : interval,
   });
   const [history, setHistory] = useState<TopProcesses[]>([]);
   useEffect(() => {
@@ -167,6 +167,7 @@ function ProcessView({ target }: { target: string }) {
         {renderLink({ to: "/top", className: "text-sm underline underline-offset-4", children: "← Process groups" })}
         <h2 className="text-xl font-semibold tracking-tight">{heading}</h2>
         {latest && <span className="text-sm text-muted-foreground">tick {latest.tick} · {new Date(latest.sampledAt).toLocaleTimeString()} · {latest.processes.length} {latest.processes.length === 1 ? "process" : "processes"}</span>}
+        <RefreshControl />
       </div>
       <label className="flex items-center gap-2 text-sm">
         Filter

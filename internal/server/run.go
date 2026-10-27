@@ -12,6 +12,7 @@ import (
 	"github.com/flanksource/clicky/task"
 	cctx "github.com/flanksource/commons/context"
 	"github.com/flanksource/telltale"
+	"github.com/flanksource/telltale/internal/rules"
 	"github.com/flanksource/telltale/webapp"
 	"github.com/spf13/cobra"
 )
@@ -25,7 +26,9 @@ type Options struct {
 	UIPort       int
 	WebDirectory string
 	// WorkDir holds the run stores `telltale trace run` recorded.
-	WorkDir string
+	WorkDir      string
+	RulesFile    string
+	EnforceRules bool
 }
 
 func Run(ctx context.Context, options Options) (err error) {
@@ -37,6 +40,18 @@ func Run(ctx context.Context, options Options) (err error) {
 	}
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
+	if options.EnforceRules && options.RulesFile == "" {
+		return fmt.Errorf("--enforce-rules requires --rules")
+	}
+	var monitor *rules.Service
+	if options.RulesFile != "" {
+		monitor, err = rules.Open(options.WorkDir, options.RulesFile, options.EnforceRules)
+		if err != nil {
+			return err
+		}
+		monitor.Start(ctx)
+		defer func() { err = errors.Join(err, monitor.Close()) }()
+	}
 	listener, err := net.Listen("tcp", net.JoinHostPort(options.Host, strconv.Itoa(options.Port)))
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
@@ -64,10 +79,10 @@ func Run(ctx context.Context, options Options) (err error) {
 		vite, err = startVite(ctx, devOptions{Options: options, apiURL: apiURL, cancel: cancel})
 		if err == nil {
 			defer func() { err = errors.Join(err, vite.stop()) }()
-			handler = routes(HandlerOptions{Root: options.Root, Version: options.Version, Traces: traceMount, Top: top}, vite.proxy())
+			handler = routes(HandlerOptions{Root: options.Root, Version: options.Version, Traces: traceMount, Top: top, Rules: monitor}, vite.proxy())
 		}
 	} else {
-		handler, err = servingHandler(options, traceMount, top)
+		handler, err = servingHandler(options, traceMount, top, monitor)
 	}
 	if err != nil {
 		return err
@@ -82,12 +97,12 @@ func Run(ctx context.Context, options Options) (err error) {
 	return err
 }
 
-func servingHandler(options Options, traces, top http.Handler) (http.Handler, error) {
+func servingHandler(options Options, traces, top http.Handler, monitor *rules.Service) (http.Handler, error) {
 	assets, err := webapp.Assets()
 	if err != nil {
 		return nil, err
 	}
-	return NewHandler(HandlerOptions{Root: options.Root, Version: options.Version, Assets: assets, Traces: traces, Top: top})
+	return NewHandler(HandlerOptions{Root: options.Root, Version: options.Version, Assets: assets, Traces: traces, Top: top, Rules: monitor})
 }
 
 func serve(ctx context.Context, listener net.Listener, handler http.Handler) error {

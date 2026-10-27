@@ -34,7 +34,7 @@ func (f Frame) Grouped(by GroupBy) (Frame, error) {
 	if by == "" || by == GroupTree {
 		return f, nil
 	}
-	contexts, err := groupingContexts(f.Groups)
+	contexts, err := ResolveContexts(f.Groups)
 	if err != nil {
 		return Frame{}, err
 	}
@@ -93,7 +93,7 @@ func bucketIdentity(by GroupBy, c Context) (string, string) {
 	return "", "Unattributed"
 }
 
-func groupingContexts(groups []GroupSample) (map[string]Context, error) {
+func ResolveContexts(groups []GroupSample) (map[string]Context, error) {
 	byKey := map[string]GroupSample{}
 	for _, group := range groups {
 		if _, exists := byKey[group.Key]; exists || group.Key == "" {

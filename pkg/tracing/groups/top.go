@@ -134,9 +134,7 @@ func (t *Top) Close() {
 }
 
 // Tick lists the host, sorts it into groups and reads what each uses.
-func (t *Top) Tick(ctx context.Context) (Frame, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+func (t *Top) collect(ctx context.Context) (Frame, error) {
 	started := time.Now()
 	listing, at, err := t.sampler.Observe(ctx, 0)
 	if err != nil {
@@ -179,7 +177,7 @@ func (t *Top) Tick(ctx context.Context) (Frame, error) {
 		return Frame{}, err
 	}
 	frame := Frame{SampledAt: at, Tick: t.tick, Host: &host, Overhead: &overhead}
-	for _, group := range t.shown(classified) {
+	for _, group := range classified {
 		frame.Groups = append(frame.Groups, GroupSample{
 			SampledAt: at, Tick: t.tick, Key: group.Key, ParentKey: group.ParentKey,
 			Name: group.Rule.Name, Kind: group.Rule.Kind, Target: group.Target,
@@ -286,24 +284,6 @@ func countOf(held []clickyprocess.Descriptor, holds func(clickyprocess.Descripto
 		}
 	}
 	return &count
-}
-
-// shown are the groups the options show: no KindOther ones unless All, and
-// with Groups only theirs and those under them.
-func (t *Top) shown(classified []Group) []Group {
-	kept := map[string]bool{}
-	var shown []Group
-	for _, group := range classified {
-		switch {
-		case group.Rule.Kind == KindOther && !t.options.All:
-			continue
-		case len(t.options.Groups) > 0 && !slices.Contains(t.options.Groups, group.Rule.Name) && !kept[group.ParentKey]:
-			continue
-		}
-		kept[group.Key] = true
-		shown = append(shown, group)
-	}
-	return shown
 }
 
 func keyOf(p process.Observed) string { return process.Key(p.Process) }

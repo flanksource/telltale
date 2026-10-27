@@ -1,0 +1,61 @@
+version: 1
+rules:
+  - name: agent-browser-concurrency
+    groupBy: host
+    match: group.members.filter(p, p.groupName == "agent-browser" && p.groupRoot).size() > 4
+    for: 15s
+    recoverFor: 10s
+    steps:
+      - wait: 0s
+        hook:
+          type: renice
+          nice: 10
+          targets: &browser-excess >-
+            cel.bind(jobs, group.members.filter(p, p.groupName == "agent-browser" && p.groupRoot).sortBy(p, p.pid),
+              cel.bind(excess, jobs.slice(4, jobs.size()).map(p, p.key),
+                group.members.filter(p, p.groupPath.exists(key, key in excess))))
+      - wait: 30s
+        hook:
+          type: signal
+          signal: SIGTERM
+          targets: *browser-excess
+
+  - name: vitest-concurrency
+    groupBy: host
+    match: group.members.filter(p, p.groupName == "vitest" && p.groupRoot).size() > 2
+    for: 15s
+    recoverFor: 10s
+    steps:
+      - wait: 0s
+        hook:
+          type: renice
+          nice: 10
+          targets: &vitest-excess >-
+            cel.bind(jobs, group.members.filter(p, p.groupName == "vitest" && p.groupRoot).sortBy(p, p.pid),
+              cel.bind(excess, jobs.slice(2, jobs.size()).map(p, p.key),
+                group.members.filter(p, p.groupPath.exists(key, key in excess))))
+      - wait: 30s
+        hook:
+          type: signal
+          signal: SIGTERM
+          targets: *vitest-excess
+
+  - name: go-build-concurrency
+    groupBy: host
+    match: group.members.filter(p, p.groupName in ["go-build", "go-test"] && p.groupRoot).size() > 2
+    for: 15s
+    recoverFor: 10s
+    steps:
+      - wait: 0s
+        hook:
+          type: renice
+          nice: 10
+          targets: &go-excess >-
+            cel.bind(jobs, group.members.filter(p, p.groupName in ["go-build", "go-test"] && p.groupRoot).sortBy(p, p.pid),
+              cel.bind(excess, jobs.slice(2, jobs.size()).map(p, p.key),
+                group.members.filter(p, p.groupPath.exists(key, key in excess))))
+      - wait: 30s
+        hook:
+          type: signal
+          signal: SIGTERM
+          targets: *go-excess

@@ -39,6 +39,18 @@ var _ = Describe("Classify", func() {
 		catalog, err = groups.LoadCatalog()
 		Expect(err).NotTo(HaveOccurred())
 	})
+	It("keeps Go build drivers and compiler helpers in independent job groups", func() {
+		listing := []process.Observed{
+			observed(100, 1, "go build ./cmd/acme"),
+			observed(101, 100, "/toolchain/pkg/tool/darwin_arm64/compile -p acme"),
+			observed(200, 1, "go -C /work/other build ./..."),
+			observed(201, 200, "/toolchain/pkg/tool/darwin_arm64/link -o acme"),
+		}
+		Expect(shapes(groups.Classify(listing, groups.ClassifyOptions{Catalog: catalog}))).To(Equal([]shape{
+			{Key: "100", Name: "go-build", Target: "./cmd/acme", PIDs: []int{100, 101}},
+			{Key: "200", Name: "go-build", Target: "/work/other ./...", PIDs: []int{200, 201}},
+		}))
+	})
 
 	It("nests each tool's group under the nearest group above it, keeping helpers in their tool's group", func() {
 		listing := []process.Observed{
