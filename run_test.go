@@ -26,8 +26,8 @@ var _ = Describe("parsing a trace spec", func() {
 		func(value string, expected telltale.TraceSpec) {
 			Expect(telltale.ParseTraceSpec(value)).To(Equal(expected))
 		},
-		Entry("bare kind", "http_proxy", telltale.TraceSpec{Kind: "http_proxy"}),
-		Entry("kind with params", `http_proxy:{"mode":"mitm"}`, telltale.TraceSpec{Kind: "http_proxy", Params: json.RawMessage(`{"mode":"mitm"}`)}),
+		Entry("bare kind", "http", telltale.TraceSpec{Kind: "http"}),
+		Entry("kind with params", `http:{"mode":"mitm"}`, telltale.TraceSpec{Kind: "http", Params: json.RawMessage(`{"mode":"mitm"}`)}),
 	)
 	DescribeTable("refuses",
 		func(value, expected string) {
@@ -35,7 +35,7 @@ var _ = Describe("parsing a trace spec", func() {
 			Expect(err).To(MatchError(ContainSubstring(expected)))
 		},
 		Entry("no kind", `:{"mode":"mitm"}`, "names no kind"),
-		Entry("params that are not JSON", "http_proxy:mode=mitm", "not JSON"),
+		Entry("params that are not JSON", "http:mode=mitm", "not JSON"),
 	)
 })
 
@@ -68,7 +68,7 @@ var _ = Describe("running a command under trace", func() {
 		}))
 		DeferCleanup(upstream.Close)
 
-		result, output := run([]string{"curl", "-sS", upstream.URL + "/hello"}, telltale.TraceSpec{Kind: httpproxy.Kind})
+		result, output := run([]string{"curl", "-sS", upstream.URL + "/hello"}, telltale.TraceSpec{Kind: httpproxy.Kind, Params: json.RawMessage(`{"target":{"seam":"proxy"}}`)})
 		Expect(result.ExitCode).To(Equal(0), output)
 		Expect(output).To(Equal("traced"))
 		Expect(result.Captures).To(HaveLen(1))
@@ -168,7 +168,7 @@ var _ = Describe("a run attached to a running process", func() {
 		},
 		Entry("a proxy the command is pointed at", func(pid int) telltale.StartOptions {
 			return telltale.StartOptions{PID: pid, Traces: []telltale.TraceSpec{{Kind: httpproxy.Kind}}}
-		}, "http_proxy is pointed at by the command a run starts: it cannot attach"),
+		}, "no agent advertises probe http"),
 		Entry("both a command and a pid", func(pid int) telltale.StartOptions {
 			return telltale.StartOptions{PID: pid, Command: []string{"true"}}
 		}, "not both"),

@@ -2,6 +2,7 @@ package cli_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -10,9 +11,12 @@ import (
 
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/internal/cli"
+	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/tracing"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 	"github.com/flanksource/telltale/pkg/tracing/terminal"
+	"github.com/flanksource/telltale/pkg/tracing/tracingtest"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -59,7 +63,7 @@ var _ = Describe("telltale run <kind>", func() {
 
 	It("generates a command for a kind registered before the CLI is built", func() {
 		Expect(traces.Register(traces.Registration{
-			Name: "cli_test_kind", Title: "CLI test kind", Summary: "Records what the CLI test feeds it", Target: traces.TargetSelf,
+			Name: "cli_test_kind", Title: "CLI test kind", Summary: "Records what the CLI test feeds it", Seams: []target.Seam{target.Self}, DefaultSeam: target.Self,
 			Description: "Registered by the CLI test.",
 			Examples:    []traces.Example{{Args: "--width 80 -- true", Says: "an 80-cell terminal"}},
 			New:         func(traces.KindDeps) tracing.TracePlugin { return terminal.NewKind() },
@@ -79,13 +83,13 @@ var _ = Describe("telltale run <kind>", func() {
 				Expect(page).To(ContainSubstring("telltale run " + registration.Name + " " + example.Args))
 			}
 		}
-		page := help("run", "http_proxy")
+		page := help("run", "http")
 		Expect(page).To(MatchRegexp(`(?s)COMMAND FLAGS.*TRACE PARAMS.*FORMATTING`), "a kind's params come before the formatting flags")
 		Expect(page).To(ContainSubstring("--mode string"))
 		Expect(page).To(ContainSubstring("(one of connect, mitm) (default connect)"))
 		Expect(page).To(ContainSubstring("EXPORTS"))
 		Expect(page).To(ContainSubstring("HTTPS_PROXY"))
-		Expect(page).ToNot(ContainSubstring("--pid PID"), "a proxy cannot attach")
+		Expect(page).To(ContainSubstring("--pid PID"), "an agent can attach")
 		Expect(help("run", "stacks")).To(ContainSubstring("telltale run stacks [flags] --pid PID"))
 		Expect(page).ToNot(ContainSubstring("\x1b["), "help written to a buffer is plain")
 	})
@@ -97,18 +101,19 @@ var _ = Describe("telltale run <kind>", func() {
 			Expect(err).To(MatchError(ContainSubstring(refusal)))
 			Expect(filepath.Join(workDir, ".telltale")).ToNot(BeADirectory())
 		},
-		Entry("a value outside a param's choices", "http_proxy", []string{"--mode", "sideways", "--", "true"}, `--mode: "sideways" is not one of connect, mitm`),
-		Entry("params the kind refuses", "pg_proxy", []string{"--dsn", "postgres://localhost/db", "--max-statements", "-1", "--", "true"}, "maxStatements -1 must be at least 1"),
-		Entry("a proxy aimed at a running process", "http_proxy", []string{"--pid", strconv.Itoa(os.Getpid())}, "http_proxy is pointed at by the command a run starts: it cannot attach"),
-		Entry("no command and no pid", "stacks", []string{}, "give a command after --, or --pid"),
+		Entry("a value outside a param's choices", "http", []string{"--seam", "proxy", "--mode", "sideways", "--", "true"}, `--mode: "sideways" is not one of connect, mitm`),
+		Entry("params the kind refuses", "sql", []string{"--seam", "proxy", "--dsn", "postgres://localhost/db", "--max-statements", "-1", "--", "true"}, "maxStatements -1 must be at least 1"),
+		Entry("a proxy aimed at a running process", "http", []string{"--seam", "proxy", "--pid", strconv.Itoa(os.Getpid())}, "invalid target"),
+		Entry("no command and no pid", "stacks", []string{}, "give a command or a pid to attach to"),
 		Entry("both a command and a pid", "stacks", []string{"--pid", strconv.Itoa(os.Getpid()), "--", "true"}, "not both"),
+		Entry("an invalid agent selector", "stacks", []string{"--selector", "invalid"}, "--selector:"),
 	)
 
 	It("runs a command with one kind, recording it in the run's manifest", func() {
 		workDir := GinkgoT().TempDir()
-		_, stderr, err := execute("run", "http_proxy", "--work-dir", workDir, "--", "true")
+		_, stderr, err := execute("run", "http", "--seam", "proxy", "--work-dir", workDir, "--", "true")
 		Expect(err).ToNot(HaveOccurred(), stderr)
-		Expect(manifest(workDir).Captures).To(ConsistOf(HaveField("Kind", "http_proxy")))
+		Expect(manifest(workDir).Captures).To(ConsistOf(HaveField("Kind", "http")))
 	})
 
 	It("attaches to a running process for a duration", func() {
@@ -126,6 +131,51 @@ var _ = Describe("telltale run <kind>", func() {
 		Expect(result.PID).To(Equal(target.Process.Pid))
 		Expect(result.Captures).To(ConsistOf(HaveField("Kind", "process_samples")))
 	})
+
+	It("runs goprof and stacks against a child through the agent seam", func() {
+		config := GinkgoT().TempDir()
+		child := tracingtest.StartGoChild(tracingtest.GoChildBinary(GinkgoT().TempDir()), "-agent-config", config)
+		Expect(agentclient.Default.Discover(context.Background(), filepath.Join(config, "telltale", "agents"))).To(Succeed())
+		for _, run := range []struct {
+			kind  string
+			extra []string
+		}{{kind: "goprof", extra: []string{"--seam", "agent"}}, {kind: "goprof", extra: []string{"--seam", "agent", "--profile", "cpu", "--seconds", "1"}}, {kind: "goprof"}, {kind: "stacks", extra: []string{"--seam", "agent"}}} {
+			workDir := GinkgoT().TempDir()
+			args := append([]string{"run", run.kind, "--work-dir", workDir, "--pid", strconv.Itoa(child.PID), "--duration", "1s"}, run.extra...)
+			_, stderr, err := execute(args...)
+			Expect(err).NotTo(HaveOccurred(), stderr)
+			Expect(manifest(workDir).Captures).To(ContainElement(HaveField("Kind", run.kind)))
+		}
+	})
+	DescribeTable("attaches a run while keeping the kind's seam", func(kind string, extra []string) {
+		workDir := GinkgoT().TempDir()
+		args := append([]string{"run", kind, "--work-dir", workDir, "--pid", strconv.Itoa(os.Getpid()), "--duration", "300ms"}, extra...)
+		_, stderr, err := execute(args...)
+		Expect(err).NotTo(HaveOccurred(), stderr)
+		Expect(manifest(workDir).PID).To(Equal(os.Getpid()))
+	},
+		Entry("self", "http", []string{"--seam", "self", "--features", "http"}),
+		Entry("host", "process_groups", nil),
+	)
+	DescribeTable("reports the same refusal for CLI and library runs", func(kind string, args []string, options telltale.StartOptions) {
+		_, _, cliErr := execute(append([]string{"run", kind}, args...)...)
+		options.Traces = []telltale.TraceSpec{{Kind: kind}}
+		_, libraryErr := telltale.Start(context.Background(), options)
+		Expect(cliErr).To(HaveOccurred())
+		Expect(libraryErr).To(HaveOccurred())
+		Expect(cliErr.Error()).To(Equal(libraryErr.Error()))
+	},
+		Entry("a missing agent", "http", []string{"--pid", strconv.Itoa(os.Getpid())}, telltale.StartOptions{PID: os.Getpid()}),
+		Entry("no command or PID", "stacks", nil, telltale.StartOptions{}),
+		Entry("a command and PID", "stacks", []string{"--pid", strconv.Itoa(os.Getpid()), "--", "true"}, telltale.StartOptions{PID: os.Getpid(), Command: []string{"true"}}),
+	)
+	It("shows supported seams and run attachment in help", func() {
+		page := help("run", "process_groups")
+		Expect(page).To(ContainSubstring("--pid PID"))
+		Expect(page).To(ContainSubstring("supported seams: [host]"))
+		Expect(page).NotTo(ContainSubstring("--agent"))
+		Expect(help("run", "process_samples")).To(ContainSubstring("--seam process"))
+	})
 })
 
 var _ = Describe("telltale trace run", func() {
@@ -142,7 +192,7 @@ var _ = Describe("telltale trace run", func() {
 	It("refuses an unknown kind before making a run store, naming the registered ones", func() {
 		workDir := GinkgoT().TempDir()
 		_, _, err := execute("trace", "run", "--work-dir", workDir, "--trace", "nope", "--", "true")
-		Expect(err).To(MatchError(And(ContainSubstring(`unknown trace kind "nope" (registered: `), ContainSubstring("http_proxy, pg_proxy"))))
+		Expect(err).To(MatchError(And(ContainSubstring(`unknown trace kind "nope" (registered: `), ContainSubstring("http"), ContainSubstring("sql"))))
 		Expect(filepath.Join(workDir, ".telltale")).ToNot(BeADirectory())
 	})
 })

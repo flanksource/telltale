@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/tracing"
+	"github.com/flanksource/telltale/pkg/tracing/goprof"
 	"github.com/spf13/cobra"
 )
 
@@ -60,7 +60,6 @@ func newRunKindCommand(registration traces.Registration, plugin tracing.TracePlu
 	}
 	cmd.Flags().SetInterspersed(false)
 	flags.bind(cmd)
-	cmd.Flags().IntVar(&flags.options.PID, "pid", 0, "Attach to this running process instead of running a command")
 	schema, err := plugin.Params()
 	if err != nil {
 		panic(fmt.Sprintf("trace kind %s params: %v", registration.Name, err))
@@ -69,36 +68,38 @@ func newRunKindCommand(registration traces.Registration, plugin tracing.TracePlu
 	if err != nil {
 		panic(fmt.Sprintf("trace kind %s: %v", registration.Name, err))
 	}
+	var checkpoint *profileCheckpointFlags
+	if defaults, ok := registration.Checkpoint.(goprof.CheckpointParams); ok {
+		checkpoint = bindProfileCheckpoint(cmd.Flags(), defaults)
+	}
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		raw, err := params.params()
 		if err != nil {
 			return err
 		}
-		if err := plugin.ValidateParams(raw); err != nil {
-			return fmt.Errorf("%s %w", registration.Name, err) // ValidateParams says "params: ..."
-		}
 		options := flags.options
-		if options.Command, err = commandArgs(options.PID, args, registration.Target); err != nil {
+		options.PID, err = cmd.Flags().GetInt("pid")
+		if err != nil {
 			return err
 		}
-		options.Traces = []telltale.TraceSpec{{Kind: registration.Name, Params: raw}}
+		if options.PID == 0 {
+			if err := plugin.ValidateParams(raw); err != nil {
+				return fmt.Errorf("trace %s %w", registration.Name, err)
+			}
+		}
+		options.Command = args
+		var reading []byte
+		if checkpoint != nil {
+			reading, err = checkpoint.params()
+			if err != nil {
+				return err
+			}
+		}
+		options.Traces = []telltale.TraceSpec{{Kind: registration.Name, Params: raw, Checkpoint: reading}}
 		return runTraced(cmd, options, telltale.Start)
 	}
 	setHelp(cmd, func(cmd *cobra.Command) api.Text { return kindHelp(cmd, registration).Text })
 	return cmd
-}
-
-// commandArgs are the command a run starts: args, which an attached run
-// (pid) must not have and any other must, but a run of a target observing
-// the host, which may go without.
-func commandArgs(pid int, args []string, target traces.Target) ([]string, error) {
-	switch {
-	case pid != 0 && len(args) > 0:
-		return nil, fmt.Errorf("attach to --pid %d or run %q, not both", pid, strings.Join(args, " "))
-	case pid == 0 && len(args) == 0 && target != traces.TargetHost:
-		return nil, errors.New("give a command after --, or --pid to attach to a running process")
-	}
-	return args, nil
 }
 
 // runTraced starts a run with start, waits for it and prints what it

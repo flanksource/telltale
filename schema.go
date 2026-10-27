@@ -10,6 +10,7 @@ import (
 	"github.com/flanksource/clicky/rpc"
 	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/tracing/httpproxy"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 )
 
 // ArmableKinds are the registered kinds the start form offers
@@ -122,7 +123,7 @@ func armedSpec(kind string, raw json.RawMessage) (TraceSpec, bool, error) {
 
 // StartSchema is the JSON schema of a StartRequest, the form a client renders
 // to start a run, and the values it starts from: each armable kind's params
-// shown once the kind is enabled, http_proxy enabled as `trace run` arms it.
+// shown once the kind is enabled, HTTP proxy enabled as `trace run` arms it.
 func StartSchema() (*rpc.OpenAPISchema, map[string]any, error) {
 	kinds, err := traces.Kinds()
 	if err != nil {
@@ -140,11 +141,20 @@ func StartSchema() (*rpc.OpenAPISchema, map[string]any, error) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("trace kind %q: %w", kind, err)
 		}
+		if len(registration.Seams) == 1 && slices.Contains([]target.Seam{target.Self, target.Host, target.Proxy}, registration.Seams[0]) {
+			delete(params.Properties, "target")
+		}
 		captures.Properties[kind] = captureSchema(registration.Title, order, params)
 		defaults := map[string]any{enabledKey: kind == httpproxy.Kind}
 		for name, property := range params.Properties {
 			if property.Default != nil {
 				defaults[name] = property.Default
+			}
+		}
+		if slices.Contains(registration.Seams, target.Proxy) {
+			defaults["target"] = map[string]any{"seam": target.Proxy}
+			if kind == httpproxy.Kind {
+				delete(defaults, "features")
 			}
 		}
 		captureDefaults[kind] = defaults

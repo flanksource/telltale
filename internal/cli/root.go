@@ -33,7 +33,7 @@ func NewRoot(version string) *cobra.Command {
 	serve.Flags().StringVar(&options.WorkDir, "work-dir", options.WorkDir, "Directory whose .telltale/traces run stores are served")
 	serve.Flags().StringVar(&options.RulesFile, "rules", "", "Continuously observe resource rules from this YAML file")
 	serve.Flags().BoolVar(&options.EnforceRules, "enforce-rules", false, "Execute resource rule hooks (default: observation only)")
-	root.AddCommand(serve, newTraceCommand(), newConnectionCommand(), newRunCommand(), newTopCommand(), newRulesCommand())
+	root.AddCommand(serve, newTraceCommand(), newConnectionCommand(), newRunCommand(), newTopCommand(), newRulesCommand(), newAgentsCommand())
 	for _, preset := range telltale.Presets() {
 		if existing, _, err := root.Find([]string{preset.Name}); err == nil && existing != root {
 			panic(fmt.Sprintf("preset %q is named as the %q command", preset.Name, existing.CommandPath()))
