@@ -196,7 +196,7 @@ func (events[P]) Handle(ctx dbcontext.Context, _ P, records tracing.Emitter[xese
 // type: events masked, but never the session ids and users that only look
 // sensitive.
 func NewKindFor[P Capturable](capture Capture) *tracing.Handler[P, xesession.EventRow] {
-	return tracing.NewHandler[P, xesession.EventRow](events[P]{capture: capture}, tracing.Capabilities{Live: true}).
+	return tracing.NewHandler[P, xesession.EventRow](events[P]{capture: capture}, tracing.Capabilities{Live: true}, "process").
 		WithSecretMasking("sessionId", "username")
 }
 

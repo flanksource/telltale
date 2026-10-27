@@ -21,16 +21,21 @@ import (
 	"github.com/flanksource/commons-db/query/providers/sqlite"
 	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/telltale/pkg/tracing"
+	"github.com/flanksource/telltale/pkg/tracing/pgproxy"
 	tracesql "github.com/flanksource/telltale/pkg/tracing/sql"
 	"github.com/flanksource/telltale/pkg/tracing/tracingtest"
 )
 
 var _ = Describe("sql trace kind", func() {
+	It("registers SQL records under the sql kind", func() {
+		Expect(tracesql.RowKind).To(Equal("sql"))
+	})
+
 	var env tracingtest.Env
 	var database *sql.DB
 
 	BeforeEach(func() {
-		env = tracingtest.NewEnv(map[string]tracing.TracePlugin{tracesql.RowKind: tracesql.Kind()})
+		env = tracingtest.NewEnv(map[string]tracing.TracePlugin{tracesql.RowKind: pgproxy.UnifiedKind(nil)})
 		var err error
 		database, err = sql.Open("sqlite", filepath.Join(GinkgoT().TempDir(), "events.db"))
 		Expect(err).ToNot(HaveOccurred())
@@ -114,8 +119,8 @@ var _ = Describe("sql trace kind", func() {
 	})
 
 	It("refuses a capture that names no connections", func() {
-		for _, params := range []string{`{}`, `{"connections": []}`, `{"connections": [""]}`, `{"connections": ["events-db", " "]}`} {
-			Expect(tracesql.Kind().ValidateParams(json.RawMessage(params))).
+		for _, params := range []string{`{"connections": []}`, `{"connections": [""]}`, `{"connections": ["events-db", " "]}`} {
+			Expect(pgproxy.UnifiedKind(nil).ValidateParams(json.RawMessage(params))).
 				To(MatchError(ContainSubstring("connections")), params)
 		}
 	})
@@ -133,7 +138,7 @@ var _ = Describe("sql trace kind", func() {
 	})
 
 	It("refuses a minimum duration that is not one", func() {
-		Expect(tracesql.Kind().ValidateParams(json.RawMessage(`{"connections": ["*"], "minDuration": "soon"}`))).
+		Expect(pgproxy.UnifiedKind(nil).ValidateParams(json.RawMessage(`{"connections": ["*"], "minDuration": "soon"}`))).
 			To(MatchError(ContainSubstring("minDuration")))
 	})
 

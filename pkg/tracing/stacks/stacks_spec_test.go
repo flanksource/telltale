@@ -19,6 +19,7 @@ import (
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/commons-db/recordstore"
+	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/process"
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
@@ -41,15 +42,17 @@ func (a addresses) of(pid int) (string, bool) {
 func newEnv(dumpers ...stacks.Dumper) tracingtest.Env {
 	registry, err := stacks.NewDumpers(dumpers...)
 	Expect(err).ToNot(HaveOccurred())
+	agents := agentclient.NewRegistry()
+	agents.Dir = GinkgoT().TempDir()
 	return tracingtest.NewEnv(map[string]tracing.TracePlugin{
-		stacks.Kind:      stacks.NewKind(registry),
+		stacks.Kind:      stacks.NewKind(agents, registry),
 		process.TreeKind: process.NewTreeKind(process.NewSampler(), process.TreeOptions{Dumpers: registry}),
 	})
 }
 
 func start(env tracingtest.Env, kind string, rootPID int) *query.ManagedSession {
 	managed, err := env.Runtime.Start(dbcontext.New(), tracing.StartRequest{
-		Kind: kind, Params: json.RawMessage(`{"rootPid": ` + strconv.Itoa(rootPID) + `}`),
+		Kind: kind, Params: json.RawMessage(`{"target":{"pid": ` + strconv.Itoa(rootPID) + `}}`),
 	})
 	Expect(err).ToNot(HaveOccurred())
 	tracingtest.Running(managed.Session())

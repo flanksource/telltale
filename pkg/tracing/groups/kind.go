@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	tracetarget "github.com/flanksource/telltale/pkg/tracing/target"
+
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/process"
 
@@ -29,7 +31,8 @@ type Params struct {
 	Groups []string `json:"groups,omitempty" clicky:"title=Groups,desc=Record only these groups and those under them such as claude or vitest"`
 	Net    bool     `json:"net,omitempty" clicky:"title=Network bytes,desc=Read each process's network bytes with nettop (darwin; costs over a core)"`
 	// Catalog is a groups.yaml applied over the built-in rules.
-	Catalog string `json:"catalog,omitempty" clicky:"title=Catalog,desc=A groups.yaml whose rules are applied over the built-in ones"`
+	Catalog string             `json:"catalog,omitempty" clicky:"title=Catalog,desc=A groups.yaml whose rules are applied over the built-in ones"`
+	Target  tracetarget.Target `json:"target,omitzero"`
 }
 
 func (p Params) Validate() error {
@@ -132,5 +135,5 @@ func (kind) Handle(ctx dbcontext.Context, params Params, records tracing.Emitter
 // NewKind is the process_groups kind over sampler, whose sessions can follow
 // the groups as they are read.
 func NewKind(sampler *process.Sampler) *tracing.Handler[Params, GroupSample] {
-	return tracing.NewHandler[Params, GroupSample](kind{sampler: sampler}, tracing.Capabilities{Live: true})
+	return tracing.NewHandler[Params, GroupSample](kind{sampler: sampler}, tracing.Capabilities{Live: true}, "host")
 }

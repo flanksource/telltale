@@ -7,6 +7,7 @@ package pgproxy
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -30,6 +31,15 @@ import (
 // conversation. "fail" is answered with an ErrorResponse, INSERTs with a tag
 // of one row, anything else with SELECT 3.
 type fakePostgres struct{ listener net.Listener }
+
+func proxyParams(raw string) json.RawMessage {
+	var params map[string]any
+	Expect(json.Unmarshal([]byte(raw), &params)).To(Succeed())
+	params["target"] = map[string]string{"seam": "proxy"}
+	value, err := json.Marshal(params)
+	Expect(err).NotTo(HaveOccurred())
+	return value
+}
 
 func startFakePostgres() *fakePostgres {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -155,12 +165,12 @@ var _ = Describe("pg_proxy trace kind", func() {
 	var server *fakePostgres
 
 	BeforeEach(func() {
-		env = tracingtest.NewEnv(map[string]tracing.TracePlugin{Kind: NewKind()})
+		env = tracingtest.NewEnv(map[string]tracing.TracePlugin{Kind: UnifiedKind(nil)})
 		server = startFakePostgres()
 	})
 
 	start := func(params string) (*query.ManagedSession, map[string]string) {
-		managed, err := env.Runtime.Start(dbcontext.New(), tracing.StartRequest{Kind: Kind, Params: []byte(params)})
+		managed, err := env.Runtime.Start(dbcontext.New(), tracing.StartRequest{Kind: Kind, Params: proxyParams(params)})
 		Expect(err).ToNot(HaveOccurred())
 		tracingtest.Running(managed.Session())
 		return managed, managed.Status().Exports
@@ -311,7 +321,7 @@ var _ = Describe("pg_proxy trace kind", func() {
 			GinkgoT().Setenv("DATABASE_URL", "")
 			plugin, ok := env.Runtime.Kinds.Get(Kind)
 			Expect(ok).To(BeTrue())
-			Expect(plugin.ValidateParams([]byte(params))).To(MatchError(ContainSubstring(wantErr)))
+			Expect(plugin.ValidateParams(proxyParams(params))).To(MatchError(ContainSubstring(wantErr)))
 		},
 		Entry("no upstream anywhere", `{}`, "GAVEL_DB_DSN"),
 		Entry("a non-postgres scheme", `{"dsn": "mysql://localhost/db"}`, "postgres://"),

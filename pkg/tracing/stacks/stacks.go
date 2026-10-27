@@ -5,9 +5,11 @@
 package stacks
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -15,7 +17,10 @@ import (
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
+	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/tracing"
+	"github.com/flanksource/telltale/pkg/tracing/seam"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 )
 
 // Kind is the name a host registers the kind as.
@@ -26,22 +31,21 @@ const maxRawBytes = 1 << 20
 
 // Params choose the tree whose processes a capture dumps.
 type Params struct {
-	// RootPID is the process whose tree is dumped; zero is the host's own.
-	RootPID int `json:"rootPid,omitempty" clicky:"title=Root PID,desc=Process whose tree is dumped; 0 is telltale's own which holds the command"`
+	Target target.Target `json:"target,omitzero"`
 }
 
 func (p Params) Validate() error {
-	if p.RootPID < 0 {
-		return fmt.Errorf("rootPid %d is not a process id", p.RootPID)
+	if p.Target.PID < 0 {
+		return fmt.Errorf("pid %d is not a process id", p.Target.PID)
 	}
 	return nil
 }
 
 func (p Params) root() int {
-	if p.RootPID == 0 {
+	if p.Target.PID == 0 {
 		return os.Getpid()
 	}
-	return p.RootPID
+	return p.Target.PID
 }
 
 // Frame is one call of a stack.
@@ -106,6 +110,11 @@ func (p CheckpointParams) Validate() error {
 
 type stacks struct {
 	dumpers *Dumpers
+	agent   seam.AgentSeam[Params, Stack]
+}
+
+func (s stacks) AgentAvailable(probe string, selection target.Target) (bool, error) {
+	return s.agent.Available(probe, selection)
 }
 
 func (stacks) Params() Params { return Params{} }
@@ -119,7 +128,10 @@ func (stacks) Schema() recordresults.ResultType[Stack] {
 }
 
 // Prepare refuses a root that is not running, before the session starts.
-func (stacks) Prepare(ctx dbcontext.Context, params Params, _ tracing.Emitter[Stack]) (dbcontext.Context, func() error, error) {
+func (s stacks) Prepare(ctx dbcontext.Context, params Params, out tracing.Emitter[Stack]) (dbcontext.Context, func() error, error) {
+	if params.Target.Seam == target.Agent || params.Target.Seam == target.Self {
+		return s.agent.Prepare(ctx, params, out)
+	}
 	if _, err := Resolve(ctx, params.root(), "", 0); err != nil {
 		return ctx, nil, err
 	}
@@ -127,17 +139,36 @@ func (stacks) Prepare(ctx dbcontext.Context, params Params, _ tracing.Emitter[St
 }
 
 // Handle waits for the capture to stop: the kind reads only at checkpoints.
-func (stacks) Handle(ctx dbcontext.Context, _ Params, _ tracing.Emitter[Stack], _ tracing.Records[Stack]) error {
+func (s stacks) Handle(ctx dbcontext.Context, params Params, out tracing.Emitter[Stack], _ tracing.Records[Stack]) error {
+	if params.Target.Seam == target.Agent || params.Target.Seam == target.Self {
+		return s.agent.Handle(ctx, params, out)
+	}
 	<-ctx.Done()
 	return nil
 }
 
 // NewKind is the stacks kind dumping over dumpers, its dumps cut at 1MiB.
-func NewKind(dumpers *Dumpers) *tracing.Handler[Params, Stack] {
+func NewKind(registry *agentclient.Registry, dumpers *Dumpers) *tracing.Handler[Params, Stack] {
 	if dumpers == nil {
 		panic("stacks: NewKind needs the host's Dumpers")
 	}
-	return tracing.NewHandler[Params, Stack](stacks{dumpers: dumpers}, tracing.Capabilities{Live: true}).
+	agent := seam.AgentSeam[Params, Stack]{Probe: Kind, Registry: registry, Target: func(p Params) target.Target { return p.Target }, DecodeBlob: func(blob agentclient.Blob, resource map[string]string) ([]Stack, error) {
+		if blob.Info.Name != "stacks" || blob.Info.ContentType != "text/plain" {
+			return nil, fmt.Errorf("unexpected stacks blob %s (%s)", blob.Info.Name, blob.Info.ContentType)
+		}
+		pid, err := strconv.Atoi(resource["process.pid"])
+		if err != nil {
+			return nil, fmt.Errorf("agent process pid: %w", err)
+		}
+		var request CheckpointParams
+		if len(blob.CheckpointParams) > 0 {
+			if err := json.Unmarshal(blob.CheckpointParams, &request); err != nil {
+				return nil, fmt.Errorf("stacks checkpoint params: %w", err)
+			}
+		}
+		return Records(Stack{CheckpointID: newCheckpointID(), Reason: request.Reason, PID: pid, Transport: "agent"}, Dump{Format: FormatGo, Text: string(blob.Data), CollectedAt: time.Now().UTC()}), nil
+	}}
+	return tracing.NewHandler[Params, Stack](stacks{dumpers: dumpers, agent: agent}, tracing.Capabilities{Live: true}, target.Process, target.Agent, target.Self).
 		WithTruncation(maxRawBytes)
 }
 

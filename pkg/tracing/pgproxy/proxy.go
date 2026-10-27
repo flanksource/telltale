@@ -53,7 +53,7 @@ type proxy struct {
 func startProxy(params Params, dsn *url.URL, emit func(connection.Statement)) (*proxy, error) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return nil, fmt.Errorf("pg_proxy listen: %w", err)
+		return nil, fmt.Errorf("sql proxy listen: %w", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	p := &proxy{params: params, upstream: upstreamAddr(dsn), dsn: dsn, listener: listener, emit: emit, ctx: ctx, cancel: cancel}
@@ -81,7 +81,7 @@ func (p *proxy) childEnv() (map[string]string, error) {
 
 	host, port, err := net.SplitHostPort(p.Addr())
 	if err != nil {
-		return nil, fmt.Errorf("pg_proxy listener address %q: %w", p.Addr(), err)
+		return nil, fmt.Errorf("sql proxy listener address %q: %w", p.Addr(), err)
 	}
 	env := map[string]string{
 		"GAVEL_DB_DSN": rewritten.String(),
@@ -182,7 +182,7 @@ func negotiateStartup(client, server net.Conn) error {
 		}
 		length := int(binary.BigEndian.Uint32(header[:4]))
 		if length < 8 || length > maxWireMessage {
-			return fmt.Errorf("pg_proxy startup packet length %d out of range", length)
+			return fmt.Errorf("sql proxy startup packet length %d out of range", length)
 		}
 
 		switch binary.BigEndian.Uint32(header[4:8]) {

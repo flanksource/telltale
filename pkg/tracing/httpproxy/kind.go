@@ -1,4 +1,4 @@
-// Package httpproxy is the http_proxy trace kind: a recording HTTP proxy the
+// Package httpproxy implements the HTTP proxy seam: a recording proxy the
 // processes a capture observes are pointed at through the environment it
 // exports, storing each exchange it relays as an http.Exchange.
 package httpproxy
@@ -18,8 +18,8 @@ import (
 	tracehttp "github.com/flanksource/telltale/pkg/tracing/http"
 )
 
-// Kind is the name the http_proxy kind registers under.
-const Kind = "http_proxy"
+// Kind is the name the HTTP kind registers under.
+const Kind = "http"
 
 // maxValueBytes caps any one value an exchange stores: a body at maxBodies,
 // base64-encoded when it is not text, fits under it.
@@ -138,13 +138,4 @@ func (proxy) Summarize(rows iter.Seq[tracehttp.Exchange]) (map[string]any, error
 	}
 	summary["tunnelled"], summary["bytes_in"], summary["bytes_out"] = tunnelled, bytesIn, bytesOut
 	return summary, nil
-}
-
-// NewKind is the http_proxy trace kind: exchanges masked, capped at 6MiB a
-// value, and their bodies stored as structure when they hold JSON.
-func NewKind() *tracing.Handler[Params, tracehttp.Exchange] {
-	return tracing.NewHandler[Params, tracehttp.Exchange](proxy{}, tracing.Capabilities{Live: true}).
-		WithSecretMasking().
-		WithTruncation(maxValueBytes).
-		WithJSONProcessor(tracehttp.RequestBody, tracehttp.ResponseBody)
 }

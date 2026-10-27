@@ -12,6 +12,7 @@ import (
 	"time"
 
 	clickyprocess "github.com/flanksource/clicky/process"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 )
 
 // MinInterval is the shortest tick a capture takes: each tick lists every
@@ -22,16 +23,15 @@ const defaultInterval = time.Second
 
 // Params choose the process tree a capture follows and how often it looks.
 type Params struct {
-	// RootPID is the process whose tree is captured; zero is the host's own.
-	RootPID int `json:"rootPid,omitempty" clicky:"title=Root PID,desc=Process whose tree is followed; 0 is telltale's own which holds the command"`
 	// Interval, a duration such as 1s, is how often the tree is sampled.
 	// Empty is a second.
-	Interval string `json:"interval,omitempty" clicky:"title=Interval,desc=How often the tree is sampled such as 1s (at least 250ms)"`
+	Interval string        `json:"interval,omitempty" clicky:"title=Interval,desc=How often the tree is sampled such as 1s (at least 250ms)"`
+	Target   target.Target `json:"target,omitzero"`
 }
 
 func (p Params) Validate() error {
-	if p.RootPID < 0 {
-		return fmt.Errorf("rootPid %d is not a process id", p.RootPID)
+	if p.Target.PID < 0 {
+		return fmt.Errorf("pid %d is not a process id", p.Target.PID)
 	}
 	_, err := p.interval()
 	return err
@@ -53,10 +53,10 @@ func (p Params) interval() (time.Duration, error) {
 
 // root is the process the capture follows.
 func (p Params) root() int {
-	if p.RootPID == 0 {
+	if p.Target.PID == 0 {
 		return os.Getpid()
 	}
-	return p.RootPID
+	return p.Target.PID
 }
 
 // TreeParams are the params of process_tree: the tree, and which environment

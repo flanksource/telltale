@@ -15,33 +15,15 @@ import (
 	tracehttp "github.com/flanksource/telltale/pkg/tracing/http"
 )
 
-// redactedHeaders are blanked in every exchange, whatever the params say: a
-// mitm capture of a cloud or GitHub call would otherwise store a usable
-// signed credential.
-var redactedHeaders = map[string]bool{
-	"authorization":       true,
-	"proxy-authorization": true,
-	"cookie":              true,
-	"set-cookie":          true,
-	"x-api-key":           true,
-	"x-auth-token":        true,
-}
-
-const redactedValue = "[redacted]"
-
 // policy is what shapes an exchange: how much of a body to keep, and which
 // headers to blank beside redactedHeaders.
 type policy struct {
 	bodies int64
-	redact map[string]bool
+	redact []string
 }
 
 func newPolicy(bodies int64, redact []string) policy {
-	deny := map[string]bool{}
-	for _, name := range redact {
-		deny[strings.ToLower(strings.TrimSpace(name))] = true
-	}
-	return policy{bodies: bodies, redact: deny}
+	return policy{bodies: bodies, redact: redact}
 }
 
 // exchangeState carries a request across goproxy's request and response
@@ -59,23 +41,22 @@ type exchangeState struct {
 // being the proxy's own "Connection established".
 func connectExchange(host, serverIP string, started time.Time, elapsed time.Duration, in, out int64, err error) tracehttp.Exchange {
 	status, statusText := http.StatusOK, "Connection established"
-	exchange := tracehttp.Exchange{
-		StartedAt: started, Feature: Kind, Method: http.MethodConnect, Host: host, URL: "https://" + host,
-		DurationMs: milliseconds(elapsed), Timings: unmeasuredTimings(elapsed), ServerIPAddress: serverIP,
-		Tunnelled: true, BytesIn: in, BytesOut: out,
+	entry := har.Entry{
+		StartedDateTime: started.UTC().Format(time.RFC3339Nano), Time: milliseconds(elapsed), Timings: unmeasuredTimings(elapsed),
 		Request: har.Request{
 			Method: http.MethodConnect, URL: "https://" + host, HTTPVersion: "HTTP/1.1", Cookies: []har.Cookie{},
 			Headers: []har.Header{}, QueryString: []har.QueryString{}, HeadersSize: -1, BodySize: out,
 		},
 	}
 	if err != nil {
-		exchange.Error, status, statusText = err.Error(), 0, ""
+		entry.Error, status, statusText = err.Error(), 0, ""
 	}
-	exchange.Status = status
-	exchange.Response = har.Response{
+	entry.Response = har.Response{
 		Status: status, StatusText: statusText, HTTPVersion: "HTTP/1.1", Cookies: []har.Cookie{}, Headers: []har.Header{},
 		Content: har.Content{Size: in}, HeadersSize: -1, BodySize: in,
 	}
+	exchange := tracehttp.FromEntry(Kind, entry)
+	exchange.ServerIPAddress, exchange.Tunnelled, exchange.BytesIn, exchange.BytesOut = serverIP, true, in, out
 	return exchange
 }
 
@@ -84,18 +65,17 @@ func connectExchange(host, serverIP string, started time.Time, elapsed time.Dura
 // streamCapture it returns, which fills it as the stream passes.
 func exchangeOf(rules policy, req *http.Request, resp *http.Response, state exchangeState, err error) (tracehttp.Exchange, *streamCapture) {
 	elapsed := time.Since(state.started)
-	exchange := tracehttp.Exchange{
-		StartedAt: state.started, Feature: Kind, Method: req.Method, Host: req.URL.Host, URL: req.URL.String(),
-		DurationMs: milliseconds(elapsed), Timings: unmeasuredTimings(elapsed),
-		Request: har.Request{
-			Method: req.Method, URL: req.URL.String(), HTTPVersion: req.Proto, Cookies: []har.Cookie{},
-			Headers: rules.headers(req.Header), QueryString: queryList(req.URL.RawQuery), PostData: state.post,
-			HeadersSize: -1, BodySize: req.ContentLength,
-		},
+	request := har.RedactRequest(req.URL, req.Header, har.HARConfig{RedactedHeaders: rules.redact})
+	request.Method, request.HTTPVersion, request.Cookies = req.Method, req.Proto, []har.Cookie{}
+	request.PostData, request.HeadersSize, request.BodySize = state.post, -1, req.ContentLength
+	entry := har.Entry{
+		StartedDateTime: state.started.UTC().Format(time.RFC3339Nano), Time: milliseconds(elapsed), Timings: unmeasuredTimings(elapsed),
+		Request: request,
 	}
+	exchange := tracehttp.FromEntry(Kind, entry)
 	comments := []string{state.comment}
 	if err != nil {
-		exchange.Error = err.Error()
+		exchange.Error, exchange.Entry.Error = err.Error(), err.Error()
 	}
 	if resp == nil {
 		exchange.Response = har.Response{Cookies: []har.Cookie{}, Headers: []har.Header{}, HeadersSize: -1, BodySize: -1}
@@ -197,36 +177,13 @@ type replayBody struct {
 // headers are header as HAR's name/value pairs, the denylist and the
 // policy's names blanked, sorted so two captures compare stably.
 func (rules policy) headers(header http.Header) []har.Header {
-	out := []har.Header{}
-	for name, values := range header {
-		lower := strings.ToLower(name)
-		for _, value := range values {
-			if redactedHeaders[lower] || rules.redact[lower] {
-				value = redactedValue
-			}
-			out = append(out, har.Header{Name: name, Value: value})
-		}
-	}
+	out := har.RedactRequest(nil, header, har.HARConfig{RedactedHeaders: rules.redact}).Headers
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Name != out[j].Name {
 			return out[i].Name < out[j].Name
 		}
 		return out[i].Value < out[j].Value
 	})
-	return out
-}
-
-// queryList splits a raw query into HAR's pairs. Query values are never
-// redacted by name: a token in a query is already in the URL, stored whole.
-func queryList(rawQuery string) []har.QueryString {
-	out := []har.QueryString{}
-	for _, pair := range strings.Split(rawQuery, "&") {
-		if pair == "" {
-			continue
-		}
-		name, value, _ := strings.Cut(pair, "=")
-		out = append(out, har.QueryString{Name: name, Value: value})
-	}
 	return out
 }
 

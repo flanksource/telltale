@@ -1,7 +1,7 @@
-// Package pgproxy is the pg_proxy trace kind: a postgres wire proxy that
+// Package pgproxy implements the SQL proxy seam: a postgres wire proxy that
 // processes under capture are pointed at through the environment the session
 // exports. It records the SQL those processes run, which commons-db's own SQL
-// tap never sees, as sql_statements rows.
+// tap never sees, as SQL rows.
 package pgproxy
 
 import (
@@ -24,7 +24,7 @@ import (
 )
 
 // Kind is the kind a host registers NewKind as.
-const Kind = "pg_proxy"
+const Kind = "sql"
 
 // maxValueBytes caps any one value a statement stores, such as its SQL.
 const maxValueBytes = 64 << 10
@@ -32,7 +32,7 @@ const maxValueBytes = 64 << 10
 // reportEvery is how often a running capture reports its summary.
 const reportEvery = time.Second
 
-// ProxyReport is what a running capture reports: the sql_statements summary of the
+// ProxyReport is what a running capture reports: the SQL summary of the
 // statements it stored, and whether it stopped storing them.
 type ProxyReport struct {
 	tracesql.Summary
@@ -106,7 +106,7 @@ func (r *running) deliver(params Params, records tracing.Emitter[tracesql.Statem
 	return func(statement connection.Statement) {
 		if seen.Add(1) > int64(params.MaxStatements) {
 			if r.truncated.CompareAndSwap(false, true) {
-				records.Warn(fmt.Sprintf("pg_proxy stopped storing statements after maxStatements=%d", params.MaxStatements))
+				records.Warn(fmt.Sprintf("sql proxy stopped storing statements after maxStatements=%d", params.MaxStatements))
 			}
 			return
 		}
@@ -140,7 +140,7 @@ func (r *running) publish(records tracing.Emitter[tracesql.StatementRow]) error 
 func (pgProxy) Handle(ctx dbcontext.Context, _ Params, records tracing.Emitter[tracesql.StatementRow], _ tracing.Records[tracesql.StatementRow]) error {
 	capture, ok := ctx.Value(runningKey{}).(*running)
 	if !ok {
-		return errors.New("pg_proxy: the capture was not prepared")
+		return errors.New("sql proxy: the capture was not prepared")
 	}
 	ticker := time.NewTicker(reportEvery)
 	defer ticker.Stop()
@@ -154,15 +154,7 @@ func (pgProxy) Handle(ctx dbcontext.Context, _ Params, records tracing.Emitter[t
 	}
 }
 
-// Summarize is a window's statements as sql_statements summarizes them.
+// Summarize is a window's statements as SQL summarizes them.
 func (pgProxy) Summarize(rows iter.Seq[tracesql.StatementRow]) (map[string]any, error) {
 	return tracesql.WindowVars(rows), nil
-}
-
-// NewKind is the pg_proxy kind: statements masked and capped at 64KiB a
-// value, as sql_statements stores them.
-func NewKind() *tracing.Handler[Params, tracesql.StatementRow] {
-	return tracing.NewHandler[Params, tracesql.StatementRow](pgProxy{}, tracing.Capabilities{Live: true}).
-		WithSecretMasking().
-		WithTruncation(maxValueBytes)
 }

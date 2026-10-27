@@ -14,7 +14,7 @@ import (
 
 // RowKind is the record kind a capture's stream holds, and the kind a host
 // registers Kind as: one StatementRow per statement.
-const RowKind = "sql_statements"
+const RowKind = "sql"
 
 // StatementRow is one statement as a capture stores it. Op and Tables are
 // derived from its text as xetrace classifies a captured event's, and
@@ -32,8 +32,9 @@ type StatementRow struct {
 	DurationMs float64   `json:"durationMs" pretty:"label=Duration,type=duration,unit=ms" sort:"durationMs"`
 	// Rows is how many rows the statement returned, or -1 when its driver
 	// could not tell.
-	Rows  int64  `json:"rows" sort:"rows"`
-	Error string `json:"error,omitempty" filter:"text"`
+	Rows     int64             `json:"rows" sort:"rows"`
+	Error    string            `json:"error,omitempty" filter:"text"`
+	Resource map[string]string `json:"resource,omitempty"`
 }
 
 // FromStatement is the row a capture stores for statement. A statement naming

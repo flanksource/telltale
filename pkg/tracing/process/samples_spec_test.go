@@ -32,7 +32,7 @@ func stored(row recordstore.Row) []string {
 
 func startSamples(env tracingtest.Env, rootPID int, facets string) *query.ManagedSession {
 	managed, err := env.Runtime.Start(dbcontext.New(), tracing.StartRequest{
-		Kind: process.SamplesKind, Params: json.RawMessage(fmt.Sprintf(`{"rootPid": %d, "interval": %s, "facets": %s}`, rootPID, interval, facets)),
+		Kind: process.SamplesKind, Params: json.RawMessage(fmt.Sprintf(`{"target":{"pid": %d}, "interval": %s, "facets": %s}`, rootPID, interval, facets)),
 	})
 	Expect(err).ToNot(HaveOccurred())
 	tracingtest.Running(managed.Session())
@@ -69,7 +69,7 @@ var _ = Describe("stopping a process capture mid-tick", func() {
 		env := newEnv()
 		var errs []string
 		for attempt := range 8 {
-			tree := env.Start(process.TreeKind, fmt.Sprintf(`{"rootPid": %d, "interval": %s}`, child.PID, interval))
+			tree := env.Start(process.TreeKind, fmt.Sprintf(`{"target":{"pid": %d}, "interval": %s}`, child.PID, interval))
 			samples := startSamples(env, child.PID, `["openFiles", "sockets", "ports", "connections"]`).Session()
 			time.Sleep(time.Duration(attempt) * 15 * time.Millisecond)
 			tree.Stop("spec")
@@ -150,7 +150,7 @@ var _ = Describe("process_samples facets", func() {
 
 	It("refuses a facet it does not read", func() {
 		_, err := newEnv().Runtime.Start(dbcontext.New(), tracing.StartRequest{
-			Kind: process.SamplesKind, Params: json.RawMessage(`{"facets": ["environment"], "rootPid": ` + strconv.Itoa(1) + `}`),
+			Kind: process.SamplesKind, Params: json.RawMessage(`{"facets": ["environment"], "target":{"pid": ` + strconv.Itoa(1) + `}}`),
 		})
 		Expect(err).To(MatchError(tracing.ErrInvalidParams))
 		Expect(err).To(MatchError(ContainSubstring(`facet "environment"`)))

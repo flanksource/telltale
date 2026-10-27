@@ -186,5 +186,5 @@ func hasKey(processes []Observed, key string) bool {
 // NewSamplesKind is the process_samples kind over sampler, whose sessions
 // can follow the samples as they are taken.
 func NewSamplesKind(sampler *Sampler) *tracing.Handler[SampleParams, Sample] {
-	return tracing.NewHandler[SampleParams, Sample](samples{sampler: sampler}, tracing.Capabilities{Live: true})
+	return tracing.NewHandler[SampleParams, Sample](samples{sampler: sampler}, tracing.Capabilities{Live: true}, "process")
 }

@@ -16,6 +16,7 @@ import (
 
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/query"
+	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/goprof"
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
@@ -23,6 +24,8 @@ import (
 )
 
 func newEnv(addresses goprof.Addresses) (tracingtest.Env, *query.ManagedSession) {
+	addresses.Registry = agentclient.NewRegistry()
+	addresses.Registry.Dir = GinkgoT().TempDir()
 	env := tracingtest.NewEnv(map[string]tracing.TracePlugin{goprof.Kind: goprof.NewKind(addresses)})
 	managed, err := env.Runtime.Start(dbcontext.New(), tracing.StartRequest{Kind: goprof.Kind, Params: json.RawMessage(`{}`)})
 	Expect(err).ToNot(HaveOccurred())
@@ -102,8 +105,10 @@ var _ = Describe("goprof", func() {
 			goprof.SourceGops:  {Gops: at(child.Announced["gops"])},
 		}
 		for source, kindAddresses := range addresses {
+			kindAddresses.Registry = agentclient.NewRegistry()
+			kindAddresses.Registry.Dir = GinkgoT().TempDir()
 			env := tracingtest.NewEnv(map[string]tracing.TracePlugin{goprof.Kind: goprof.NewKind(kindAddresses)})
-			managed, err := env.Runtime.Start(dbcontext.New(), tracing.StartRequest{Kind: goprof.Kind, Params: json.RawMessage(`{"rootPid": ` + strconv.Itoa(child.PID) + `}`)})
+			managed, err := env.Runtime.Start(dbcontext.New(), tracing.StartRequest{Kind: goprof.Kind, Params: json.RawMessage(`{"target":{"pid": ` + strconv.Itoa(child.PID) + `}}`)})
 			Expect(err).ToNot(HaveOccurred())
 			Expect(checkpoint(env, managed, `{"source": "`+source+`", "profile": "heap", "reason": "manual"}`)).To(Succeed())
 			_, order := totals(profiled(env, managed))

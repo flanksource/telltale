@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"slices"
 	"strconv"
-	"time"
 
 	"github.com/flanksource/commons/har"
 	"github.com/flanksource/telltale/pkg/tracing"
@@ -79,10 +78,7 @@ type Entry struct {
 // ToEntry is exchange as the HAR entry it was captured from.
 func ToEntry(exchange Exchange) Entry {
 	return Entry{
-		Entry: har.Entry{
-			StartedDateTime: exchange.StartedAt.Format(time.RFC3339Nano), Time: exchange.DurationMs,
-			Request: exchange.Request, Response: exchange.Response, Timings: exchange.Timings, Error: exchange.Error,
-		},
+		Entry:           exchange.Entry,
 		ServerIPAddress: exchange.ServerIPAddress, Comment: exchange.Comment,
 		Tunnelled: exchange.Tunnelled, BytesIn: exchange.BytesIn, BytesOut: exchange.BytesOut, Encoding: exchange.Encoding,
 	}

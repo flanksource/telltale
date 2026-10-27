@@ -1,14 +1,21 @@
-// Package sql is the sql_statements trace kind: it records the SQL
+// Package sql is the sql trace kind: it records the SQL
 // statements commons-db runs on chosen connections, as the SQL statement tap
 // publishes them, and summarizes them as it goes.
 package sql
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/flanksource/telltale/pkg/agentclient"
+	"github.com/flanksource/telltale/pkg/tracing/seam"
+	"github.com/flanksource/telltale/pkg/tracing/target"
+	_ "github.com/flanksource/telltale/sdk/commonsdb"
 
 	"github.com/flanksource/commons-db/connection"
 	dbcontext "github.com/flanksource/commons-db/context"
@@ -17,10 +24,6 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing"
 )
 
-// maxValueBytes caps any one value a statement stores, such as its SQL.
-const maxValueBytes = 64 << 10
-
-// reportEvery is how often a running capture reports its Summary.
 const reportEvery = time.Second
 
 // Params choose the statements a capture records.
@@ -31,7 +34,8 @@ type Params struct {
 	Connections []string `json:"connections" clicky:"required,title=Connections,desc=Connections to observe: names; * for every one; or self for telltale's own database"`
 	// MinDuration, a duration such as 100ms, records only statements that ran
 	// at least that long.
-	MinDuration string `json:"minDuration,omitempty" clicky:"title=Minimum duration,desc=Record only statements that ran at least this long such as 100ms"`
+	MinDuration string        `json:"minDuration,omitempty" clicky:"title=Minimum duration,desc=Record only statements that ran at least this long such as 100ms"`
+	Target      target.Target `json:"target,omitzero"`
 }
 
 func (p Params) Validate() error {
@@ -78,14 +82,9 @@ var repeatsView = recordresults.ResultView{
 // running is what Prepare set up for Handle: the summary of the statements
 // the capture stored, which the goroutines running them fold in.
 type running struct {
-	mu      sync.Mutex
-	summary *Accumulator
-}
-
-func (r *running) add(row StatementRow) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.summary.Add(row)
+	mu       sync.Mutex
+	summary  *Accumulator
+	reported time.Time
 }
 
 func (r *running) result() Summary {
@@ -96,7 +95,13 @@ func (r *running) result() Summary {
 
 type runningKey struct{}
 
-type statements struct{}
+type statements struct {
+	agent seam.AgentSeam[Params, StatementRow]
+}
+
+func (s statements) AgentAvailable(probe string, selection target.Target) (bool, error) {
+	return s.agent.Available(probe, selection)
+}
 
 func (statements) Params() Params { return Params{} }
 
@@ -117,57 +122,67 @@ func ResultType() recordresults.ResultType[StatementRow] {
 // Prepare observes the connections before the session runs, emitting each
 // statement without waiting: it arrives on the goroutine that ran it. The
 // release stops observing and reports the Summary of every statement stored.
-func (statements) Prepare(ctx dbcontext.Context, params Params, records tracing.Emitter[StatementRow]) (dbcontext.Context, func() error, error) {
-	minimum, err := params.minimum()
+func (s statements) Prepare(ctx dbcontext.Context, params Params, records tracing.Emitter[StatementRow]) (dbcontext.Context, func() error, error) {
+	capture := &running{summary: NewAccumulator()}
+	prepared, release, err := s.agent.Prepare(ctx, params, records)
 	if err != nil {
 		return ctx, nil, err
 	}
-	capture := &running{summary: NewAccumulator()}
-	deliver := func(statement connection.Statement) {
-		if statement.Duration < minimum {
-			return
-		}
-		row := FromStatement(statement)
-		if records.TryEmit(row) {
-			capture.add(row)
-		}
-	}
-	var releases []func()
-	for _, name := range params.Connections {
-		releases = append(releases, connection.ObserveSQL(name, deliver))
-	}
-	return ctx.WithValue(runningKey{}, capture), func() error {
-		for _, release := range releases {
-			release()
-		}
+	return prepared.WithValue(runningKey{}, capture), func() error {
+		err := release()
 		records.Report(capture.result())
-		return nil
+		return err
 	}, nil
 }
 
-// Handle reports the Summary every reportEvery until the capture stops: the
-// observers Prepare installed emit every statement.
-func (statements) Handle(ctx dbcontext.Context, _ Params, records tracing.Emitter[StatementRow], _ tracing.Records[StatementRow]) error {
-	capture, ok := ctx.Value(runningKey{}).(*running)
-	if !ok {
-		return errors.New("sql_statements: the capture was not prepared")
-	}
-	ticker := time.NewTicker(reportEvery)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-ticker.C:
-			records.Report(capture.result())
-		}
-	}
+type summaryEmitter struct {
+	tracing.Emitter[StatementRow]
+	capture *running
 }
 
-// Kind is the sql_statements kind: statements masked and capped at 64KiB a
+func (e summaryEmitter) Emit(ctx context.Context, row StatementRow) error {
+	if err := e.Emitter.Emit(ctx, row); err != nil {
+		return err
+	}
+	e.capture.mu.Lock()
+	e.capture.summary.Add(row)
+	if time.Since(e.capture.reported) >= reportEvery {
+		e.capture.reported = time.Now()
+		summary := e.capture.summary.Result()
+		e.capture.mu.Unlock()
+		e.Report(summary)
+		return nil
+	}
+	e.capture.mu.Unlock()
+	return nil
+}
+
+// Handle reads statements from the armed agent until the capture stops.
+func (s statements) Handle(ctx dbcontext.Context, params Params, records tracing.Emitter[StatementRow], _ tracing.Records[StatementRow]) error {
+	capture, ok := ctx.Value(runningKey{}).(*running)
+	if !ok {
+		return errors.New("sql: the capture was not prepared")
+	}
+	return s.agent.Handle(ctx, params, summaryEmitter{Emitter: records, capture: capture})
+}
+
+// Kind is the sql kind: statements masked and capped at 64KiB a
 // value. A host registers it as RowKind.
-func Kind() *tracing.Handler[Params, StatementRow] {
-	return tracing.NewHandler[Params, StatementRow](statements{}, tracing.Capabilities{Live: true}).
-		WithSecretMasking().
-		WithTruncation(maxValueBytes)
+func NewCapture(registry *agentclient.Registry) interface {
+	tracing.TraceHandler[Params, StatementRow]
+	tracing.Preparer[Params, StatementRow]
+	AgentAvailable(string, target.Target) (bool, error)
+} {
+	agent := seam.AgentSeam[Params, StatementRow]{Probe: RowKind, Registry: registry,
+		Target:    func(p Params) target.Target { return p.Target },
+		ArmParams: func(p Params) (json.RawMessage, error) { return json.Marshal(p) },
+		DecodeRecord: func(raw json.RawMessage) (StatementRow, error) {
+			var statement connection.Statement
+			if err := json.Unmarshal(raw, &statement); err != nil {
+				return StatementRow{}, err
+			}
+			return FromStatement(statement), nil
+		},
+	}
+	return statements{agent: agent}
 }

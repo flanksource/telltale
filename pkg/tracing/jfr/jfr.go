@@ -206,6 +206,6 @@ func (r *running) flush(ctx context.Context, records tracing.Emitter[Sample]) er
 // NewKindFor is the jfr kind over recorder for a host's own params type, its
 // stacks cut at 64KiB.
 func NewKindFor[P Recordable](recorder Recorder) *tracing.Handler[P, Sample] {
-	return tracing.NewHandler[P, Sample](profiler[P]{recorder: recorder}, tracing.Capabilities{Live: true}).
+	return tracing.NewHandler[P, Sample](profiler[P]{recorder: recorder}, tracing.Capabilities{Live: true}, "process").
 		WithTruncation(maxStackBytes)
 }

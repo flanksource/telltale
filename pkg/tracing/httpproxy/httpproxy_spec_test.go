@@ -42,15 +42,24 @@ const secret = "hunter2-very-secret-value"
 // CA with.
 var trustEnv = []string{"SSL_CERT_FILE", "CURL_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE", "GIT_SSL_CAINFO", "AWS_CA_BUNDLE"}
 
+func proxyParams(raw string) json.RawMessage {
+	var params map[string]any
+	Expect(json.Unmarshal([]byte(raw), &params)).To(Succeed())
+	params["target"] = map[string]string{"seam": "proxy"}
+	value, err := json.Marshal(params)
+	Expect(err).NotTo(HaveOccurred())
+	return value
+}
+
 var _ = Describe("http_proxy trace kind", func() {
 	var env tracingtest.Env
 
 	BeforeEach(func() {
-		env = tracingtest.NewEnv(map[string]tracing.TracePlugin{httpproxy.Kind: httpproxy.NewKind()})
+		env = tracingtest.NewEnv(map[string]tracing.TracePlugin{httpproxy.Kind: httpproxy.UnifiedKind(nil)})
 	})
 
 	start := func(params string) *query.ManagedSession {
-		managed, err := env.Runtime.Start(dbcontext.New(), tracing.StartRequest{Kind: httpproxy.Kind, Params: json.RawMessage(params)})
+		managed, err := env.Runtime.Start(dbcontext.New(), tracing.StartRequest{Kind: httpproxy.Kind, Params: proxyParams(params)})
 		Expect(err).ToNot(HaveOccurred())
 		tracingtest.Running(managed.Session())
 		return managed
@@ -139,7 +148,7 @@ var _ = Describe("http_proxy trace kind", func() {
 		Expect(exchange.Response.Content.Text).To(MatchJSON(`{"ok":true}`))
 		Expect(exchange.Response.Content.MimeType).To(Equal("application/json"))
 		Expect(exchange.Request.Headers).To(ContainElements(
-			har.Header{Name: "Accept", Value: "application/json"}, har.Header{Name: "X-Tenant", Value: "[redacted]"}))
+			har.Header{Name: "Accept", Value: "application/json"}, har.Header{Name: "X-Tenant", Value: "h****ue"}))
 		stored, err := json.Marshal(env.Rows(managed.Session().Snapshot()))
 		Expect(err).ToNot(HaveOccurred())
 		Expect(string(stored)).ToNot(ContainSubstring(secret))
@@ -274,7 +283,7 @@ var _ = Describe("http_proxy trace kind", func() {
 		Expect(recorded[0]).To(MatchFields(IgnoreExtras, Fields{
 			"Method": Equal(nethttp.MethodConnect), "URL": Equal("https://" + host), "Host": Equal(host),
 			"Status": Equal(nethttp.StatusOK), "Tunnelled": BeTrue(), "BytesIn": BeNumerically(">", 0), "BytesOut": BeNumerically(">", 0),
-			"ServerIPAddress": Equal("127.0.0.1"), "Timings": MatchFields(IgnoreExtras, Fields{"Send": Equal(-1.0)}),
+			"ServerIPAddress": Equal("127.0.0.1"), "Entry": MatchFields(IgnoreExtras, Fields{"Timings": MatchFields(IgnoreExtras, Fields{"Send": Equal(-1.0)})}),
 		}))
 		Expect(recorded[0].Response.Content.Text).To(BeEmpty())
 	})
@@ -326,7 +335,7 @@ var _ = Describe("http_proxy trace kind", func() {
 			Expect(os.WriteFile(notPEM, []byte("not a certificate"), 0o600)).To(Succeed())
 			for path, problem := range map[string]string{notPEM: "no PEM certificate", notPEM + ".missing": "no such file"} {
 				_, err := env.Runtime.Start(dbcontext.New(), tracing.StartRequest{
-					Kind: httpproxy.Kind, Params: json.RawMessage(`{"mode": "mitm", "upstreamCA": "` + path + `"}`),
+					Kind: httpproxy.Kind, Params: proxyParams(`{"mode": "mitm", "upstreamCA": "` + path + `"}`),
 				})
 				Expect(err).To(MatchError(ContainSubstring(problem)), path)
 			}
@@ -435,8 +444,8 @@ var _ = Describe("http_proxy trace kind", func() {
 	})
 
 	It("refuses a mode, size, glob or name it could not run with", func() {
-		plugin := httpproxy.NewKind()
-		Expect(plugin.ValidateParams(json.RawMessage(`{"bodies": "4MiB", "mode": "mitm"}`))).To(Succeed())
+		plugin := httpproxy.UnifiedKind(nil)
+		Expect(plugin.ValidateParams(proxyParams(`{"bodies": "4MiB", "mode": "mitm"}`))).To(Succeed())
 		for params, problem := range map[string]string{
 			`{"mode": "transparent"}`:             "mode",
 			`{"mode": ""}`:                        "mode",
@@ -450,7 +459,7 @@ var _ = Describe("http_proxy trace kind", func() {
 			`{"upstreamCA": " ", "mode": "mitm"}`: "upstreamCA",
 			`{"upstreamCA": "ca.pem"}`:            "upstreamCA",
 		} {
-			Expect(plugin.ValidateParams(json.RawMessage(params))).To(MatchError(ContainSubstring(problem)), params)
+			Expect(plugin.ValidateParams(proxyParams(params))).To(MatchError(ContainSubstring(problem)), params)
 		}
 	})
 })
