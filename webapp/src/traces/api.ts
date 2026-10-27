@@ -81,6 +81,21 @@ export interface StartForm {
   defaults: Record<string, unknown>;
 }
 
+/** Where a capture is armed. */
+export interface TraceTarget {
+  seam?: "self" | "agent" | "process" | "proxy" | "host";
+  pid?: number;
+  agent?: string;
+  selector?: Record<string, string>;
+  wait?: boolean;
+}
+
+export interface StartRequest extends Record<string, unknown> {
+  command?: string;
+  facets?: boolean;
+  traces?: Record<string, { enabled?: boolean; target?: TraceTarget; [param: string]: unknown }>;
+}
+
 export interface TracesStatus {
   runs: RunTraces[];
 }
@@ -133,7 +148,7 @@ export async function fetchStartForm(): Promise<StartForm> {
 }
 
 /** Starts the run value (a StartRequest) describes; a refused request throws StartRunError. */
-export async function startRun(value: Record<string, unknown>): Promise<RunTraces> {
+export async function startRun(value: StartRequest): Promise<RunTraces> {
   const res = await fetch(TRACES_ENDPOINT, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, JsonSchemaForm, type JsonSchemaFormError, type JsonSchemaObject } from "@flanksource/clicky-ui/components";
 import { UiLoader } from "@flanksource/clicky-ui/icons";
-import { fetchStartForm, startRun, StartRunError, type RunTraces, type StartForm } from "./api";
+import { fetchStartForm, startRun, StartRunError, type RunTraces, type StartForm, type StartRequest } from "./api";
 
 export interface StartRunFormProps {
   /** Called with the run the server started. */
@@ -11,7 +11,7 @@ export interface StartRunFormProps {
 
 function StartRunFields({ form, onStarted }: StartRunFormProps & { form: StartForm }) {
   const queryClient = useQueryClient();
-  const [value, setValue] = useState<Record<string, unknown>>(form.defaults);
+  const [value, setValue] = useState<StartRequest>(form.defaults);
   const start = useMutation({
     mutationFn: startRun,
     onSuccess: run => {
