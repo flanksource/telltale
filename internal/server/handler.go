@@ -10,13 +10,17 @@ import (
 	"github.com/flanksource/clicky/route"
 	"github.com/flanksource/clicky/rpc"
 	"github.com/flanksource/telltale/internal/rules"
+	"github.com/flanksource/telltale/pkg/agentclient"
+	"github.com/flanksource/telltale/pkg/credentials/apitoken"
 	"github.com/spf13/cobra"
 )
 
 type HandlerOptions struct {
-	Assets  fs.FS
-	Root    *cobra.Command
-	Version string
+	Assets         fs.FS
+	Root           *cobra.Command
+	Version        string
+	WorkDir        string
+	RequireAPIAuth bool
 	// Traces serves the run stores at TracesMount.
 	Traces http.Handler
 	// Top serves the live process groups at TopMount.
@@ -39,6 +43,9 @@ func routes(options HandlerOptions, ui http.Handler) http.Handler {
 	rpc.NewSwaggerServer(&rpc.ServeConfig{Version: options.Version}, options.Root,
 		&rpc.OpenAPIConfig{Title: "Telltale", Version: options.Version, Extensions: []func(*rpc.OpenAPISpec){addRulesPaths}}).RegisterRoutes(route.NewRouter(api))
 	root := http.NewServeMux()
+	hub := agentclient.NewHub(agentclient.Default, agentclient.NewTokenStore(options.WorkDir))
+	root.HandleFunc("/api/agents", hub.List)
+	root.Handle("/api/agents/connect", hub)
 	root.Handle(TracesMount, options.Traces)
 	root.Handle(TracesMount+"/", options.Traces)
 	root.Handle(TopMount, options.Top)
@@ -51,7 +58,17 @@ func routes(options HandlerOptions, ui http.Handler) http.Handler {
 	root.Handle("/api", http.NotFoundHandler())
 	root.Handle("/health", api)
 	root.Handle("/", ui)
-	return root
+	if !options.RequireAPIAuth {
+		return root
+	}
+	protected := hub.Authorize(apitoken.ScopeAPI, root)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if (r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/")) && r.URL.Path != "/api/agents/connect" {
+			protected.ServeHTTP(w, r)
+			return
+		}
+		root.ServeHTTP(w, r)
+	})
 }
 
 func assetHandler(assets fs.FS) http.Handler {

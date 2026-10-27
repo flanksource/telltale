@@ -72,6 +72,7 @@ func Run(ctx context.Context, options Options) (err error) {
 	}
 	defer func() { err = errors.Join(err, traceMount.Close()) }()
 	top := NewTopHandler(options.WorkDir)
+	requireAPIAuth := !listener.Addr().(*net.TCPAddr).IP.IsLoopback()
 	defer func() { err = errors.Join(err, top.Close()) }()
 	var handler http.Handler
 	if options.Dev {
@@ -79,10 +80,10 @@ func Run(ctx context.Context, options Options) (err error) {
 		vite, err = startVite(ctx, devOptions{Options: options, apiURL: apiURL, cancel: cancel})
 		if err == nil {
 			defer func() { err = errors.Join(err, vite.stop()) }()
-			handler = routes(HandlerOptions{Root: options.Root, Version: options.Version, Traces: traceMount, Top: top, Rules: monitor}, vite.proxy())
+			handler = routes(HandlerOptions{Root: options.Root, Version: options.Version, WorkDir: options.WorkDir, RequireAPIAuth: requireAPIAuth, Traces: traceMount, Top: top, Rules: monitor}, vite.proxy())
 		}
 	} else {
-		handler, err = servingHandler(options, traceMount, top, monitor)
+		handler, err = servingHandler(options, traceMount, top, monitor, requireAPIAuth)
 	}
 	if err != nil {
 		return err
@@ -97,12 +98,12 @@ func Run(ctx context.Context, options Options) (err error) {
 	return err
 }
 
-func servingHandler(options Options, traces, top http.Handler, monitor *rules.Service) (http.Handler, error) {
+func servingHandler(options Options, traces, top http.Handler, monitor *rules.Service, requireAPIAuth bool) (http.Handler, error) {
 	assets, err := webapp.Assets()
 	if err != nil {
 		return nil, err
 	}
-	return NewHandler(HandlerOptions{Root: options.Root, Version: options.Version, Assets: assets, Traces: traces, Top: top, Rules: monitor})
+	return NewHandler(HandlerOptions{Root: options.Root, Version: options.Version, WorkDir: options.WorkDir, RequireAPIAuth: requireAPIAuth, Assets: assets, Traces: traces, Top: top, Rules: monitor})
 }
 
 func serve(ctx context.Context, listener net.Listener, handler http.Handler) error {
