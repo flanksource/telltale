@@ -154,6 +154,18 @@ describe("host runs recording process groups", () => {
   // serveGroups answers the run list with runs and the run's group rows with one tick of sampleFrame.
   function serveGroups(runs: RunTraces[]) {
     const rows = sampleFrame().groups.map(row => JSON.stringify(row)).join("\n");
+    vi.stubGlobal("EventSource", class extends EventTarget {
+      closed = false;
+      constructor() {
+        super();
+        queueMicrotask(() => {
+          if (this.closed) return;
+          sampleFrame().groups.forEach((row, index) => this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ ...row, seq: index + 1 }), lastEventId: String(index + 1) })));
+          this.dispatchEvent(new Event("end"));
+        });
+      }
+      close() { this.closed = true; }
+    });
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {
       if (url === "/api/traces" || url.startsWith("/api/traces?")) return Promise.resolve(json({ runs }));
       if (url === "/api/traces/start") return Promise.resolve(json(startForm));

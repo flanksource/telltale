@@ -181,6 +181,67 @@ export function traceExportUrl(mount: string, ref: TraceRef, format: string): st
   return `${mount}/api/v1/traces/${encodeURIComponent(ref.kind)}/export?${windowQuery(ref, { format })}`;
 }
 
+export function traceRecordsUrl(mount: string, ref: TraceRef, params: Record<string, string> = {}): string {
+  return `${mount}/traces/${encodeURIComponent(ref.kind)}/records?${windowQuery(ref, params)}`;
+}
+
+interface FollowOptions {
+  mount: string;
+  ref: TraceRef;
+  onRow: (row: TraceRecord) => void;
+  onError: (error: Error) => void;
+  onOpen: () => void;
+  onEnd: () => void;
+}
+
+/** Native EventSource reconnects with Last-Event-ID; end closes a sealed capture. */
+export function followTraceRecords({ mount, ref, onRow, onError, onOpen, onEnd }: FollowOptions): () => void {
+  const source = new EventSource(traceRecordsUrl(mount, ref, { follow: "1" }));
+  let last = ref.afterSeq ?? 0;
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    source.close();
+  };
+  source.addEventListener("open", () => { if (!closed) onOpen(); });
+  source.addEventListener("message", event => {
+    if (closed) return;
+    try {
+      const row: unknown = JSON.parse(event.data);
+      if (!row || typeof row !== "object" || !("seq" in row) || typeof row.seq !== "number" || !Number.isSafeInteger(row.seq) || row.seq <= 0) {
+        throw new Error(`follow ${ref.kind}: row has no valid seq`);
+      }
+      if (event.lastEventId !== String(row.seq)) throw new Error(`follow ${ref.kind}: event id does not match row seq`);
+      if (row.seq <= last) return;
+      onRow(row as TraceRecord);
+      last = row.seq;
+    } catch (error) {
+      close();
+      onError(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
+  source.addEventListener("error", event => {
+    if (closed) return;
+    if (event instanceof MessageEvent) {
+      close();
+      try {
+        const payload: unknown = JSON.parse(event.data);
+        if (!payload || typeof payload !== "object" || !("error" in payload) || typeof payload.error !== "string") throw new Error("invalid stream error");
+        onError(new Error(payload.error));
+      } catch (error) { onError(error instanceof Error ? error : new Error(String(error))); }
+    } else {
+      onError(new Error(`follow ${ref.kind} stream failed`));
+    }
+  });
+  source.addEventListener("end", () => {
+    if (closed) return;
+    close();
+    onEnd();
+  });
+  return close;
+}
+
 /** Parses an NDJSON body: one record per non-empty line. */
 export function parseNdjson(body: string): TraceRecord[] {
   return body.split("\n").filter(line => line.trim() !== "").map(line => JSON.parse(line) as TraceRecord);
