@@ -91,6 +91,9 @@ export interface TraceTarget {
 }
 
 export interface StartRequest extends Record<string, unknown> {
+  pid?: number;
+  duration?: string;
+  every?: string;
   command?: string;
   facets?: boolean;
   traces?: Record<string, { enabled?: boolean; target?: TraceTarget; [param: string]: unknown }>;

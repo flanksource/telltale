@@ -132,7 +132,7 @@ var _ = Describe("the runs handler", func() {
 		Expect(status).To(Equal(http.StatusOK), body)
 		var form map[string]map[string]any
 		Expect(json.Unmarshal([]byte(body), &form)).To(Succeed())
-		Expect(form["schema"]).To(HaveKeyWithValue("required", []any{"command"}))
+		Expect(form["schema"]).NotTo(HaveKey("required"))
 		Expect(form["defaults"]).To(HaveKeyWithValue("traces", HaveKey(httpproxy.Kind)))
 	})
 

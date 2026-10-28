@@ -36,11 +36,12 @@ if [[ -n "$candidate" ]]; then
   fi
   while IFS= read -r path; do
     case "$path" in
-      webapp/dist/*|go.mod|go.sum|sdk/go.mod|sdk/go.sum|sdk/*/go.mod|sdk/*/go.sum) ;;
+      webapp/dist/*|pkg/agentinstall/java/assets/*|go.mod|go.sum|sdk/go.mod|sdk/go.sum|sdk/*/go.mod|sdk/*/go.sum) ;;
       *) echo "Tag $tag already exists with unexpected changes: $path" >&2; exit 1 ;;
     esac
   done <<< "$changes"
   git cat-file -e "$candidate:webapp/dist/index.html"
+  git cat-file -e "$candidate:pkg/agentinstall/java/assets/telltale-agent.jar"
   for ref in "${modules[@]}" "$tag"; do
     if ! git show-ref --verify --quiet "refs/tags/$ref"; then git tag "$ref" "$candidate"; fi
   done
@@ -60,11 +61,16 @@ if [[ ! -s webapp/dist/index.html ]]; then
   echo "Missing webapp/dist/index.html; run make build before preparing the release" >&2
   exit 1
 fi
+if [[ ! -s pkg/agentinstall/java/assets/telltale-agent.jar ]]; then
+  echo "Missing Java agent JAR; run make build before preparing the release" >&2
+  exit 1
+fi
 
 git checkout --detach "$source_sha"
 go run ./hack/modsum "$tag"
 git add -- go.mod go.sum sdk
 git add -f -- webapp/dist
+git add -f -- pkg/agentinstall/java/assets
 git -c user.name='github-actions[bot]' -c user.email='github-actions[bot]@users.noreply.github.com' commit -m "chore(embed): prepare release $tag"
 for ref in "${modules[@]}" "$tag"; do git tag "$ref"; done
 echo "Prepared $tag and SDK tags on a detached release commit above $source_sha"

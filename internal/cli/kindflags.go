@@ -41,6 +41,9 @@ func bindParams(flags *pflag.FlagSet, schema *rpc.OpenAPISchema, prefix []string
 		if len(prefix) == 0 && name == "target" {
 			seams, _ := property.Extensions["x-telltale-seams"].([]target.Seam)
 			for _, field := range []string{"seam", "pid", "agent", "selector", "wait", "allowMutation"} {
+				if field == "pid" && slices.Equal(seams, []target.Seam{target.Connection}) {
+					continue
+				}
 				if (field == "agent" || field == "selector" || field == "wait") && !slices.Contains(seams, target.Agent) {
 					continue
 				}

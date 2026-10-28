@@ -73,6 +73,14 @@ function renderPage() {
 }
 
 describe("trace runs", () => {
+  it.each(["sql_deadlock", "sql_xevent", "jvm_jfr"])("shows %s captures without a local process tree", async kind => {
+    const fetchMock = serve({ runs: [{ ...finished, command: undefined, process: undefined, captures: [{ kind, ref: { kind, stream: "connection-or-agent", toSeq: 2 }, summary: { count: 2 } }] }] });
+    renderPage();
+    expect(await screen.findByText("host run")).toBeInTheDocument();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`${mount}/api/v1/traces/kinds`, expect.anything()));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("tells how to start or record a run when none is stored", async () => {
     serve({ runs: [] });
     renderPage();
@@ -150,6 +158,7 @@ describe("host runs recording process groups", () => {
       if (url === "/api/traces" || url.startsWith("/api/traces?")) return Promise.resolve(json({ runs }));
       if (url === "/api/traces/start") return Promise.resolve(json(startForm));
       if (init?.method === "DELETE") return Promise.resolve(new Response(null, { status: 202 }));
+      if (url.endsWith("/traces/kinds")) return Promise.resolve(json([{ name: "process_groups", title: "Process groups", exportFormats: [] }]));
       if (url.includes("/seq?")) return Promise.resolve(json({ seq: 4 }));
       if (url.includes("/export?")) return Promise.resolve(new Response(rows));
       return Promise.resolve(new Response("", { status: 404 }));

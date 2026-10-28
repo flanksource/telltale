@@ -28,6 +28,7 @@ var targets = []struct {
 		"They record telltale's own sources while the run lasts, nothing of the command."},
 	{target.Host, "Kinds that observe the whole host",
 		"They record every process on the host: run alone they need no command and run until Ctrl+C or --duration."},
+	{target.Connection, "Kinds that observe a database connection", "They observe the configured database without requiring a local process or command."},
 }
 
 func targetOf(target target.Seam) (string, string) {
@@ -81,11 +82,11 @@ func kindHelp(cmd *cobra.Command, registration traces.Registration) helpText {
 	h := newHelp(registration.Summary + ".").
 		section("Description").paragraph(registration.Description).
 		section("Usage")
-	if registration.DefaultSeam == target.Host {
+	if registration.DefaultSeam == target.Host || registration.DefaultSeam == target.Connection {
 		h = h.command("telltale run "+registration.Name+" [flags]", "")
 	}
 	h = h.command("telltale run "+registration.Name+" [flags] -- command [args...]", "")
-	if registration.DefaultSeam != target.Proxy {
+	if registration.DefaultSeam != target.Proxy && registration.DefaultSeam != target.Connection {
 		h = h.command("telltale run "+registration.Name+" [flags] --pid PID", "")
 	}
 	h = h.section("Target: " + title).paragraph(says)

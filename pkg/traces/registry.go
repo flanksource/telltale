@@ -62,7 +62,7 @@ func (r Registration) validate() error {
 		errs = append(errs, errors.New("a New func is required"))
 	}
 	for _, seam := range r.Seams {
-		if !slices.Contains([]target.Seam{target.Self, target.Agent, target.Process, target.Proxy, target.Host}, seam) {
+		if !slices.Contains([]target.Seam{target.Self, target.Agent, target.Process, target.Proxy, target.Host, target.Connection}, seam) {
 			errs = append(errs, fmt.Errorf("unknown seam %q", seam))
 		}
 	}

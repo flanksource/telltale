@@ -442,6 +442,11 @@ func (s AgentSeam[P, R]) read(ctx context.Context, state *capture, agent *agentc
 		case end := <-session.Ended:
 			for {
 				select {
+				case blob := <-session.Blobs:
+					if err := s.blob(ctx, blob, agent.Hello.Resource, out); err != nil {
+						fail(err, false)
+						return
+					}
 				case batch := <-session.Records:
 					for _, item := range batch.Items {
 						if err := s.emit(ctx, item, agent.Hello.Resource, out); err != nil {

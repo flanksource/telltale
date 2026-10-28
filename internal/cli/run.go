@@ -78,9 +78,11 @@ func newRunKindCommand(registration traces.Registration, plugin tracing.TracePlu
 			return err
 		}
 		options := flags.options
-		options.PID, err = cmd.Flags().GetInt("pid")
-		if err != nil {
-			return err
+		if cmd.Flags().Lookup("pid") != nil {
+			options.PID, err = cmd.Flags().GetInt("pid")
+			if err != nil {
+				return err
+			}
 		}
 		if options.PID == 0 {
 			if err := plugin.ValidateParams(raw); err != nil {

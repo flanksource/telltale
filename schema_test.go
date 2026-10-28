@@ -20,15 +20,17 @@ var _ = Describe("the start form", func() {
 		var form map[string]any
 		Expect(json.Unmarshal(data, &form)).To(Succeed())
 
-		Expect(form).To(HaveKeyWithValue("required", []any{"command"}))
+		Expect(form).NotTo(HaveKey("required"))
 		properties := form["properties"].(map[string]any)
 		Expect(properties).To(HaveKeyWithValue("command", HaveKeyWithValue("format", "textarea")))
 		Expect(properties).To(HaveKeyWithValue("facets", HaveKeyWithValue("type", "boolean")))
+		Expect(properties).To(HaveKeyWithValue("pid", HaveKeyWithValue("type", "integer")))
 		captures := properties["traces"].(map[string]any)["properties"].(map[string]any)
 		Expect(captures[pgproxy.Kind]).To(HaveKeyWithValue("title", "SQL"))
 		proxy := captures[httpproxy.Kind].(map[string]any)
 		fields := proxy["allOf"].([]any)[0].(map[string]any)["then"].(map[string]any)["properties"].(map[string]any)
 		Expect(fields).To(HaveKey("target"))
+		Expect(fields["target"]).To(HaveKeyWithValue("properties", Not(HaveKey("pid"))))
 		Expect(proxy).To(HaveKeyWithValue("title", "HTTP"))
 		Expect(proxy["properties"]).To(HaveKeyWithValue("enabled", HaveKeyWithValue("type", "boolean")))
 		Expect(proxy["allOf"]).To(ConsistOf(And(

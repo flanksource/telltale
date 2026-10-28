@@ -4,7 +4,7 @@ A Flanksource Go CLI and HTTP server with a React frontend built with Vite and C
 
 ## Setup
 
-Install Go 1.27.1, Node 24, pnpm 11.22.0, [Task](https://taskfile.dev/installation/), Gavel, and actionlint. The root `packageManager` field pins pnpm; enable your package manager's version management before installing.
+Install Go 1.27.1, a JDK (17 or 21 recommended for builds), Node 24, pnpm 11.22.0, [Task](https://taskfile.dev/installation/), Gavel, and actionlint. The root `packageManager` field pins pnpm; enable your package manager's version management before installing.
 
 ```sh
 make setup
@@ -60,6 +60,8 @@ Both also take `-- command [args...]`. A program registers its own with `telltal
 | `/api/traces/<run id>/api/v1/...` | The run's records, exports and checkpoints, live from its running captures |
 
 `POST` and `DELETE` run commands, so they take only same-origin requests, and `POST` takes only an `application/json` body.
+
+See [SQL Server and JVM captures](docs/sqlserver-jvm.md) for XEvents, historical and live deadlocks, local JFR, and Java agent installation over SSH or Kubernetes.
 
 ### Process groups: `telltale top`
 
@@ -228,7 +230,7 @@ Vite 8 uses Rolldown for bundling. The app keeps the React runtime in a shared c
 
 ## Releases
 
-After main passes CI, a serialized release job checks out the exact verified source SHA, builds assets using locked published dependencies, and validates the release candidate. It creates one detached commit containing `webapp/dist` and release-version module requirements and checksums. Main receives no generated asset commits.
+After main passes CI, a serialized release job checks out the exact verified source SHA, builds assets using locked published dependencies, and validates the release candidate. It creates one detached commit containing `webapp/dist`, the shaded Java agent JAR, and release-version module requirements and checksums. Main receives no generated asset commits.
 
 ```text
 main:        A --- B --- C

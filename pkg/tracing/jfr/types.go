@@ -14,12 +14,17 @@ import (
 // Sample is the record the jfr kind stores: a StackSample, truncated as the
 // kind's processors cut it.
 type Sample struct {
+	Resource map[string]string `json:"resource,omitempty"`
 	tracing.Truncation
 	decode.StackSample
 }
 
 // Engine is what records a JVM's profile into a JFR recording.
 type Engine string
+
+func (Engine) JSONSchema() map[string]any {
+	return map[string]any{"type": "string", "enum": []any{EngineJFR, EngineAsyncProfiler}}
+}
 
 const (
 	// EngineJFR is the JDK's own Flight Recorder (JDK 8u262 and later),
@@ -35,7 +40,9 @@ var asyncProfilerEvents = []string{decode.EventCPU, decode.EventWall, decode.Eve
 
 // Options are what a capture records and how it reads the recording back.
 type Options struct {
-	Engine Engine
+	PID           int
+	AsyncProfiler string
+	Engine        Engine
 	// Event is the one event async-profiler profiles; the JDK's recorder
 	// takes its events from Settings instead.
 	Event string

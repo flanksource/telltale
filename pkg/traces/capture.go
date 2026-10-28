@@ -22,6 +22,15 @@ type Capture struct {
 // Kind is the trace kind the capture records.
 func (c *Capture) Kind() string { return c.kind }
 
+func (c *Capture) Finished() bool {
+	select {
+	case <-c.managed.Session().Done():
+		return true
+	default:
+		return false
+	}
+}
+
 // Stream is the stream the capture commits to, which a host-fed kind such as
 // terminal is written through.
 func (c *Capture) Stream() string {

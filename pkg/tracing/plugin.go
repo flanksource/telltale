@@ -307,12 +307,19 @@ func (h *Handler[P, R]) Params() (*rpc.OpenAPISchema, error) {
 	}
 	schema := rpc.SchemaForStruct(defaults)
 	if property := schema.Properties["target"]; property != nil && len(h.seams) > 0 {
+		schema.Required = slices.DeleteFunc(schema.Required, func(name string) bool { return name == "target" })
+		property.Required = nil
 		if property.Extensions == nil {
 			property.Extensions = map[string]any{}
 		}
 		property.Extensions["x-telltale-seams"] = slices.Clone(h.seams)
 		if seam := property.Properties["seam"]; seam != nil {
 			seam.Description += fmt.Sprintf(" (supported seams: %v)", h.seams)
+			seam.Default = string(h.defaultSeam)
+			seam.Enum = make([]any, len(h.seams))
+			for index, value := range h.seams {
+				seam.Enum[index] = string(value)
+			}
 		}
 	}
 	var values map[string]any

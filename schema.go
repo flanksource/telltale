@@ -6,6 +6,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/flanksource/clicky/rpc"
 	"github.com/flanksource/telltale/pkg/traces"
@@ -34,9 +35,12 @@ const enabledKey = "enabled"
 // describes: a shell command and, per armable kind, whether to arm it and
 // its params.
 type StartRequest struct {
-	Command string                     `json:"command"`
-	Facets  bool                       `json:"facets,omitempty"`
-	Traces  map[string]json.RawMessage `json:"traces,omitempty"`
+	PID      int                        `json:"pid,omitempty"`
+	Duration string                     `json:"duration,omitempty"`
+	Every    string                     `json:"every,omitempty"`
+	Command  string                     `json:"command"`
+	Facets   bool                       `json:"facets,omitempty"`
+	Traces   map[string]json.RawMessage `json:"traces,omitempty"`
 }
 
 // FieldError is one refused field of a StartRequest, at its JSON pointer.
@@ -67,12 +71,22 @@ func (r StartRequest) Options(workDir string) (StartOptions, error) {
 		return StartOptions{}, err
 	}
 	var fields []FieldError
-	if strings.TrimSpace(r.Command) == "" {
+	if strings.TrimSpace(r.Command) == "" && r.PID == 0 && len(r.Traces) == 0 {
 		fields = append(fields, FieldError{InstancePath: "/command", Message: "a command is required"})
 	}
 	var specs []TraceSpec
+	needsCommand := len(r.Traces) == 0
 	for _, kind := range slices.Sorted(maps.Keys(r.Traces)) {
 		spec, armed, err := armedSpec(kind, r.Traces[kind])
+		if armed && err == nil {
+			plugin, lookupErr := traces.Lookup(kinds, kind)
+			if lookupErr == nil {
+				selection, resolveErr := plugin.ResolveTarget(spec.Params)
+				if resolveErr == nil && (selection.Seam == target.Proxy || selection.Seam == target.Process) {
+					needsCommand = true
+				}
+			}
+		}
 		if err == nil && armed {
 			err = traces.Validate(kinds, kind, spec.Params)
 		}
@@ -84,13 +98,36 @@ func (r StartRequest) Options(workDir string) (StartOptions, error) {
 			specs = append(specs, spec)
 		}
 	}
+	if strings.TrimSpace(r.Command) == "" && r.PID == 0 && needsCommand && len(r.Traces) > 0 {
+		fields = append(fields, FieldError{InstancePath: "/command", Message: "a command is required"})
+	}
 	if len(fields) > 0 {
 		return StartOptions{}, &ValidationError{Fields: fields}
 	}
-	return StartOptions{
-		WorkDir: workDir, Dir: workDir, Command: []string{"sh", "-c", r.Command}, Traces: specs, Facets: r.Facets,
-		TraceRoot: TraceRootCommand,
-	}, nil
+	options := StartOptions{WorkDir: workDir, Dir: workDir, PID: r.PID, Traces: specs, Facets: r.Facets, TraceRoot: TraceRootCommand}
+	if strings.TrimSpace(r.Command) != "" {
+		options.Command = []string{"sh", "-c", r.Command}
+	}
+	for _, field := range []struct {
+		name, value string
+		dest        *time.Duration
+	}{{"duration", r.Duration, &options.Duration}, {"every", r.Every, &options.Every}} {
+		if field.value == "" {
+			continue
+		}
+		value, err := time.ParseDuration(field.value)
+		if err != nil || value < 0 {
+			return StartOptions{}, &ValidationError{Fields: []FieldError{{InstancePath: "/" + field.name, Message: "must be a nonnegative duration"}}}
+		}
+		*field.dest = value
+	}
+	if err := options.validate(); err != nil {
+		return StartOptions{}, &ValidationError{Fields: []FieldError{{InstancePath: "/command", Message: err.Error()}}}
+	}
+	if _, err := aimedSpecs(options); err != nil {
+		return StartOptions{}, &ValidationError{Fields: []FieldError{{InstancePath: "/traces", Message: err.Error()}}}
+	}
+	return options, nil
 }
 
 // armedSpec reads one capture's object: its enabled switch and, the switch
@@ -141,8 +178,11 @@ func StartSchema() (*rpc.OpenAPISchema, map[string]any, error) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("trace kind %q: %w", kind, err)
 		}
-		if len(registration.Seams) == 1 && slices.Contains([]target.Seam{target.Self, target.Host, target.Proxy}, registration.Seams[0]) {
+		if len(registration.Seams) == 1 && slices.Contains([]target.Seam{target.Self, target.Host, target.Proxy, target.Connection}, registration.Seams[0]) {
 			delete(params.Properties, "target")
+		}
+		if selection := params.Properties["target"]; selection != nil {
+			delete(selection.Properties, "pid")
 		}
 		captures.Properties[kind] = captureSchema(registration.Title, order, params)
 		defaults := map[string]any{enabledKey: kind == httpproxy.Kind}
@@ -160,8 +200,11 @@ func StartSchema() (*rpc.OpenAPISchema, map[string]any, error) {
 		captureDefaults[kind] = defaults
 	}
 	schema := &rpc.OpenAPISchema{
-		Type: "object", Required: []string{"command"},
+		Type: "object",
 		Properties: map[string]*rpc.OpenAPISchema{
+			"pid":      {Type: "integer", Title: "PID", Description: "Attach to a local running process instead of a command"},
+			"duration": {Type: "string", Title: "Duration", Description: "Stop after this duration, e.g. 30s"},
+			"every":    {Type: "string", Title: "Checkpoint interval", Description: "Read checkpoints at this interval, e.g. 10s"},
 			"command": {
 				Type: "string", Title: "Command", Format: "textarea",
 				Description: "Run with sh -c in the server's work dir",

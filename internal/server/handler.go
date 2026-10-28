@@ -43,6 +43,10 @@ func routes(options HandlerOptions, ui http.Handler) http.Handler {
 	rpc.NewSwaggerServer(&rpc.ServeConfig{Version: options.Version}, options.Root,
 		&rpc.OpenAPIConfig{Title: "Telltale", Version: options.Version, Extensions: []func(*rpc.OpenAPISpec){addRulesPaths}}).RegisterRoutes(route.NewRouter(api))
 	root := http.NewServeMux()
+	installer := http.NewServeMux()
+	rpc.NewSwaggerServer(&rpc.ServeConfig{Version: options.Version, Executor: &rpc.ExecutorConfig{Enabled: true}}, options.Root, nil).
+		RegisterExecutionRoutes(route.NewRouter(installer))
+	root.Handle("/api/v1/agents/install/java", http.NewCrossOriginProtection().Handler(installer))
 	hub := agentclient.NewHub(agentclient.Default, agentclient.NewTokenStore(options.WorkDir))
 	root.HandleFunc("/api/agents", hub.List)
 	root.Handle("/api/agents/connect", hub)

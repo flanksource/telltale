@@ -99,7 +99,7 @@ type Arm struct {
 	Session       string          `json:"session"`
 	Probe         string          `json:"probe"`
 	Params        json.RawMessage `json:"params"`
-	StopAt        time.Time       `json:"stopAt,omitempty"`
+	StopAt        time.Time       `json:"stopAt,omitzero"`
 	Limits        Limits          `json:"limits"`
 	AllowMutation bool            `json:"allowMutation"`
 }

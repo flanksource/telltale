@@ -1,0 +1,24 @@
+plugins {
+    id 'java'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
+}
+
+group = 'com.flanksource.telltale'
+version = providers.gradleProperty('buildVersion').getOrElse('dev')
+repositories { mavenCentral() }
+java { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
+tasks.withType(JavaCompile).configureEach { if (JavaVersion.current().isJava9Compatible()) options.release = 8 }
+dependencies {
+    implementation 'com.google.code.gson:gson:2.11.0'
+    implementation 'org.java-websocket:Java-WebSocket:1.6.0'
+    implementation 'tools.profiler:async-profiler:4.6'
+    testImplementation 'junit:junit:4.13.2'
+}
+shadowJar {
+    archiveFileName = 'telltale-agent.jar'
+    destinationDirectory = file('../../pkg/agentinstall/java/assets')
+    relocate 'com.google.gson', 'com.flanksource.telltale.shaded.gson'
+    relocate 'org.java_websocket', 'com.flanksource.telltale.shaded.websocket'
+    relocate 'org.slf4j', 'com.flanksource.telltale.shaded.slf4j'
+    manifest { attributes('Premain-Class':'com.flanksource.telltale.Agent', 'Agent-Class':'com.flanksource.telltale.Agent', 'Main-Class':'com.flanksource.telltale.Attach', 'Implementation-Version':project.version) }
+}

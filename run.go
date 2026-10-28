@@ -47,8 +47,8 @@ type Run struct {
 	// flight, so the captures can be stopped.
 	checkpointed chan struct{}
 	done         chan struct{}
-	result   *Result
-	err      error
+	result       *Result
+	err          error
 }
 
 // Start arms options.Traces, starts options.Command or attaches to
@@ -328,6 +328,11 @@ func (r *Run) waitAttached() {
 		case <-r.stopping:
 			return
 		case <-ticker.C:
+			if r.options.host() && slices.ContainsFunc(r.captures, func(c *traces.Capture) bool { return c.Finished() }) {
+				if allCapturesFinished(r.captures) {
+					return
+				}
+			}
 			if !r.options.host() && !alive(r.options.PID) {
 				return
 			}

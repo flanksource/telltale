@@ -26,6 +26,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -38,6 +42,7 @@ jobs:
             actionlint
       - run: make setup
       - run: make build
+      - run: task java:test
       - run: .bin/telltale --version
       - uses: flanksource/gavel@2c08bfcf913a04f7f6adea45e362c87626d2e2fe # v0.0.62
         with:
@@ -47,8 +52,21 @@ jobs:
           artifact-name: telltale-tests
       - run: make lint
 
+  java-compatibility:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        java: ['8', '11', '17', '21']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+      - run: ./sdk/java/gradlew -p sdk/java test shadowJar
+
   release:
-    needs: quality
+    needs: [quality, java-compatibility]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write

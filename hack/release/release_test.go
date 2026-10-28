@@ -56,7 +56,7 @@ var _ = Describe("release-only assets", func() {
 		run("init", "-b", "main")
 		run("config", "user.name", "Release Test")
 		run("config", "user.email", "release@example.com")
-		Expect(os.WriteFile(filepath.Join(directory, ".gitignore"), []byte("webapp/dist/\n"), 0644)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(directory, ".gitignore"), []byte("webapp/dist/\npkg/agentinstall/java/assets/\n"), 0644)).To(Succeed())
 		Expect(os.MkdirAll(filepath.Join(directory, "sdk/adapter"), 0755)).To(Succeed())
 		Expect(os.MkdirAll(filepath.Join(directory, "hack/modsum"), 0755)).To(Succeed())
 		tool, err := os.ReadFile("../modsum/main.go")
@@ -76,6 +76,7 @@ var _ = Describe("release-only assets", func() {
 		source = run("rev-parse", "HEAD")
 		Expect(os.MkdirAll(filepath.Join(directory, "webapp/dist/assets"), 0755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(directory, "webapp/dist/index.html"), []byte("<html>Telltale</html>"), 0644)).To(Succeed())
+		writeAgentFixture(directory)
 		Expect(os.WriteFile(filepath.Join(directory, "webapp/dist/assets/app.js"), []byte("export default 'telltale'"), 0644)).To(Succeed())
 	})
 
@@ -101,6 +102,14 @@ var _ = Describe("release-only assets", func() {
 		output, err := prepare("v0.0.1")
 		Expect(err).To(HaveOccurred())
 		Expect(string(output)).To(ContainSubstring("already exists"))
+	})
+
+	It("refuses a release without the embedded Java agent", func() {
+		Expect(os.Remove(filepath.Join(directory, "pkg/agentinstall/java/assets/telltale-agent.jar"))).To(Succeed())
+		output, err := prepare("v0.0.1")
+		Expect(err).To(HaveOccurred())
+		Expect(string(output)).To(ContainSubstring("Missing Java agent JAR"))
+		Expect(run("rev-parse", "HEAD")).To(Equal(source))
 	})
 
 	It("preserves non-SDK replacements and removes SDK replacements", func() {
@@ -144,6 +153,7 @@ var _ = Describe("release-only assets", func() {
 		Expect(selectVersion()).To(Equal("v0.0.2"))
 		Expect(os.MkdirAll(filepath.Join(directory, "webapp/dist"), 0755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(directory, "webapp/dist/index.html"), []byte("<html>New release</html>"), 0644)).To(Succeed())
+		writeAgentFixture(directory)
 		output, err = prepare(selectVersion())
 		Expect(err).NotTo(HaveOccurred(), string(output))
 		Expect(run("rev-parse", "v0.0.2^")).To(Equal(source))
@@ -261,6 +271,7 @@ var _ = Describe("release-only assets", func() {
 		source = run("rev-parse", "HEAD")
 		Expect(os.MkdirAll(filepath.Join(directory, "webapp/dist/assets"), 0755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(directory, "webapp/dist/index.html"), []byte("<html>Next release</html>"), 0644)).To(Succeed())
+		writeAgentFixture(directory)
 		output, err = prepare("v0.0.2")
 		Expect(err).NotTo(HaveOccurred(), string(output))
 		Expect(run("rev-parse", "main")).To(Equal(source))

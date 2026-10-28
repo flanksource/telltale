@@ -75,7 +75,7 @@ func newAgentsCommand() *cobra.Command {
 	create.Flags().StringVar(&workDir, "work-dir", ".", "Directory containing the hub state")
 	create.Flags().StringVar(&scope, "scope", string(apitoken.ScopeAgent), "Token scope: agent or api")
 	tokens.AddCommand(create)
-	agents.AddCommand(list, get, tokens)
+	agents.AddCommand(list, get, tokens, newAgentInstallCommand())
 	return agents
 }
 

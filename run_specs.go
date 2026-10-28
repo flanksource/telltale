@@ -69,7 +69,7 @@ func aimedSpecs(options StartOptions) ([]aimedSpec, error) {
 		if err != nil {
 			return nil, fmt.Errorf("trace %s params: %w", spec.Kind, err)
 		}
-		if options.host() && resolved.Seam != target.Host && resolved.Seam != target.Self && resolved.Seam != target.Agent {
+		if options.host() && resolved.Seam != target.Host && resolved.Seam != target.Self && resolved.Seam != target.Agent && resolved.Seam != target.Connection {
 			return nil, fmt.Errorf("%s observes a command or a process: give a command or a pid to attach to", spec.Kind)
 		}
 		armed := aimedSpec{TraceSpec: spec, target: resolved.Seam, checkpoint: spec.Checkpoint}
@@ -157,7 +157,7 @@ func (c *checkpoints) failed() []string {
 func (r *Run) checkpoint(ctx context.Context, reason string) {
 	for index, capture := range r.captures {
 		spec := r.specs[index]
-		if spec.checkpoint == nil {
+		if spec.checkpoint == nil || capture.Finished() {
 			continue
 		}
 		params, err := withValue(spec.checkpoint, "reason", reason)

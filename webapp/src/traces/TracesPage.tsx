@@ -99,13 +99,14 @@ function RunSummary({ run }: { run: RunTraces }) {
   );
 }
 
-/** A host run's process groups, which it records in place of a process trace. */
+/** Captures recorded without a local process tree. */
 function HostRunDetail({ run }: { run: RunTraces }) {
   const [view, setView] = useState<GroupsView>(DEFAULT_VIEW);
   return (
     <div className="space-y-6">
       <RunSummary run={run} />
-      <Panel title="Process groups"><RecordedGroups run={run} view={view} onViewChange={next => setView(previous => ({ ...previous, ...next }))} /></Panel>
+      <Panel title="Captures"><TracesPanel run={run} /></Panel>
+      {processGroupsCapture(run) && <Panel title="Process groups"><RecordedGroups run={run} view={view} onViewChange={next => setView(previous => ({ ...previous, ...next }))} /></Panel>}
     </div>
   );
 }
@@ -121,7 +122,7 @@ function RunDetail({ run }: { run: RunTraces }) {
     ...(selectedKey ? { selectedKey } : {}),
     done: !run.live,
   });
-  if (!run.process) return processGroupsCapture(run) ? <HostRunDetail run={run} /> : <p role="alert">{run.unavailable}</p>;
+  if (!run.process) return run.unavailable ? <p role="alert">{run.unavailable}</p> : <HostRunDetail run={run} />;
   return (
     <div className="space-y-6">
       <RunSummary run={run} />

@@ -14,6 +14,7 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing/sqlserver/xeprovider"
 	"github.com/flanksource/telltale/pkg/tracing/sqlserver/xesession"
 	"github.com/flanksource/telltale/pkg/tracing/sqlserver/xetrace"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/query"
@@ -38,7 +39,8 @@ type Capturable interface {
 // Params are the SQL Server connection to capture on and the capture's
 // options, as the sqlserver-xevent provider takes them.
 type Params struct {
-	Connection string `json:"connection" clicky:"required,title=Connection"`
+	Target     target.Target `json:"target,omitzero"`
+	Connection string        `json:"connection" clicky:"required,title=Connection"`
 	xeprovider.XEventCaptureOptions
 }
 
@@ -196,7 +198,7 @@ func (events[P]) Handle(ctx dbcontext.Context, _ P, records tracing.Emitter[xese
 // type: events masked, but never the session ids and users that only look
 // sensitive.
 func NewKindFor[P Capturable](capture Capture) *tracing.Handler[P, xesession.EventRow] {
-	return tracing.NewHandler[P, xesession.EventRow](events[P]{capture: capture}, tracing.Capabilities{Live: true}, "process").
+	return tracing.NewHandler[P, xesession.EventRow](events[P]{capture: capture}, tracing.Capabilities{Live: true}, target.Connection).
 		WithSecretMasking("sessionId", "username")
 }
 
