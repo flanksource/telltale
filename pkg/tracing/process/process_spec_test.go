@@ -45,7 +45,7 @@ func newEnv() tracingtest.Env {
 
 func start(env tracingtest.Env, kind string, rootPID int) *query.ManagedSession {
 	managed, err := env.Runtime.Start(dbcontext.New(), tracing.StartRequest{
-		Kind: kind, Params: json.RawMessage(`{"rootPid": ` + strconv.Itoa(rootPID) + `, "interval": ` + interval + `}`),
+		Kind: kind, Params: json.RawMessage(`{"target":{"pid": ` + strconv.Itoa(rootPID) + `}, "interval": ` + interval + `}`),
 	})
 	Expect(err).ToNot(HaveOccurred())
 	tracingtest.Running(managed.Session())
@@ -121,7 +121,7 @@ var _ = Describe("process_tree", func() {
 			env := newEnv()
 			managed, err := env.Runtime.Start(dbcontext.New(), tracing.StartRequest{
 				Kind:   process.TreeKind,
-				Params: json.RawMessage(`{"rootPid": ` + strconv.Itoa(cmd.Process.Pid) + `, "interval": ` + interval + environment + `}`),
+				Params: json.RawMessage(`{"target":{"pid": ` + strconv.Itoa(cmd.Process.Pid) + `}, "interval": ` + interval + environment + `}`),
 			})
 			Expect(err).ToNot(HaveOccurred())
 			Eventually(func() map[string]recordstore.Row { return nodes(env, managed.Session()) }).WithTimeout(5 * time.Second).
@@ -149,7 +149,7 @@ var _ = Describe("process_tree", func() {
 			_, err := newEnv().Runtime.Start(dbcontext.New(), tracing.StartRequest{Kind: process.TreeKind, Params: json.RawMessage(params)})
 			Expect(err).To(MatchError(tracing.ErrInvalidParams))
 		},
-		Entry("a negative root", `{"rootPid": -1}`),
+		Entry("a negative root", `{"target":{"pid": -1}}`),
 		Entry("an interval below the minimum", `{"interval": "10ms"}`),
 		Entry("an interval that is not a duration", `{"interval": "soon"}`),
 	)
@@ -158,7 +158,7 @@ var _ = Describe("process_tree", func() {
 		root := spawnTree("exit 0")
 		Eventually(func() error { return syscall.Kill(root, 0) }).WithTimeout(5 * time.Second).Should(HaveOccurred())
 		_, err := newEnv().Runtime.Start(dbcontext.New(), tracing.StartRequest{
-			Kind: process.TreeKind, Params: json.RawMessage(`{"rootPid": ` + strconv.Itoa(root) + `}`),
+			Kind: process.TreeKind, Params: json.RawMessage(`{"target":{"pid": ` + strconv.Itoa(root) + `}}`),
 		})
 		Expect(err).To(MatchError(ContainSubstring("is not running")))
 	})

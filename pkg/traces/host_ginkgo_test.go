@@ -60,7 +60,7 @@ var _ = Describe("trace host", func() {
 
 	It("windows a running capture by its marks, and summarizes each window apart", func() {
 		host := openHost(GinkgoT().TempDir())
-		capture, err := host.Start("http_proxy", nil)
+		capture, err := host.Start("http", json.RawMessage(`{"target":{"seam":"proxy"}}`))
 		Expect(err).ToNot(HaveOccurred())
 		Expect(capture.Exports()).To(HaveKey("HTTPS_PROXY"))
 
@@ -80,14 +80,14 @@ var _ = Describe("trace host", func() {
 		last, err := host.Summarize(context.Background(), capture.Ref(middle, end))
 		Expect(err).ToNot(HaveOccurred())
 		Expect(last).To(HaveKeyWithValue("count", BeEquivalentTo(1)))
-		Expect(capture.Ref(middle, end)).To(Equal(tracing.TraceRef{Kind: "http_proxy", Stream: capture.Stream(), AfterSeq: middle, ToSeq: end}))
+		Expect(capture.Ref(middle, end)).To(Equal(tracing.TraceRef{Kind: "http", Stream: capture.Stream(), AfterSeq: middle, ToSeq: end}))
 	})
 
 	It("reopens a finished run's store to serve it, and finds no store a prune removed", func() {
 		workDir := GinkgoT().TempDir()
 		host, err := traces.Open(traces.OpenOptions{WorkDir: workDir, RunID: traces.RunID(time.Now())})
 		Expect(err).ToNot(HaveOccurred())
-		capture, err := host.Start("http_proxy", nil)
+		capture, err := host.Start("http", json.RawMessage(`{"target":{"seam":"proxy"}}`))
 		Expect(err).ToNot(HaveOccurred())
 		getThrough(capture, server.URL+"/kept")
 		end, err := capture.Stop(context.Background())
@@ -109,13 +109,13 @@ var _ = Describe("trace host", func() {
 	It("refuses an unknown kind by naming the registered ones", func() {
 		host := openHost(GinkgoT().TempDir())
 		_, err := host.Start("smtp", nil)
-		Expect(err).To(MatchError(ContainSubstring(`unknown trace kind "smtp" (registered: goprof, http, http_proxy, pg_proxy, process_groups, process_samples, process_tree, sql_statements, stacks, terminal)`)))
+		Expect(err).To(MatchError(And(ContainSubstring(`unknown trace kind "smtp"`), ContainSubstring("http"), ContainSubstring("sql"))))
 	})
 
 	It("refuses params the kind refuses before starting anything", func() {
 		host := openHost(GinkgoT().TempDir())
-		_, err := host.Start("http_proxy", json.RawMessage(`{"mode": "sniff"}`))
-		Expect(err).To(MatchError(ContainSubstring("trace http_proxy params")))
+		_, err := host.Start("http", json.RawMessage(`{"target":{"seam":"proxy"},"mode": "sniff"}`))
+		Expect(err).To(MatchError(ContainSubstring("trace http params")))
 	})
 })
 

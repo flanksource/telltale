@@ -6,6 +6,8 @@ import (
 	"path"
 	"strings"
 
+	"github.com/flanksource/telltale/pkg/tracing/target"
+
 	"github.com/flanksource/commons/properties"
 )
 
@@ -57,7 +59,8 @@ type Params struct {
 	// UpstreamCA is a PEM file of authorities the proxy trusts beside the
 	// system roots when, under mitm, it connects to the real server, such as a
 	// local test server's own certificate. It is read when the capture starts.
-	UpstreamCA string `json:"upstreamCA,omitempty" clicky:"title=Upstream CA file,desc=PEM file of authorities the proxy trusts beside the system roots under mitm"`
+	UpstreamCA string        `json:"upstreamCA,omitempty" clicky:"title=Upstream CA file,desc=PEM file of authorities the proxy trusts beside the system roots under mitm"`
+	Target     target.Target `json:"target,omitzero"`
 }
 
 func (p Params) Validate() error {

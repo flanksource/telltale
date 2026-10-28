@@ -43,5 +43,5 @@ func (ticker) Handle(dbcontext.Context, tickParams, tracing.Emitter[tick], traci
 }
 
 func tickPlugin() *tracing.Handler[tickParams, tick] {
-	return tracing.NewHandler[tickParams, tick](ticker{}, tracing.Capabilities{Live: true})
+	return tracing.NewHandler[tickParams, tick](ticker{}, tracing.Capabilities{Live: true}, "self")
 }

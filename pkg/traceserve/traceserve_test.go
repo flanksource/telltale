@@ -50,7 +50,7 @@ func storeKinds() *tracing.Kinds {
 	dumpers, err := stacks.NewDumpers(stacks.InProcess())
 	Expect(err).ToNot(HaveOccurred())
 	Expect(kinds.RegisterKind(terminal.Kind, terminal.NewKind())).To(Succeed())
-	Expect(kinds.RegisterKind(stacks.Kind, stacks.NewKind(dumpers))).To(Succeed())
+	Expect(kinds.RegisterKind(stacks.Kind, stacks.NewKind(nil, dumpers))).To(Succeed())
 	return kinds
 }
 
@@ -185,7 +185,7 @@ var _ = Describe("a served trace store", func() {
 		Expect(status).To(Equal(http.StatusNotFound))
 
 		managed, err := store.runtime.Start(dbcontext.New(), tracing.StartRequest{
-			Kind: stacks.Kind, Params: json.RawMessage(fmt.Sprintf(`{"rootPid": %d}`, os.Getpid())),
+			Kind: stacks.Kind, Params: json.RawMessage(fmt.Sprintf(`{"target": {"pid": %d}}`, os.Getpid())),
 		})
 		Expect(err).ToNot(HaveOccurred())
 		session := managed.Session()

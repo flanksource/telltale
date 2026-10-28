@@ -24,7 +24,7 @@ const finished: RunTraces = {
   status: "succeeded",
   command: ["curl", "https://example.com"],
   exitCode: 0,
-  captures: [{ kind: "http_proxy", ref: { kind: "http_proxy", stream: "proxy-1", toSeq: 2 }, summary: { count: 2 } }],
+  captures: [{ kind: "http", ref: { kind: "http", stream: "proxy-1", toSeq: 2 }, summary: { count: 2 } }],
   process: processRefs,
 };
 
@@ -56,7 +56,7 @@ function serve(status: TracesStatus, started: Response = json(running, 201)) {
     if (url === "/api/traces" || url.startsWith("/api/traces?")) return Promise.resolve(json(status));
     if (url === "/api/traces/start") return Promise.resolve(json(startForm));
     if (init?.method === "DELETE") return Promise.resolve(new Response(null, { status: 202 }));
-    if (url.endsWith("/traces/kinds")) return Promise.resolve(json([{ name: "http_proxy", title: "HTTP proxy traffic", exportFormats: [{ name: "har", ext: "har", mime: "application/json" }] }]));
+    if (url.endsWith("/traces/kinds")) return Promise.resolve(json([{ name: "http", title: "HTTP traffic", exportFormats: [{ name: "har", ext: "har", mime: "application/json" }] }]));
     if (url.includes("/seq?")) return Promise.resolve(json({ seq: 0 }));
     return Promise.resolve(new Response("", { status: 404 }));
   });
@@ -199,24 +199,24 @@ describe("starting a run", () => {
   });
 
   it("shows the errors of a refused start", async () => {
-    serve({ runs: [] }, json({ errors: [{ instancePath: "", message: "start pg_proxy trace: connection refused" }] }, 400));
+    serve({ runs: [] }, json({ errors: [{ instancePath: "", message: "start sql trace: connection refused" }] }, 400));
     renderPage();
     fireEvent.change(await screen.findByRole("textbox", { name: /Command/ }), { target: { value: "psql" } });
     fireEvent.click(screen.getByRole("button", { name: "Start run" }));
-    expect(await screen.findByText("start pg_proxy trace: connection refused")).toHaveAttribute("role", "alert");
+    expect(await screen.findByText("start sql trace: connection refused")).toHaveAttribute("role", "alert");
   });
 });
 
 describe("trace windows", () => {
   it("names a capture's window in its run, counted from its summary", () => {
     expect(captureWindows(finished)).toEqual([
-      { kind: "http_proxy", stream: "proxy-1", toSeq: 2, run_id: finished.runId, count: 2, summary: { count: 2 } },
+      { kind: "http", stream: "proxy-1", toSeq: 2, run_id: finished.runId, count: 2, summary: { count: 2 } },
     ]);
   });
 
   it("builds a window's export URL under the run's mount", () => {
-    expect(traceExportUrl(mount, { kind: "http_proxy", stream: "proxy-1", afterSeq: 3, toSeq: 9 }, "har"))
-      .toBe(`${mount}/api/v1/traces/http_proxy/export?stream=proxy-1&afterSeq=3&toSeq=9&format=har`);
+    expect(traceExportUrl(mount, { kind: "http", stream: "proxy-1", afterSeq: 3, toSeq: 9 }, "har"))
+      .toBe(`${mount}/api/v1/traces/http/export?stream=proxy-1&afterSeq=3&toSeq=9&format=har`);
   });
 
   it("reads one record per non-empty NDJSON line", () => {
@@ -224,6 +224,6 @@ describe("trace windows", () => {
   });
 
   it("puts only a filter's non-empty fields in its query", () => {
-    expect(runFilterQuery({ q: "", status: "failed", kind: "http_proxy" })).toBe("status=failed&kind=http_proxy");
+    expect(runFilterQuery({ q: "", status: "failed", kind: "http" })).toBe("status=failed&kind=http");
   });
 });

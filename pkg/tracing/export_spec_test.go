@@ -71,10 +71,10 @@ var _ = Describe("a window's exports and summaries", func() {
 
 	BeforeEach(func() {
 		env = tracingtest.NewEnv(map[string]tracing.TracePlugin{
-			"tallied": tracing.NewHandler[tickParams, tick](tallied{formats: []tracing.ExportFormat{csvFormat}}, tracing.Capabilities{Historical: true}),
+			"tallied": tracing.NewHandler[tickParams, tick](tallied{formats: []tracing.ExportFormat{csvFormat}}, tracing.Capabilities{Historical: true}, "self"),
 			"ticks": tracing.NewHandler[tickParams, tick](scripted{handle: func(ctx dbcontext.Context, p tickParams, records tracing.Emitter[tick], _ tracing.Records[tick]) error {
 				return emitTicks(ctx, records, p.Count)
-			}}, tracing.Capabilities{Historical: true}),
+			}}, tracing.Capabilities{Historical: true}, "self"),
 		})
 		ref = capture("tallied")
 	})
@@ -124,7 +124,7 @@ var _ = Describe("a window's exports and summaries", func() {
 
 	DescribeTable("refuse to register a kind whose formats a download could not be named by",
 		func(format tracing.ExportFormat, message string) {
-			err := tracing.NewKinds().RegisterKind("tallied", tracing.NewHandler[tickParams, tick](tallied{formats: []tracing.ExportFormat{format}}, tracing.Capabilities{Historical: true}))
+			err := tracing.NewKinds().RegisterKind("tallied", tracing.NewHandler[tickParams, tick](tallied{formats: []tracing.ExportFormat{format}}, tracing.Capabilities{Historical: true}, "self"))
 			Expect(err).To(MatchError(ContainSubstring(message)))
 		},
 		Entry("the built-in ndjson", tracing.ExportFormat{Name: "ndjson", Ext: "ndjson", MIME: "application/x-ndjson"}, `"ndjson" twice`),

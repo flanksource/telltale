@@ -324,6 +324,6 @@ func (tree) Summarize(rows iter.Seq[Node]) (map[string]any, error) {
 // once and replaced as it changes, its secrets masked and its values cut at
 // 64KiB.
 func NewTreeKind(sampler *Sampler, options TreeOptions) *tracing.Handler[TreeParams, Node] {
-	return tracing.NewHandler[TreeParams, Node](tree{sampler: sampler, dumpers: options.Dumpers}, tracing.Capabilities{Live: true}).
+	return tracing.NewHandler[TreeParams, Node](tree{sampler: sampler, dumpers: options.Dumpers}, tracing.Capabilities{Live: true}, "process").
 		WithSecretMasking("key").WithTruncation(maxValueBytes)
 }

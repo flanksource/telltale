@@ -55,16 +55,20 @@ tasks:
     desc: Check Go, TypeScript, frontend lint, and workflow syntax
     cmds:
       - gavel lint golangci-lint
+      - cmd: gavel lint golangci-lint
+        dir: sdk
       - pnpm lint
       - pnpm typecheck
       - actionlint
-      - bash -n hack/release.sh
+      - bash -n hack/release.sh hack/release-version.sh
 
   test:
     desc: Run Go, frontend, and live API integration tests
     cmds:
       - task: build
       - gavel test --framework go,ginkgo
+      - cmd: gavel test --framework go,ginkgo
+        dir: sdk
       - pnpm test
 
   # The JFR fixture of pkg/tracing/jfr: the decode specs expect the counts of

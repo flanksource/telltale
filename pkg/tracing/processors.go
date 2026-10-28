@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/flanksource/commons/logger"
+	telltale "github.com/flanksource/telltale/sdk"
 
 	"github.com/flanksource/commons-db/recordstore"
 )
@@ -197,7 +198,7 @@ func (m secretMasker) entry(key string, value any) any {
 func (m secretMasker) value(value any) any {
 	switch v := value.(type) {
 	case string:
-		return logger.StripSecrets(v)
+		return telltale.Mask(v)
 	case map[string]any:
 		if name, ok := v["name"].(string); ok && len(v) <= 2 && logger.IsSensitiveLogKey(name) {
 			if _, ok := v["value"]; ok {

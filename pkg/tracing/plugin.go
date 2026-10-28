@@ -20,7 +20,11 @@ import (
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 )
+
+// ErrNoTargetSeams identifies a handler without a target seam.
+var ErrNoTargetSeams = errors.New("target seams are required")
 
 // TraceHandler is a trace kind's implementation over its params P and its
 // records R.
@@ -102,8 +106,16 @@ type Validator interface {
 	Validate() error
 }
 
+// InputValidator validates which fields the caller supplied after target resolution.
+type InputValidator interface {
+	ValidateInput(json.RawMessage) error
+}
+
 // TracePlugin is a trace kind as the kinds catalog holds it.
 type TracePlugin interface {
+	TargetSeams() ([]target.Seam, target.Seam)
+	ResolveTarget(json.RawMessage) (target.Target, error)
+	setKind(string)
 	// Title is the kind's human name.
 	Title() string
 	// Params is the JSON schema of the kind's params, with their defaults: the
@@ -144,12 +156,53 @@ type Handler[P, R any] struct {
 	capabilities Capabilities
 	defaults     *P
 
-	dedup      *dedupOption[P, R]
-	truncateAt int
-	parseJSON  bool
-	jsonPaths  []string
-	mask       bool
-	keep       []string
+	dedup       *dedupOption[P, R]
+	truncateAt  int
+	parseJSON   bool
+	jsonPaths   []string
+	mask        bool
+	keep        []string
+	seams       []target.Seam
+	defaultSeam target.Seam
+	kind        string
+}
+
+// TargetSeams returns the seams supported by this handler and its default.
+func (h *Handler[P, R]) TargetSeams() ([]target.Seam, target.Seam) {
+	return slices.Clone(h.seams), h.defaultSeam
+}
+
+func (h *Handler[P, R]) setKind(kind string) { h.kind = kind }
+
+// ResolveTarget resolves the target in a capture's params.
+func (h *Handler[P, R]) ResolveTarget(params json.RawMessage) (target.Target, error) {
+	if len(h.seams) == 0 {
+		return target.Target{}, ErrNoTargetSeams
+	}
+	var selection struct {
+		Target target.Target `json:"target"`
+	}
+	if len(bytes.TrimSpace(params)) > 0 {
+		if err := json.Unmarshal(params, &selection); err != nil {
+			return target.Target{}, fmt.Errorf("params: %w", err)
+		}
+	}
+	var available func(target.Target) bool
+	var lookupErr error
+	if resolver, ok := h.handler.(interface {
+		AgentAvailable(string, target.Target) (bool, error)
+	}); ok {
+		available = func(t target.Target) bool {
+			var found bool
+			found, lookupErr = resolver.AgentAvailable(h.kind, t)
+			return found
+		}
+	}
+	resolved, err := target.Resolve(h.kind, selection.Target, h.seams, h.defaultSeam, available)
+	if lookupErr != nil {
+		return target.Target{}, fmt.Errorf("agent lookup: %w", lookupErr)
+	}
+	return resolved, err
 }
 
 type dedupOption[P, R any] struct {
@@ -158,8 +211,12 @@ type dedupOption[P, R any] struct {
 }
 
 // NewHandler makes handler a plugin with capabilities.
-func NewHandler[P, R any](handler TraceHandler[P, R], capabilities Capabilities) *Handler[P, R] {
-	return &Handler[P, R]{handler: handler, capabilities: capabilities}
+func NewHandler[P, R any](handler TraceHandler[P, R], capabilities Capabilities, seams ...target.Seam) *Handler[P, R] {
+	h := &Handler[P, R]{handler: handler, capabilities: capabilities, seams: slices.Clone(seams)}
+	if len(seams) > 0 {
+		h.defaultSeam = seams[0]
+	}
+	return h
 }
 
 // WithDefaults starts the kind's form and its captures from defaults rather
@@ -249,6 +306,15 @@ func (h *Handler[P, R]) Params() (*rpc.OpenAPISchema, error) {
 		return nil, err
 	}
 	schema := rpc.SchemaForStruct(defaults)
+	if property := schema.Properties["target"]; property != nil && len(h.seams) > 0 {
+		if property.Extensions == nil {
+			property.Extensions = map[string]any{}
+		}
+		property.Extensions["x-telltale-seams"] = slices.Clone(h.seams)
+		if seam := property.Properties["seam"]; seam != nil {
+			seam.Description += fmt.Sprintf(" (supported seams: %v)", h.seams)
+		}
+	}
 	var values map[string]any
 	if err := roundTrip(defaults, &values); err != nil {
 		return nil, fmt.Errorf("params defaults: %w", err)
@@ -435,6 +501,41 @@ func (h *Handler[P, R]) decodeParams(params json.RawMessage) (P, error) {
 	trimmed := bytes.TrimSpace(params)
 	if len(trimmed) > 0 && !bytes.Equal(trimmed, []byte("null")) {
 		if err := decodeStrict(trimmed, &decoded); err != nil {
+			return decoded, fmt.Errorf("params: %w", err)
+		}
+	}
+	resolved, err := h.ResolveTarget(params)
+	if err != nil {
+		return decoded, fmt.Errorf("params: %w", err)
+	}
+	paramType := indirect(reflect.TypeFor[P]())
+	hasTarget := false
+	if paramType.Kind() == reflect.Struct {
+		_, hasTarget = jsonField(paramType, "target")
+	}
+	if hasTarget {
+		var values map[string]json.RawMessage
+		data, err := json.Marshal(decoded)
+		if err != nil {
+			return decoded, fmt.Errorf("params: %w", err)
+		}
+		if err := json.Unmarshal(data, &values); err != nil {
+			return decoded, fmt.Errorf("params: %w", err)
+		}
+		values["target"], err = json.Marshal(resolved)
+		if err != nil {
+			return decoded, fmt.Errorf("params: %w", err)
+		}
+		data, err = json.Marshal(values)
+		if err != nil {
+			return decoded, fmt.Errorf("params: %w", err)
+		}
+		if err := decodeStrict(data, &decoded); err != nil {
+			return decoded, fmt.Errorf("params: %w", err)
+		}
+	}
+	if validator, ok := any(&decoded).(InputValidator); ok {
+		if err := validator.ValidateInput(params); err != nil {
 			return decoded, fmt.Errorf("params: %w", err)
 		}
 	}

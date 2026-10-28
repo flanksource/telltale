@@ -17,6 +17,7 @@ import (
 	"github.com/flanksource/commons-db/recordstore/recordresults"
 	"github.com/flanksource/commons-db/recordstore/recordresults/recordresultstest"
 	"github.com/flanksource/telltale/pkg/tracing"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 	"github.com/flanksource/telltale/pkg/tracing/tracingtest"
 )
 
@@ -27,6 +28,18 @@ func stopped(session *query.Session) *query.Session {
 }
 
 type untitled struct{ ticker }
+
+type targetParams struct {
+	Target target.Target `json:"target,omitzero"`
+}
+type targetRecorder struct{ got chan target.Target }
+
+func (r targetRecorder) Params() targetParams                   { return targetParams{} }
+func (r targetRecorder) Schema() recordresults.ResultType[tick] { return ticker{}.Schema() }
+func (r targetRecorder) Handle(_ dbcontext.Context, p targetParams, _ tracing.Emitter[tick], _ tracing.Records[tick]) error {
+	r.got <- p.Target
+	return nil
+}
 
 func (untitled) Schema() recordresults.ResultType[tick] { return recordresults.ResultType[tick]{} }
 
@@ -53,6 +66,16 @@ func (labeller) Handle(ctx dbcontext.Context, p labelParams, records tracing.Emi
 }
 
 var _ = Describe("Kinds", func() {
+	It("passes the resolved seam into the handler's typed params", func() {
+		got := make(chan target.Target, 1)
+		plugin := tracing.NewHandler[targetParams, tick](targetRecorder{got: got}, tracing.Capabilities{Live: true}, target.Self)
+		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{"targets": plugin})
+		resolved, err := plugin.ResolveTarget(nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(resolved.Seam).To(Equal(target.Self))
+		env.Start("targets", `{}`)
+		Eventually(got).Should(Receive(Equal(target.Target{Seam: target.Self})))
+	})
 	It("describes a registered kind: its params form with defaults, its columns and capabilities", func() {
 		kinds := tracing.NewKinds()
 		Expect(kinds.RegisterKind("ticks", tickPlugin())).To(Succeed())
@@ -93,7 +116,8 @@ var _ = Describe("Kinds", func() {
 			}
 			<-ctx.Done()
 			return nil
-		}}, tracing.Capabilities{Live: true}).WithDefaults(tickParams{Count: 7, Label: "host"})
+		}}, tracing.Capabilities{Live: true}, "self").
+			WithDefaults(tickParams{Count: 7, Label: "host"})
 		schema, err := plugin.Params()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(schema.Properties["count"].Default).To(Equal(float64(7)))
@@ -107,7 +131,7 @@ var _ = Describe("Kinds", func() {
 	})
 
 	It("starts every capture from the host's defaults, whatever an earlier start asked for", func() {
-		plugin := tracing.NewHandler[labelParams, tick](labeller{}, tracing.Capabilities{Historical: true}).
+		plugin := tracing.NewHandler[labelParams, tick](labeller{}, tracing.Capabilities{Historical: true}, "self").
 			WithDefaults(labelParams{Labels: []string{"self"}})
 		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{"labels": plugin})
 
@@ -149,15 +173,18 @@ var _ = Describe("Kinds", func() {
 		Entry("a name a record store kind cannot have", func(k *tracing.Kinds) error {
 			return k.RegisterKind("tick-tock", tickPlugin())
 		}, "tick-tock"),
+		Entry("no target seams", func(k *tracing.Kinds) error {
+			return k.RegisterKind("ticks", tracing.NewHandler[tickParams, tick](ticker{}, tracing.Capabilities{Live: true}))
+		}, "target seams"),
 		Entry("a name registered twice", func(k *tracing.Kinds) error {
 			Expect(k.RegisterKind("ticks", tickPlugin())).To(Succeed())
 			return k.RegisterKind("ticks", tickPlugin())
 		}, "already registered"),
 		Entry("no capabilities", func(k *tracing.Kinds) error {
-			return k.RegisterKind("ticks", tracing.NewHandler[tickParams, tick](ticker{}, tracing.Capabilities{}))
+			return k.RegisterKind("ticks", tracing.NewHandler[tickParams, tick](ticker{}, tracing.Capabilities{}, "self"))
 		}, "capabilities"),
 		Entry("no title", func(k *tracing.Kinds) error {
-			return k.RegisterKind("ticks", tracing.NewHandler[tickParams, tick](untitled{}, tracing.Capabilities{Live: true}))
+			return k.RegisterKind("ticks", tracing.NewHandler[tickParams, tick](untitled{}, tracing.Capabilities{Live: true}, "self"))
 		}, "title"),
 	)
 

@@ -78,7 +78,7 @@ describe("recorded trace runs", () => {
     expect(listed.runs).toHaveLength(1);
     expect(listed.runs[0]).toMatchObject({
       mount: `/api/traces/${listed.runs[0].runId}`,
-      status: "succeeded", exitCode: 0, captures: [{ kind: "http_proxy", summary: { count: 1 } }],
+      status: "succeeded", exitCode: 0, captures: [{ kind: "http", summary: { count: 1 } }],
     });
   });
 
@@ -119,15 +119,15 @@ describe("runs started over the API", () => {
     expect(response.status).toBe(200);
     const form = await response.json() as { schema: { required: string[] }; defaults: { traces: Record<string, { enabled: boolean }> } };
     expect(form.schema.required).toEqual(["command"]);
-    expect(form.defaults.traces.http_proxy.enabled).toBe(true);
+    expect(form.defaults.traces.http.enabled).toBe(true);
   });
 
   it("runs a shell command under the proxy it arms and records its exchange", async () => {
-    const response = await start({ command: `curl -sS ${upstreamURL}`, traces: { http_proxy: { enabled: true } } });
+    const response = await start({ command: `curl -sS ${upstreamURL}`, traces: { http: { enabled: true, target: { seam: "proxy" } } } });
     expect(response.status).toBe(201);
     const started = await response.json() as ListedRun;
     expect(started).toMatchObject({ status: "running", command: ["sh", "-c", `curl -sS ${upstreamURL}`] });
-    expect(await settled(started.runId)).toMatchObject({ status: "succeeded", exitCode: 0, captures: [{ kind: "http_proxy", summary: { count: 1 } }] });
+    expect(await settled(started.runId)).toMatchObject({ status: "succeeded", exitCode: 0, captures: [{ kind: "http", summary: { count: 1 } }] });
   });
 
   it("stops a running run, which still records how it ended", async () => {
@@ -138,10 +138,17 @@ describe("runs started over the API", () => {
   });
 
   it("refuses a start request field by field", async () => {
-    const response = await start({ command: "", traces: { http_proxy: { enabled: true, mode: "sideways" } } });
+    const response = await start({ command: "", traces: { http: { enabled: true, target: { seam: "proxy" }, mode: "sideways" } } });
     expect(response.status).toBe(400);
     const refused = await response.json() as { errors: Array<{ instancePath: string }> };
-    expect(refused.errors.map(error => error.instancePath).sort()).toEqual(["/command", "/traces/http_proxy"]);
+    expect(refused.errors.map(error => error.instancePath).sort()).toEqual(["/command", "/traces/http"]);
+  });
+
+  it("rejects a seam the kind does not support", async () => {
+    const response = await start({ command: "true", traces: { http: { enabled: true, target: { seam: "process" } } } });
+    expect(response.status).toBe(400);
+    const refused = await response.json() as { errors: Array<{ instancePath: string; message: string }> };
+    expect(refused.errors).toEqual([expect.objectContaining({ instancePath: "/traces/http", message: expect.stringContaining("unsupported seam") })]);
   });
 
   it("filters the runs it lists", async () => {

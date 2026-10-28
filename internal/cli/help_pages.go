@@ -10,26 +10,27 @@ import (
 	"github.com/flanksource/clicky/rpc"
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/pkg/traces"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 	"github.com/spf13/cobra"
 )
 
 // targets title each traces.Target's kinds, in the order help lists them.
 var targets = []struct {
-	target traces.Target
+	target target.Seam
 	title  string
 	says   string
 }{
-	{traces.TargetCommand, "Kinds a command is pointed at",
+	{target.Proxy, "Kinds a command is pointed at",
 		"The command is started with the variables the capture exports. They cannot attach to a running process."},
-	{traces.TargetProcess, "Kinds that observe a process tree",
+	{target.Process, "Kinds that observe a process tree",
 		"They observe telltale's own tree, which holds the command, or the process --pid attaches to."},
-	{traces.TargetSelf, "Kinds that record telltale itself",
+	{target.Self, "Kinds that record telltale itself",
 		"They record telltale's own sources while the run lasts, nothing of the command."},
-	{traces.TargetHost, "Kinds that observe the whole host",
+	{target.Host, "Kinds that observe the whole host",
 		"They record every process on the host: run alone they need no command and run until Ctrl+C or --duration."},
 }
 
-func targetOf(target traces.Target) (string, string) {
+func targetOf(target target.Seam) (string, string) {
 	for _, entry := range targets {
 		if entry.target == target {
 			return entry.title, entry.says
@@ -55,7 +56,7 @@ func runHelp(cmd *cobra.Command) helpText {
 	for _, entry := range targets {
 		h = h.section(entry.title).paragraph(entry.says)
 		for _, registration := range traces.Registrations() {
-			if registration.Target == entry.target {
+			if slices.Contains(registration.Seams, entry.target) {
 				h = h.term(registration.Name, registration.Summary, width)
 			}
 		}
@@ -65,7 +66,7 @@ func runHelp(cmd *cobra.Command) helpText {
 		h = h.term("telltale "+preset.Name, preset.Summary, width)
 	}
 	return h.section("Examples").
-		command("telltale run http_proxy --mode mitm -- curl -sS https://example.com", "decrypt and record a request").
+		command("telltale run http --seam proxy --mode mitm -- curl -sS https://example.com", "decrypt and record a request").
 		command("telltale run process_samples --pid 1234 --facets ports --duration 1m", "sample a running process for a minute").
 		command("telltale run stacks --every 10s -- ./server", "dump a server's stacks every 10 seconds").
 		section("See also").
@@ -76,15 +77,15 @@ func runHelp(cmd *cobra.Command) helpText {
 }
 
 func kindHelp(cmd *cobra.Command, registration traces.Registration) helpText {
-	title, says := targetOf(registration.Target)
+	title, says := targetOf(registration.DefaultSeam)
 	h := newHelp(registration.Summary + ".").
 		section("Description").paragraph(registration.Description).
 		section("Usage")
-	if registration.Target == traces.TargetHost {
+	if registration.DefaultSeam == target.Host {
 		h = h.command("telltale run "+registration.Name+" [flags]", "")
 	}
 	h = h.command("telltale run "+registration.Name+" [flags] -- command [args...]", "")
-	if registration.Target != traces.TargetCommand && registration.Target != traces.TargetHost {
+	if registration.DefaultSeam != target.Proxy {
 		h = h.command("telltale run "+registration.Name+" [flags] --pid PID", "")
 	}
 	h = h.section("Target: " + title).paragraph(says)
@@ -140,9 +141,9 @@ func traceRunHelp(cmd *cobra.Command) helpText {
 		}
 	}
 	return h.section("Examples").
-		command("telltale trace run -- curl -sS https://example.com", "record the tunnel to example.com through http_proxy, the default").
-		command(`telltale trace run --trace 'http_proxy:{"mode":"mitm"}' -- curl -sS https://example.com`, "decrypt and record the exchange in full").
-		command(`telltale trace run --trace http_proxy --trace 'pg_proxy:{"env":"ORDERS_DB_URL"}' -- go test ./...`, "record the tests' HTTP and SQL").
+		command("telltale trace run -- curl -sS https://example.com", "record the tunnel to example.com through the HTTP proxy").
+		command(`telltale trace run --trace 'http:{"target":{"seam":"proxy"},"mode":"mitm"}' -- curl -sS https://example.com`, "decrypt and record the exchange in full").
+		command(`telltale trace run --trace 'http:{"target":{"seam":"proxy"}}' --trace 'sql:{"target":{"seam":"proxy"},"env":"ORDERS_DB_URL"}' -- go test ./...`, "record the tests' HTTP and SQL").
 		command("telltale trace run --facets -- make build", "record every process's open files, sockets and environment").
 		section("See also").
 		command("telltale run <kind> --help", "one kind, its params as flags").
@@ -171,7 +172,7 @@ func paramSummary(schema *rpc.OpenAPISchema, prefix string) []string {
 }
 
 func presetHelp(cmd *cobra.Command, preset telltale.Preset) helpText {
-	h := newHelp(preset.Summary + ".").
+	h := newHelp(preset.Summary+".").
 		section("Description").paragraph(preset.Description).
 		section("Usage").
 		command("telltale "+preset.Name+" [flags] PID", "attach to a running process until Ctrl+C, --duration, or it exits").

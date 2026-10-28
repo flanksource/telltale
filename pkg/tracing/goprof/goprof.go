@@ -6,17 +6,25 @@
 package goprof
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"time"
 
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
+	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/tracing"
+	"github.com/flanksource/telltale/pkg/tracing/seam"
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
+	"github.com/flanksource/telltale/pkg/tracing/target"
+	"github.com/flanksource/telltale/sdk/protocol"
+	"github.com/google/pprof/profile"
+	"github.com/google/uuid"
 )
 
 // Kind is the name a host registers the kind as.
@@ -38,22 +46,21 @@ const gopsCPUSeconds = 30
 
 // Params choose the tree whose processes a capture profiles.
 type Params struct {
-	// RootPID is the process whose tree is profiled; zero is the host's own.
-	RootPID int `json:"rootPid,omitempty" clicky:"title=Root PID,desc=Process whose tree is profiled; 0 is telltale's own which holds the command"`
+	Target target.Target `json:"target,omitzero"`
 }
 
 func (p Params) Validate() error {
-	if p.RootPID < 0 {
-		return fmt.Errorf("rootPid %d is not a process id", p.RootPID)
+	if p.Target.PID < 0 {
+		return fmt.Errorf("pid %d is not a process id", p.Target.PID)
 	}
 	return nil
 }
 
 func (p Params) root() int {
-	if p.RootPID == 0 {
+	if p.Target.PID == 0 {
 		return os.Getpid()
 	}
-	return p.RootPID
+	return p.Target.PID
 }
 
 // Sample is the record the kind stores: the value one stack holds of one
@@ -135,10 +142,16 @@ func (p CheckpointParams) validateSource() error {
 // agent; a nil one finds none, so that source reads nothing live.
 type Addresses struct {
 	PProf, Gops stacks.AddressFunc
+	Registry    *agentclient.Registry
 }
 
 type profiler struct {
 	addresses Addresses
+	agent     seam.AgentSeam[Params, Sample]
+}
+
+func (p profiler) AgentAvailable(probe string, selection target.Target) (bool, error) {
+	return p.agent.Available(probe, selection)
 }
 
 func (profiler) Params() Params { return Params{} }
@@ -152,7 +165,10 @@ func (profiler) Schema() recordresults.ResultType[Sample] {
 }
 
 // Prepare refuses a root that is not running, before the session starts.
-func (profiler) Prepare(ctx dbcontext.Context, params Params, _ tracing.Emitter[Sample]) (dbcontext.Context, func() error, error) {
+func (p profiler) Prepare(ctx dbcontext.Context, params Params, out tracing.Emitter[Sample]) (dbcontext.Context, func() error, error) {
+	if params.Target.Seam == target.Agent || params.Target.Seam == target.Self {
+		return p.agent.Prepare(ctx, params, out)
+	}
 	if _, err := stacks.Resolve(ctx, params.root(), "", 0); err != nil {
 		return ctx, nil, err
 	}
@@ -160,7 +176,10 @@ func (profiler) Prepare(ctx dbcontext.Context, params Params, _ tracing.Emitter[
 }
 
 // Handle waits for the capture to stop: the kind reads only at checkpoints.
-func (profiler) Handle(ctx dbcontext.Context, _ Params, _ tracing.Emitter[Sample], _ tracing.Records[Sample]) error {
+func (p profiler) Handle(ctx dbcontext.Context, params Params, out tracing.Emitter[Sample], _ tracing.Records[Sample]) error {
+	if params.Target.Seam == target.Agent || params.Target.Seam == target.Self {
+		return p.agent.Handle(ctx, params, out)
+	}
 	<-ctx.Done()
 	return nil
 }
@@ -168,5 +187,27 @@ func (profiler) Handle(ctx dbcontext.Context, _ Params, _ tracing.Emitter[Sample
 // NewKind is the goprof kind, reading pprof servers and gops agents at the
 // addresses addresses gives; with none it reads only profile files.
 func NewKind(addresses Addresses) *tracing.Handler[Params, Sample] {
-	return tracing.NewHandler[Params, Sample](profiler{addresses: addresses}, tracing.Capabilities{Live: true})
+	agent := seam.AgentSeam[Params, Sample]{Probe: Kind, Registry: addresses.Registry, Target: func(p Params) target.Target { return p.Target }, Mutates: func(p Params) bool { return p.Target.AllowMutation }, ArmParams: func(p Params) (json.RawMessage, error) {
+		return json.Marshal(map[string]any{"profile": "heap", "mutex": p.Target.AllowMutation, "block": p.Target.AllowMutation})
+	}, DecodeBlob: func(blob agentclient.Blob, resource map[string]string) ([]Sample, error) {
+		if blob.Info.ContentType != protocol.ContentTypePprof {
+			return nil, fmt.Errorf("unexpected profile content type %s", blob.Info.ContentType)
+		}
+		pid, err := strconv.Atoi(resource["process.pid"])
+		if err != nil {
+			return nil, fmt.Errorf("agent process pid: %w", err)
+		}
+		parsed, err := profile.ParseData(blob.Data)
+		if err != nil {
+			return nil, fmt.Errorf("parse agent profile: %w", err)
+		}
+		var request CheckpointParams
+		if len(blob.CheckpointParams) > 0 {
+			if err := json.Unmarshal(blob.CheckpointParams, &request); err != nil {
+				return nil, fmt.Errorf("profile checkpoint params: %w", err)
+			}
+		}
+		return Aggregate(Sample{CheckpointID: uuid.NewString(), TakenAt: time.Now().UTC(), Reason: request.Reason, Source: "agent", PID: pid, Profile: blob.Info.Name}, parsed), nil
+	}}
+	return tracing.NewHandler[Params, Sample](profiler{addresses: addresses, agent: agent}, tracing.Capabilities{Live: true}, target.Process, target.Agent, target.Self)
 }

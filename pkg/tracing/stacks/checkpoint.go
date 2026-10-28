@@ -2,6 +2,7 @@ package stacks
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -9,6 +10,7 @@ import (
 	clickyprocess "github.com/flanksource/clicky/process"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/process"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 
 	dbcontext "github.com/flanksource/commons-db/context"
 )
@@ -25,6 +27,13 @@ func (s stacks) Checkpoint(ctx dbcontext.Context, params Params, records tracing
 	}
 	if err := request.Validate(); err != nil {
 		return fmt.Errorf("%w: %w", tracing.ErrCheckpointParams, err)
+	}
+	if params.Target.Seam == target.Agent || params.Target.Seam == target.Self {
+		data, err := json.Marshal(request)
+		if err != nil {
+			return err
+		}
+		return s.agent.Checkpoint(ctx, data, records)
 	}
 	head := Stack{CheckpointID: newCheckpointID(), Reason: request.Reason}
 	dump, err := s.take(ctx, params.root(), request, &head)

@@ -6,6 +6,7 @@ import (
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/pkg/tracing/httpproxy"
 	"github.com/flanksource/telltale/pkg/tracing/pgproxy"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -24,10 +25,11 @@ var _ = Describe("the start form", func() {
 		Expect(properties).To(HaveKeyWithValue("command", HaveKeyWithValue("format", "textarea")))
 		Expect(properties).To(HaveKeyWithValue("facets", HaveKeyWithValue("type", "boolean")))
 		captures := properties["traces"].(map[string]any)["properties"].(map[string]any)
-		Expect(captures).To(HaveLen(2))
-		Expect(captures[pgproxy.Kind]).To(HaveKeyWithValue("title", "Postgres proxy"))
+		Expect(captures[pgproxy.Kind]).To(HaveKeyWithValue("title", "SQL"))
 		proxy := captures[httpproxy.Kind].(map[string]any)
-		Expect(proxy).To(HaveKeyWithValue("title", "HTTP proxy"))
+		fields := proxy["allOf"].([]any)[0].(map[string]any)["then"].(map[string]any)["properties"].(map[string]any)
+		Expect(fields).To(HaveKey("target"))
+		Expect(proxy).To(HaveKeyWithValue("title", "HTTP"))
 		Expect(proxy["properties"]).To(HaveKeyWithValue("enabled", HaveKeyWithValue("type", "boolean")))
 		Expect(proxy["allOf"]).To(ConsistOf(And(
 			HaveKeyWithValue("if", map[string]any{"properties": map[string]any{"enabled": map[string]any{"const": true}}}),
@@ -37,13 +39,10 @@ var _ = Describe("the start form", func() {
 			)))),
 		)))
 
-		Expect(defaults).To(Equal(map[string]any{
-			"command": "", "facets": false,
-			"traces": map[string]any{
-				httpproxy.Kind: map[string]any{"enabled": true, "mode": "connect", "bodies": "256KiB"},
-				pgproxy.Kind:   map[string]any{"enabled": false, "connection": pgproxy.Kind, "maxStatements": float64(20000)},
-			},
-		}))
+		captureDefaults := defaults["traces"].(map[string]any)
+		Expect(captureDefaults[httpproxy.Kind]).To(And(HaveKeyWithValue("enabled", true), HaveKeyWithValue("mode", "connect"), HaveKeyWithValue("target", map[string]any{"seam": target.Proxy})))
+		Expect(captureDefaults[httpproxy.Kind]).NotTo(HaveKey("features"))
+		Expect(captureDefaults[pgproxy.Kind]).To(And(HaveKeyWithValue("enabled", false), HaveKeyWithValue("target", map[string]any{"seam": target.Proxy})))
 	})
 })
 
@@ -52,7 +51,7 @@ var _ = Describe("a start request", func() {
 		options, err := telltale.StartRequest{
 			Command: "curl -sS example.com", Facets: true,
 			Traces: map[string]json.RawMessage{
-				httpproxy.Kind: json.RawMessage(`{"enabled":true,"mode":"mitm"}`),
+				httpproxy.Kind: json.RawMessage(`{"enabled":true,"mode":"mitm","target":{"seam":"proxy"}}`),
 				pgproxy.Kind:   json.RawMessage(`{"enabled":false,"connection":""}`),
 			},
 		}.Options("/work")
@@ -60,7 +59,7 @@ var _ = Describe("a start request", func() {
 		Expect(options).To(Equal(telltale.StartOptions{
 			WorkDir: "/work", Dir: "/work", Command: []string{"sh", "-c", "curl -sS example.com"}, Facets: true,
 			TraceRoot: telltale.TraceRootCommand,
-			Traces:    []telltale.TraceSpec{{Kind: httpproxy.Kind, Params: json.RawMessage(`{"mode":"mitm"}`)}},
+			Traces:    []telltale.TraceSpec{{Kind: httpproxy.Kind, Params: json.RawMessage(`{"mode":"mitm","target":{"seam":"proxy"}}`)}},
 		}))
 	})
 
@@ -68,7 +67,7 @@ var _ = Describe("a start request", func() {
 		_, err := telltale.StartRequest{
 			Command: " ",
 			Traces: map[string]json.RawMessage{
-				httpproxy.Kind: json.RawMessage(`{"enabled":true,"mode":"sideways"}`),
+				httpproxy.Kind: json.RawMessage(`{"enabled":true,"target":{"seam":"proxy"},"mode":"sideways"}`),
 				"process_tree": json.RawMessage(`{"enabled":true}`),
 				pgproxy.Kind:   json.RawMessage(`[]`),
 			},

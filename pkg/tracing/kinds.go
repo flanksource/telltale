@@ -43,6 +43,9 @@ func (k *Kinds) RegisterKind(name string, plugin TracePlugin) error {
 	if err := recordstore.ValidateKind(name); err != nil {
 		return err
 	}
+	if seams, _ := plugin.TargetSeams(); len(seams) == 0 {
+		return fmt.Errorf("trace kind %q: %w", name, ErrNoTargetSeams)
+	}
 	if plugin.Title() == "" {
 		return fmt.Errorf("trace kind %q needs a title", name)
 	}
@@ -63,6 +66,7 @@ func (k *Kinds) RegisterKind(name string, plugin TracePlugin) error {
 	if _, ok := k.plugins[name]; ok {
 		return fmt.Errorf("trace kind %q is already registered", name)
 	}
+	plugin.setKind(name)
 	k.plugins[name] = plugin
 	return nil
 }

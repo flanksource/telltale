@@ -23,6 +23,7 @@ import (
 	"github.com/flanksource/commons/har"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/http"
+	"github.com/flanksource/telltale/pkg/tracing/httpproxy"
 	"github.com/flanksource/telltale/pkg/tracing/tracingtest"
 
 	"github.com/flanksource/commons-db/observability"
@@ -33,6 +34,12 @@ import (
 const secret = "hunter2-very-secret-value"
 
 var _ = Describe("http trace kind", func() {
+	It("retains every HAR entry field when projecting an exchange", func() {
+		entry := har.Entry{StartedDateTime: "2026-01-02T03:04:05Z", Time: 12, ID: "entry-1", Pending: true, Request: har.Request{Method: "GET", URL: "https://example.com/path"}, Response: har.Response{Status: 200}}
+		exchange := http.FromEntry("test", entry)
+		Expect(exchange.Entry).To(Equal(entry))
+		Expect(http.ToEntry(exchange).Entry).To(Equal(entry))
+	})
 	var server *httptest.Server
 	var env tracingtest.Env
 
@@ -50,7 +57,7 @@ var _ = Describe("http trace kind", func() {
 			_, _ = w.Write([]byte(`{"ok": true, "items": [1, 2]}`))
 		}))
 		DeferCleanup(server.Close)
-		env = tracingtest.NewEnv(map[string]tracing.TracePlugin{"http": http.Kind()})
+		env = tracingtest.NewEnv(map[string]tracing.TracePlugin{"http": httpproxy.UnifiedKind(nil)})
 	})
 
 	send := func(feature, method, path, body string, header ...string) {
@@ -98,7 +105,7 @@ var _ = Describe("http trace kind", func() {
 		Expect(rows).To(HaveLen(1))
 		request := rows[0]["request"].(map[string]any)
 		Expect(request["postData"].(map[string]any)["text"]).To(Equal(map[string]any{"q": json.Number("1")}))
-		Expect(request["headers"]).To(ContainElement(map[string]any{"name": "X-Filter", "value": `{"a": 1}`}))
+		Expect(request["headers"]).To(ContainElement(And(HaveKeyWithValue("name", "X-Filter"), HaveKeyWithValue("value", MatchJSON(`{"a": 1}`)))))
 	})
 
 	It("never stores a secret: not in headers, the URL or a body, and not in the store's files", func() {
@@ -191,9 +198,10 @@ var _ = Describe("http trace kind", func() {
 		started := time.Date(2026, 8, 2, 10, 30, 0, 500*int(time.Millisecond), time.UTC)
 		exchange := http.Exchange{
 			StartedAt: started, Method: netHTTP.MethodConnect, URL: "https://api.example.com:443", Status: netHTTP.StatusOK,
-			Request:    har.Request{Method: netHTTP.MethodConnect, URL: "https://api.example.com:443"},
-			Response:   har.Response{Status: netHTTP.StatusOK},
-			DurationMs: 250, Timings: har.Timings{Send: -1, Wait: -1, Receive: 250}, ServerIPAddress: "192.0.2.10",
+			Entry: har.Entry{StartedDateTime: started.Format(time.RFC3339Nano), Time: 250,
+				Request:  har.Request{Method: netHTTP.MethodConnect, URL: "https://api.example.com:443"},
+				Response: har.Response{Status: netHTTP.StatusOK}, Timings: har.Timings{Send: -1, Wait: -1, Receive: 250}},
+			DurationMs: 250, ServerIPAddress: "192.0.2.10",
 			Tunnelled: true, BytesIn: 4096, BytesOut: 512, Encoding: "base64", Comment: "event stream still open when recorded",
 		}
 		encoded, err := json.Marshal(http.ToEntry(exchange))
@@ -221,6 +229,7 @@ var _ = Describe("http trace kind", func() {
 		host := strings.Split(strings.TrimPrefix(server.URL, "http://"), ":")[0]
 		Expect(summary).To(MatchAllKeys(Keys{
 			"count": Equal(3), "entries": Equal(3), "errors": Equal(2),
+			"tunnelled": Equal(0), "bytes_in": BeEquivalentTo(0), "bytes_out": BeEquivalentTo(0),
 			"hosts":    Equal([]string{host}),
 			"methods":  Equal(map[string]int{"POST": 1, "GET": 2}),
 			"statuses": Equal(map[string]int{"200": 1, "404": 1, "0": 1}),
@@ -240,8 +249,9 @@ var _ = Describe("http trace kind", func() {
 	})
 
 	It("refuses params naming no feature, or a dedup window that is not a duration", func() {
-		plugin := http.Kind()
-		Expect(plugin.ValidateParams(json.RawMessage(`{}`))).To(MatchError(ContainSubstring("feature")))
+		plugin := httpproxy.UnifiedKind(nil)
+		Expect(plugin.ValidateParams(json.RawMessage(`{}`))).To(Succeed())
+		Expect(plugin.ValidateParams(json.RawMessage(`{"features":[]}`))).To(MatchError(ContainSubstring("feature")))
 		Expect(plugin.ValidateParams(json.RawMessage(`{"features": [" "]}`))).To(MatchError(ContainSubstring("feature")))
 		Expect(plugin.ValidateParams(json.RawMessage(`{"features": ["http"], "dedupWindow": "soon"}`))).
 			To(MatchError(ContainSubstring("dedupWindow")))

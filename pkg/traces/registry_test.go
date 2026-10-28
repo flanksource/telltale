@@ -8,6 +8,7 @@ import (
 
 	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/tracing"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 	"github.com/flanksource/telltale/pkg/tracing/terminal"
 )
 
@@ -20,10 +21,10 @@ func registrationNames() []string {
 }
 
 var _ = Describe("the trace kind registry", func() {
-	builtins := []string{"goprof", "http", "http_proxy", "pg_proxy", "process_samples", "process_tree", "sql_statements", "stacks", "terminal"}
+	builtins := []string{"goprof", "http", "process_samples", "process_tree", "sql", "stacks", "terminal"}
 	valid := func(name string) traces.Registration {
 		return traces.Registration{
-			Name: name, Title: "Registered for a test", Summary: "Records nothing", Target: traces.TargetSelf,
+			Name: name, Title: "Registered for a test", Summary: "Records nothing", Seams: []target.Seam{target.Self}, DefaultSeam: target.Self,
 			New: func(traces.KindDeps) tracing.TracePlugin { return terminal.NewKind() },
 		}
 	}
@@ -40,6 +41,33 @@ var _ = Describe("the trace kind registry", func() {
 		}
 	})
 
+	It("registers the supported seam and default for each builtin", func() {
+		for kind, seam := range map[string]target.Seam{
+			"process_tree": target.Process, "process_samples": target.Process,
+			"stacks": target.Process, "goprof": target.Process,
+			"process_groups": target.Host, "http": target.Self, "sql": target.Self, "terminal": target.Self,
+		} {
+			registration, err := traces.Registered(kind)
+			Expect(err).NotTo(HaveOccurred())
+			seams := []target.Seam{seam}
+			if kind == "stacks" || kind == "goprof" {
+				seams = append(seams, target.Agent, target.Self)
+			}
+			if kind == "http" || kind == "sql" {
+				seams = append(seams, target.Agent, target.Proxy)
+			}
+			Expect(registration.Seams).To(Equal(seams), kind)
+			Expect(registration.DefaultSeam).To(Equal(seam), kind)
+		}
+	})
+	It("rejects an unsupported seam before starting a capture", func() {
+		kinds, err := traces.Kinds()
+		Expect(err).NotTo(HaveOccurred())
+		err = traces.Validate(kinds, "process_tree", []byte(`{"target":{"seam":"proxy"}}`))
+		Expect(err).To(MatchError(ContainSubstring("unsupported seam")))
+		Expect(err).To(MatchError(ContainSubstring("process")))
+	})
+
 	It("is the catalog every run store serves", func() {
 		kinds, err := traces.Kinds()
 		Expect(err).ToNot(HaveOccurred())
@@ -53,7 +81,7 @@ var _ = Describe("the trace kind registry", func() {
 				armable = append(armable, registration.Name)
 			}
 		}
-		Expect(armable).To(Equal([]string{"http_proxy", "pg_proxy"}))
+		Expect(armable).To(ContainElements("http", "sql"))
 	})
 
 	DescribeTable("refuses a registration it cannot serve",
@@ -64,13 +92,13 @@ var _ = Describe("the trace kind registry", func() {
 		},
 		Entry("a blank name", func(r *traces.Registration) { r.Name = " " }, "a name is required"),
 		Entry("no plugin", func(r *traces.Registration) { r.New = nil }, "a New func is required"),
-		Entry("an unknown target", func(r *traces.Registration) { r.Target = "elsewhere" }, `target "elsewhere"`),
+		Entry("an unknown seam", func(r *traces.Registration) { r.Seams = []target.Seam{"elsewhere"} }, `unknown seam "elsewhere"`),
 		Entry("no summary", func(r *traces.Registration) { r.Summary = "" }, "a title and a summary are required"),
-		Entry("a builtin's name", func(r *traces.Registration) { r.Name = "http_proxy" }, `"http_proxy": it is registered twice`),
+		Entry("a builtin's name", func(r *traces.Registration) { r.Name = "http" }, `"http": it is registered twice`),
 	)
 
 	It("names the registered kinds when asked for one it does not have", func() {
 		_, err := traces.Registered("nope")
-		Expect(err).To(MatchError(ContainSubstring(`unknown trace kind "nope" (registered: goprof, http, http_proxy`)))
+		Expect(err).To(MatchError(And(ContainSubstring(`unknown trace kind "nope"`), ContainSubstring("http"), ContainSubstring("sql"))))
 	})
 })

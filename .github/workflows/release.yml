@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      GOWORK: "off"
+      GOWORK: ${{ github.workspace }}/go.work.ci
       SOURCE_SHA: ${{ inputs.source }}
     steps:
       - uses: actions/checkout@v4
@@ -39,23 +39,10 @@ jobs:
         with:
           tools: |
             task
-            svu
       - name: Select or reuse release version
         id: version
         run: |
-          next=$(svu patch --tag.mode all --tag.pattern 'v*')
-          tags=$(git tag --list 'v*' --sort=-version:refname)
-          while IFS= read -r candidate; do
-            if [[ -z "$candidate" ]]; then
-              continue
-            fi
-            parent=$(git show -s --format=%P "$candidate")
-            if [[ "$parent" == "$SOURCE_SHA" ]]; then
-              next=$candidate
-              break
-            fi
-          done <<< "$tags"
-          echo "tag=$next" >> "$GITHUB_OUTPUT"
+          echo "tag=$(bash hack/release-version.sh)" >> "$GITHUB_OUTPUT"
       - run: make setup
       - name: Build the release candidate
         env:
@@ -67,20 +54,34 @@ jobs:
           args: test --framework go,ginkgo,vitest --timeout 20m
           comment: "false"
           artifact-name: telltale-release-tests
-      - name: Commit only assets on a detached release revision
+      - name: Prepare detached release revision
         env:
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: bash hack/release.sh
-      - name: Rebuild from tagged source without frontend tooling
+      - name: Push SDK tags
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          while IFS= read -r module; do
+            case "$module" in
+              sdk/go.mod|sdk/*/go.mod) git push origin "refs/tags/${module%/go.mod}/$RELEASE_TAG" ;;
+            esac
+          done < <(git ls-tree -r --name-only "$RELEASE_TAG" sdk)
+      - name: Verify published SDK modules and rebuild from tagged source
         env:
           VERSION: ${{ steps.version.outputs.tag }}
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
+          GOWORK: "off"
+          GOPROXY: direct
+          GONOSUMDB: github.com/flanksource/telltale
+          GOFLAGS: -mod=readonly
         run: |
           git checkout --detach "$RELEASE_TAG"
           make binary
+          go mod verify
           .bin/telltale --version
           pnpm exec vitest run --project api
-      - name: Push only the version tag
+      - name: Push root version tag
         env:
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
         run: git push origin "refs/tags/$RELEASE_TAG"

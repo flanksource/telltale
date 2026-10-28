@@ -64,6 +64,12 @@ func VerifySecret(secret, encoded string) bool {
 	return constantTimeEqual(string(got), string(want))
 }
 
+// ValidHash reports whether an encoded token hash has safe, supported parameters.
+func ValidHash(encoded string) bool {
+	memory, rounds, threads, salt, key, ok := parseHash(encoded)
+	return ok && memory <= 1024*1024 && rounds <= 10 && threads <= 32 && len(salt) >= 8 && len(key) >= 16 && len(key) <= 64
+}
+
 func parseHash(encoded string) (memory, time uint32, threads uint8, salt, key []byte, ok bool) {
 	if !strings.HasPrefix(encoded, hashPrefix+"$") {
 		return 0, 0, 0, nil, nil, false

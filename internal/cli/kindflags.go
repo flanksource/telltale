@@ -10,6 +10,7 @@ import (
 
 	flagmeta "github.com/flanksource/clicky/flags"
 	"github.com/flanksource/clicky/rpc"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 	"github.com/spf13/pflag"
 )
 
@@ -37,6 +38,27 @@ func bindParams(flags *pflag.FlagSet, schema *rpc.OpenAPISchema, prefix []string
 	var bound paramFlags
 	for _, name := range slices.Sorted(maps.Keys(schema.Properties)) {
 		property, path := schema.Properties[name], append(slices.Clone(prefix), name)
+		if len(prefix) == 0 && name == "target" {
+			seams, _ := property.Extensions["x-telltale-seams"].([]target.Seam)
+			for _, field := range []string{"seam", "pid", "agent", "selector", "wait", "allowMutation"} {
+				if (field == "agent" || field == "selector" || field == "wait") && !slices.Contains(seams, target.Agent) {
+					continue
+				}
+				if field == "allowMutation" && !slices.Contains(seams, target.Agent) && !slices.Contains(seams, target.Self) {
+					continue
+				}
+				fieldSchema := *property.Properties[field]
+				if field == "selector" {
+					fieldSchema.Type = "string"
+				}
+				param, err := bindParam(flags, &fieldSchema, []string{"target", field})
+				if err != nil {
+					return nil, err
+				}
+				bound = append(bound, param)
+			}
+			continue
+		}
 		if property.Type == "object" {
 			nested, err := bindParams(flags, property, path)
 			if err != nil {
@@ -88,6 +110,12 @@ const paramsCategory = "Trace params"
 // flagName is a param's JSON path in kebab case: environment.keys is
 // environment-keys, upstreamCA is upstream-ca.
 func flagName(path []string) string {
+	if len(path) == 2 && path[0] == "target" {
+		if path[1] == "allowMutation" {
+			return "allow-mutation"
+		}
+		return path[1]
+	}
 	parts := make([]string, 0, len(path))
 	for _, name := range path {
 		var kebab strings.Builder
@@ -156,7 +184,17 @@ func (p paramFlags) params() (json.RawMessage, error) {
 		if !param.flag.Changed {
 			continue
 		}
+		if len(param.path) == 2 && param.path[0] == "target" && param.path[1] == "pid" {
+			continue
+		}
 		value := param.value()
+		if param.flag.Name == "selector" && len(param.path) == 2 && param.path[0] == "target" {
+			selector, err := target.ParseSelector(value.(string))
+			if err != nil {
+				return nil, fmt.Errorf("--selector: %w", err)
+			}
+			value = selector
+		}
 		if choices := enumOf(param.schema); len(choices) > 0 && !slices.Contains(choices, fmt.Sprint(value)) {
 			return nil, fmt.Errorf("--%s: %q is not one of %s", param.flag.Name, value, strings.Join(choices, ", "))
 		}

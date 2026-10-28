@@ -50,7 +50,7 @@ func (heartbeats) Handle(ctx dbcontext.Context, params HeartbeatParams, records 
 
 func ExampleNewHandler() {
 	kinds := tracing.NewKinds()
-	if err := kinds.RegisterKind("heartbeat", tracing.NewHandler[HeartbeatParams, Heartbeat](heartbeats{}, tracing.Capabilities{Live: true})); err != nil {
+	if err := kinds.RegisterKind("heartbeat", tracing.NewHandler[HeartbeatParams, Heartbeat](heartbeats{}, tracing.Capabilities{Live: true}, "self")); err != nil {
 		panic(err)
 	}
 	infos, err := kinds.List()

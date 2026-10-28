@@ -146,18 +146,18 @@ var _ = Describe("the runs handler", func() {
 	)
 
 	It("answers a refused start request with each field's error", func() {
-		status, body := post(`{"command":"","traces":{"http_proxy":{"enabled":true,"mode":"sideways"}}}`, jsonHeader())
+		status, body := post(`{"command":"","traces":{"http":{"enabled":true,"target":{"seam":"proxy"},"mode":"sideways"}}}`, jsonHeader())
 		Expect(status).To(Equal(http.StatusBadRequest))
 		var refused telltale.ValidationError
 		Expect(json.Unmarshal([]byte(body), &refused)).To(Succeed())
 		Expect(refused.Fields).To(ConsistOf(
 			HaveField("InstancePath", "/command"),
-			HaveField("InstancePath", "/traces/http_proxy"),
+			HaveField("InstancePath", "/traces/http"),
 		))
 	})
 
 	It("starts a run, serves it live from its captures, and stops it", func() {
-		status, body := post(`{"command":"sleep 30","traces":{"http_proxy":{"enabled":true}}}`, jsonHeader())
+		status, body := post(`{"command":"sleep 30","traces":{"http":{"enabled":true,"target":{"seam":"proxy"}}}}`, jsonHeader())
 		Expect(status).To(Equal(http.StatusCreated), body)
 		var started telltale.MountedRun
 		Expect(json.Unmarshal([]byte(body), &started)).To(Succeed())

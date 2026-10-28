@@ -3,8 +3,10 @@ package cli
 import (
 	"github.com/flanksource/clicky/rpc"
 	"github.com/flanksource/telltale/pkg/traces"
+	"github.com/flanksource/telltale/pkg/tracing/goprof"
 	"github.com/flanksource/telltale/pkg/tracing/httpproxy"
 	"github.com/flanksource/telltale/pkg/tracing/process"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/spf13/pflag"
@@ -32,11 +34,49 @@ func parsed(schema *rpc.OpenAPISchema, args ...string) (string, error) {
 }
 
 var _ = Describe("a kind's params as flags", func() {
+	It("builds a CPU checkpoint from profile flags", func() {
+		flags := pflag.NewFlagSet("goprof", pflag.ContinueOnError)
+		checkpoint := bindProfileCheckpoint(flags, goprof.CheckpointParams{Source: goprof.SourceGops, Profile: "heap"})
+		Expect(flags.Parse([]string{"--profile", "cpu", "--seconds", "1"})).To(Succeed())
+		data, err := checkpoint.params()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(data)).To(MatchJSON(`{"source":"gops","profile":"cpu","seconds":1}`))
+	})
 	It("binds every registered kind's params", func() {
 		for _, registration := range traces.Registrations() {
 			_, err := bindParamFlags(pflag.NewFlagSet(registration.Name, pflag.ContinueOnError), kindSchema(registration.Name))
 			Expect(err).ToNot(HaveOccurred(), registration.Name)
 		}
+	})
+
+	It("shows the supported seam but does not offer unimplemented agent targeting", func() {
+		flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
+		_, err := bindParamFlags(flags, kindSchema(process.SamplesKind))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(flags.Lookup("seam").Usage).To(ContainSubstring("process"))
+		Expect(flags.Lookup("agent")).To(BeNil())
+		Expect(flags.Lookup("selector")).To(BeNil())
+		Expect(flags.Lookup("wait")).To(BeNil())
+	})
+	It("names the selector flag when its value is malformed", func() {
+		schema := kindSchema(process.SamplesKind)
+		schema.Properties["target"].Extensions["x-telltale-seams"] = []target.Seam{target.Agent, target.Process}
+		_, err := parsed(schema, "--selector", "invalid")
+		Expect(err).To(MatchError(ContainSubstring("--selector:")))
+	})
+	It("keeps a run PID separate from an explicit agent", func() {
+		schema := kindSchema(process.SamplesKind)
+		schema.Properties["target"].Extensions["x-telltale-seams"] = []target.Seam{target.Agent, target.Process}
+		params, err := parsed(schema, "--pid", "123", "--agent", "worker")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(params).To(MatchJSON(`{"target":{"agent":"worker"}}`))
+	})
+	It("passes mutation consent in the common target", func() {
+		schema := kindSchema(process.SamplesKind)
+		schema.Properties["target"].Extensions["x-telltale-seams"] = []target.Seam{target.Agent, target.Process}
+		params, err := parsed(schema, "--allow-mutation")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(params).To(MatchJSON(`{"target":{"allowMutation":true}}`))
 	})
 
 	DescribeTable("names each flag by its param's JSON path in kebab case",
@@ -60,9 +100,9 @@ var _ = Describe("a kind's params as flags", func() {
 		Entry("none, so the kind's defaults apply", httpproxy.Kind, []string{}, ""),
 		Entry("a choice and a list", httpproxy.Kind, []string{"--mode", "mitm", "--hosts", "a.example,b.example"}, `{"mode": "mitm", "hosts": ["a.example", "b.example"]}`),
 		Entry("a repeated list flag", httpproxy.Kind, []string{"--redact", "X-One", "--redact", "X-Two"}, `{"redact": ["X-One", "X-Two"]}`),
-		Entry("a boolean and an integer", "pg_proxy", []string{"--params", "--max-statements", "10"}, `{"params": true, "maxStatements": 10}`),
+		Entry("a boolean and an integer", "sql", []string{"--params", "--max-statements", "10"}, `{"params": true, "maxStatements": 10}`),
 		Entry("an object's params, nested", process.TreeKind, []string{"--environment-keys", "PATH", "--interval", "2s"}, `{"environment": {"keys": ["PATH"]}, "interval": "2s"}`),
-		Entry("an embedded struct's params, flat", process.SamplesKind, []string{"--root-pid", "7", "--facets", "ports"}, `{"rootPid": 7, "facets": ["ports"]}`),
+		Entry("a run PID and an embedded struct's params", process.SamplesKind, []string{"--pid", "7", "--facets", "ports"}, `{"facets": ["ports"]}`),
 	)
 
 	It("refuses a value outside a param's choices, naming its flag and the choices", func() {

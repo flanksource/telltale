@@ -60,7 +60,7 @@ function RunFilters({ filter, onChange }: { filter: RunFilter; onChange: (next: 
       </label>
       <label className="flex items-center gap-2">
         Capture
-        <input type="search" className={input} placeholder="Trace kind, e.g. http_proxy" value={filter.kind ?? ""} onChange={event => onChange({ kind: event.target.value })} />
+        <input type="search" className={input} placeholder="Trace kind, e.g. http" value={filter.kind ?? ""} onChange={event => onChange({ kind: event.target.value })} />
       </label>
     </div>
   );

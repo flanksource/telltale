@@ -7,25 +7,43 @@ if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   exit 1
 fi
 
-if git show-ref --verify --quiet "refs/tags/$tag"; then
-  parent=$(git show -s --format=%P "$tag")
-  if [[ "$parent" != "$source_sha" ]]; then
-    echo "Tag $tag already exists for another source; refusing to move it" >&2
-    exit 1
+modules=()
+while IFS= read -r path; do
+  case "$path" in sdk/go.mod|sdk/*/go.mod) modules+=("${path%/go.mod}/$tag") ;; esac
+done < <(git ls-tree -r --name-only "$source_sha" sdk)
+if [[ ${#modules[@]} == 0 ]]; then
+  echo "No SDK modules found" >&2
+  exit 1
+fi
+
+candidate=""
+for ref in "$tag" "${modules[@]}"; do
+  if git show-ref --verify --quiet "refs/tags/$ref"; then
+    commit=$(git rev-parse "$ref^{commit}")
+    if [[ $(git show -s --format=%P "$commit") != "$source_sha" || ( -n "$candidate" && "$candidate" != "$commit" ) ]]; then
+      echo "Tag $ref already exists for another release; refusing to move it" >&2
+      exit 1
+    fi
+    candidate=$commit
   fi
-  changes=$(git diff --name-only "$source_sha" "$tag")
+done
+
+if [[ -n "$candidate" ]]; then
+  changes=$(git diff --name-only "$source_sha" "$candidate")
   if [[ -z "$changes" ]]; then
     echo "Tag $tag already exists without release assets" >&2
     exit 1
   fi
   while IFS= read -r path; do
     case "$path" in
-      webapp/dist/*) ;;
-      *) echo "Tag $tag already exists with non-asset changes" >&2
-         exit 1 ;;
+      webapp/dist/*|go.mod|go.sum|sdk/go.mod|sdk/go.sum|sdk/*/go.mod|sdk/*/go.sum) ;;
+      *) echo "Tag $tag already exists with unexpected changes: $path" >&2; exit 1 ;;
     esac
   done <<< "$changes"
-  git cat-file -e "$tag:webapp/dist/index.html"
+  git cat-file -e "$candidate:webapp/dist/index.html"
+  for ref in "${modules[@]}" "$tag"; do
+    if ! git show-ref --verify --quiet "refs/tags/$ref"; then git tag "$ref" "$candidate"; fi
+  done
   echo "Reusing $tag"
   exit 0
 fi
@@ -44,7 +62,9 @@ if [[ ! -s webapp/dist/index.html ]]; then
 fi
 
 git checkout --detach "$source_sha"
+go run ./hack/modsum "$tag"
+git add -- go.mod go.sum sdk
 git add -f -- webapp/dist
-git -c user.name='github-actions[bot]' -c user.email='github-actions[bot]@users.noreply.github.com' commit -m "chore(embed): build assets for $tag"
-git tag "$tag"
-echo "Prepared $tag on an asset-only commit above $source_sha"
+git -c user.name='github-actions[bot]' -c user.email='github-actions[bot]@users.noreply.github.com' commit -m "chore(embed): prepare release $tag"
+for ref in "${modules[@]}" "$tag"; do git tag "$ref"; done
+echo "Prepared $tag and SDK tags on a detached release commit above $source_sha"

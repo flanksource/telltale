@@ -1,0 +1,26 @@
+go 1.27.1
+
+use (
+	.
+	./sdk
+	./sdk/auto
+	./sdk/captain
+	./sdk/clicky
+	./sdk/commonsdb
+	./sdk/commonslog
+	./sdk/otel
+)
+
+replace github.com/flanksource/telltale/sdk v0.0.0 => ./sdk
+
+replace github.com/flanksource/telltale/sdk/auto v0.0.0 => ./sdk/auto
+
+replace github.com/flanksource/telltale/sdk/captain v0.0.0 => ./sdk/captain
+
+replace github.com/flanksource/telltale/sdk/clicky v0.0.0 => ./sdk/clicky
+
+replace github.com/flanksource/telltale/sdk/commonsdb v0.0.0 => ./sdk/commonsdb
+
+replace github.com/flanksource/telltale/sdk/commonslog v0.0.0 => ./sdk/commonslog
+
+replace github.com/flanksource/telltale/sdk/otel v0.0.0 => ./sdk/otel

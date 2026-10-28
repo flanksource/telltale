@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/flanksource/telltale/pkg/tracing/target"
+
 	"github.com/flanksource/commons/properties"
 )
 
@@ -33,7 +35,8 @@ type Params struct {
 	// events. The screen goes on settling past it.
 	MaxBytes string `json:"maxBytes,omitempty" clicky:"title=Max bytes,desc=Most output recorded as events such as 4MiB"`
 	// Command is the command line the terminal runs, for the cast's header.
-	Command []string `json:"command,omitempty" clicky:"title=Command,desc=Command line named in the cast's header"`
+	Command []string      `json:"command,omitempty" clicky:"title=Command,desc=Command line named in the cast's header"`
+	Target  target.Target `json:"target,omitzero"`
 }
 
 func (p Params) Validate() error {

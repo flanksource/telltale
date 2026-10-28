@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	psprocess "github.com/shirou/gopsutil/v4/process"
+	"github.com/flanksource/telltale/pkg/tracing/process/starttime"
 )
 
 // GopsPort is the port the gops agent of pid listens on, read from the port
@@ -34,7 +34,7 @@ func GopsPort(pid int) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("find gops agent of pid %d: %w", pid, err)
 	}
-	started, err := startedAt(pid)
+	started, err := starttime.Of(pid)
 	if err != nil {
 		return 0, fmt.Errorf("find gops agent of pid %d: %w", pid, err)
 	}
@@ -51,20 +51,6 @@ func GopsPort(pid int) (int, error) {
 		return 0, fmt.Errorf("gops port file %s: %q is not a port", path, strings.TrimSpace(string(data)))
 	}
 	return port, nil
-}
-
-// startedAt is when pid started, truncated to the second its port file's
-// time is compared at.
-func startedAt(pid int) (time.Time, error) {
-	handle, err := psprocess.NewProcess(int32(pid))
-	if err != nil {
-		return time.Time{}, err
-	}
-	created, err := handle.CreateTime()
-	if err != nil {
-		return time.Time{}, fmt.Errorf("start time: %w", err)
-	}
-	return time.UnixMilli(created).Truncate(time.Second), nil
 }
 
 // GopsAddress is the AddressFunc of local gops agents: the loopback address

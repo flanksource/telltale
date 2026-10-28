@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -55,7 +55,8 @@ describe("live process groups", () => {
     expect(response.status).toBe(200);
     const frame = await response.json() as Frame;
     const ownGroup = frame.groups.find(group => group.pid === server.pid);
-    expect(ownGroup?.context).toMatchObject({ repo: resolve("."), gitCommonDir: resolve(".git") });
+    const gitCommonDir = resolve(execFileSync("git", ["rev-parse", "--git-common-dir"], { encoding: "utf8" }).trim());
+    expect(ownGroup?.context).toMatchObject({ repo: resolve("."), gitCommonDir });
     expect(frame.groups.some(group => group.kind === "bucket")).toBe(false);
   });
 

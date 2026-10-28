@@ -8,10 +8,12 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/flanksource/telltale/pkg/tracing/target"
 )
 
 const (
-	defaultConnection    = "pg_proxy"
+	defaultConnection    = "proxy"
 	defaultMaxStatements = 20000
 	driver               = "postgres"
 )
@@ -32,11 +34,12 @@ type Params struct {
 	// Params keeps bind parameter values in each statement's args. Off by
 	// default: bind values carry row data, the likeliest place for a secret.
 	Params bool `json:"params,omitempty" clicky:"title=Capture bind values,desc=Keep bind parameter values which carry row data and may hold secrets"`
-	// Connection labels the statements, as sql_statements' connection column.
+	// Connection labels the statements in the SQL connection column.
 	Connection string `json:"connection,omitempty" clicky:"title=Connection label,desc=Label the statements are recorded under"`
 	// MaxStatements bounds what one capture stores; reaching it marks the
 	// capture truncated rather than growing without limit.
-	MaxStatements int `json:"maxStatements,omitempty" clicky:"title=Maximum statements,desc=Most statements one capture stores before it is marked truncated"`
+	MaxStatements int           `json:"maxStatements,omitempty" clicky:"title=Maximum statements,desc=Most statements one capture stores before it is marked truncated"`
+	Target        target.Target `json:"target,omitzero"`
 }
 
 func (p Params) Validate() error {
@@ -76,7 +79,7 @@ func resolveDSN(p Params) (*url.URL, error) {
 		return value
 	}))
 	if len(unset) > 0 {
-		return nil, fmt.Errorf("pg_proxy dsn: %s is not set", strings.Join(unset, ", "))
+		return nil, fmt.Errorf("sql proxy dsn: %s is not set", strings.Join(unset, ", "))
 	}
 	if raw == "" {
 		for _, key := range dsnEnvKeys {
@@ -87,15 +90,15 @@ func resolveDSN(p Params) (*url.URL, error) {
 		}
 	}
 	if raw == "" {
-		return nil, fmt.Errorf("pg_proxy needs an upstream — set dsn or one of %s", strings.Join(dsnEnvKeys, ", "))
+		return nil, fmt.Errorf("sql proxy needs an upstream — set dsn or one of %s", strings.Join(dsnEnvKeys, ", "))
 	}
 	parsed, err := url.Parse(raw)
 	if err != nil {
 		// url.Error repeats the raw DSN, password included.
-		return nil, errors.New("pg_proxy dsn is not a URL")
+		return nil, errors.New("sql proxy dsn is not a URL")
 	}
 	if parsed.Scheme != "postgres" && parsed.Scheme != "postgresql" {
-		return nil, fmt.Errorf("pg_proxy dsn must be a postgres:// URL, got %q", parsed.Scheme)
+		return nil, fmt.Errorf("sql proxy dsn must be a postgres:// URL, got %q", parsed.Scheme)
 	}
 	return parsed, nil
 }

@@ -149,6 +149,6 @@ func (spans) Handle(ctx dbcontext.Context, params Params, records tracing.Emitte
 
 // Kind is the opensearch trace kind: spans masked as they are stored.
 func Kind() *tracing.Handler[Params, Span] {
-	return tracing.NewHandler[Params, Span](spans{}, tracing.Capabilities{Historical: true, Follow: true}).
+	return tracing.NewHandler[Params, Span](spans{}, tracing.Capabilities{Historical: true, Follow: true}, "process").
 		WithSecretMasking()
 }

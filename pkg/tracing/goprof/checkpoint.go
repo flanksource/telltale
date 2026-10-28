@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"slices"
 	"strconv"
 	"time"
 
@@ -13,10 +14,12 @@ import (
 	"github.com/google/pprof/profile"
 	"github.com/google/uuid"
 
+	"encoding/json"
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/process"
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 )
 
 // Checkpoint reads the profile its params ask for (CheckpointParams) and
@@ -30,6 +33,9 @@ func (p profiler) Checkpoint(ctx dbcontext.Context, params Params, records traci
 	}
 	if !given {
 		return fmt.Errorf("%w: a goprof checkpoint needs params naming the profile to read", tracing.ErrCheckpointParams)
+	}
+	if params.Target.Seam == target.Agent || params.Target.Seam == target.Self {
+		return p.agentCheckpoint(ctx, params, request, records)
 	}
 	if err := request.Validate(); err != nil {
 		return fmt.Errorf("%w: %w", tracing.ErrCheckpointParams, err)
@@ -49,6 +55,26 @@ func (p profiler) Checkpoint(ctx dbcontext.Context, params Params, records traci
 		}
 	}
 	return nil
+}
+
+func (p profiler) agentCheckpoint(ctx context.Context, params Params, request CheckpointParams, records tracing.Emitter[Sample]) error {
+	if !slices.Contains(Profiles, request.Profile) {
+		return fmt.Errorf("%w: unsupported profile %q", tracing.ErrCheckpointParams, request.Profile)
+	}
+	if (request.Profile == "mutex" || request.Profile == "block") && !params.Target.AllowMutation {
+		return fmt.Errorf("%w: %s profile requires --allow-mutation at capture start", tracing.ErrCheckpointParams, request.Profile)
+	}
+	if request.Profile == "cpu" && request.Seconds <= 0 {
+		return fmt.Errorf("%w: cpu profile requires positive seconds", tracing.ErrCheckpointParams)
+	}
+	data, err := json.Marshal(request)
+	if err != nil {
+		return err
+	}
+	if request.Profile == "cpu" {
+		return p.agent.Window(ctx, params, data, records)
+	}
+	return p.agent.Checkpoint(ctx, data, records)
 }
 
 // read is the profile request names, setting the process it was read of and

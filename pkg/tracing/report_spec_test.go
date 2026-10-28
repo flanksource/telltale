@@ -56,7 +56,7 @@ var _ = Describe("a capture's report", func() {
 	BeforeEach(func() {
 		preparedIn, handledIn = make(chan string, 1), make(chan string, 1)
 		env = tracingtest.NewEnv(map[string]tracing.TracePlugin{
-			"reporting": tracing.NewHandler[tickParams, tick](reporting{}, tracing.Capabilities{Live: true}),
+			"reporting": tracing.NewHandler[tickParams, tick](reporting{}, tracing.Capabilities{Live: true}, "self"),
 		})
 	})
 

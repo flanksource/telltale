@@ -124,5 +124,5 @@ func finish(ctx dbcontext.Context, s *sink, records tracing.Emitter[Event]) erro
 // NewKind is the terminal kind. A host registers it, starts a session of it,
 // and feeds the session's stream through Writer.
 func NewKind() *tracing.Handler[Params, Event] {
-	return tracing.NewHandler[Params, Event](terminal{}, tracing.Capabilities{Live: true})
+	return tracing.NewHandler[Params, Event](terminal{}, tracing.Capabilities{Live: true}, "self")
 }

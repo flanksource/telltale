@@ -69,8 +69,8 @@ func (r labelledReadings) Checkpoint(ctx dbcontext.Context, _ tickParams, record
 var _ = Describe("a capture's checkpoint", func() {
 	It("hands a kind the params its host checkpoints with, and refuses params no kind reads", func() {
 		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{
-			"labelled": tracing.NewHandler[tickParams, tick](labelledReadings{readings{taken: &atomic.Int64{}}}, tracing.Capabilities{Live: true}),
-			"readings": tracing.NewHandler[tickParams, tick](readings{taken: &atomic.Int64{}}, tracing.Capabilities{Live: true}),
+			"labelled": tracing.NewHandler[tickParams, tick](labelledReadings{readings{taken: &atomic.Int64{}}}, tracing.Capabilities{Live: true}, "self"),
+			"readings": tracing.NewHandler[tickParams, tick](readings{taken: &atomic.Int64{}}, tracing.Capabilities{Live: true}, "self"),
 			"ticks":    liveTicks(),
 		})
 		managed := map[string]*query.ManagedSession{}
@@ -96,7 +96,7 @@ var _ = Describe("a capture's checkpoint", func() {
 
 	It("reads under what Prepare set up, bounded by the host's context", func() {
 		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{
-			"readings": tracing.NewHandler[tickParams, tick](preparedReadings{readings{taken: &atomic.Int64{}}}, tracing.Capabilities{Live: true}),
+			"readings": tracing.NewHandler[tickParams, tick](preparedReadings{readings{taken: &atomic.Int64{}}}, tracing.Capabilities{Live: true}, "self"),
 		})
 		managed, err := env.Runtime.Start(dbcontext.New(), tracing.StartRequest{Kind: "readings"})
 		Expect(err).ToNot(HaveOccurred())
@@ -114,7 +114,7 @@ var _ = Describe("a capture's checkpoint", func() {
 	It("records the kind's reading and commits it before it returns, while the background poll takes none", func() {
 		taken := &atomic.Int64{}
 		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{
-			"readings": tracing.NewHandler[tickParams, tick](readings{taken: taken}, tracing.Capabilities{Live: true}),
+			"readings": tracing.NewHandler[tickParams, tick](readings{taken: taken}, tracing.Capabilities{Live: true}, "self"),
 		}, func(runtime *tracing.Runtime) { runtime.PollEvery = 10 * time.Millisecond })
 		managed, err := env.Runtime.Start(dbcontext.New(), tracing.StartRequest{Kind: "readings"})
 		Expect(err).ToNot(HaveOccurred())
@@ -132,7 +132,7 @@ var _ = Describe("a capture's checkpoint", func() {
 	It("checkpoints a running capture named by its session id, and refuses an id that names none", func() {
 		taken := &atomic.Int64{}
 		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{
-			"readings": tracing.NewHandler[tickParams, tick](readings{taken: taken}, tracing.Capabilities{Live: true}),
+			"readings": tracing.NewHandler[tickParams, tick](readings{taken: taken}, tracing.Capabilities{Live: true}, "self"),
 		})
 		managed, err := env.Runtime.Start(dbcontext.New(), tracing.StartRequest{Kind: "readings"})
 		Expect(err).ToNot(HaveOccurred())

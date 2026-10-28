@@ -64,10 +64,10 @@ type StartOptions struct {
 	Dir string
 	// Command is the program and its arguments. A run has a Command or a
 	// PID, not both; a run with neither is a host run, which arms only
-	// traces.TargetHost captures and runs until stopped or Duration passes.
+	// host captures and runs until stopped or Duration passes.
 	Command []string
 	// PID attaches the run to a running process instead of starting one: its
-	// tree is traced and every traces.TargetProcess capture is rooted at it,
+	// tree is traced and every process capture is rooted at it,
 	// until the run is stopped, Duration passes or the process exits.
 	PID int
 	// Duration stops the run once it has run this long; zero runs until the
