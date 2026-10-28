@@ -74,6 +74,13 @@ func Start(ctx context.Context, options StartOptions) (*Run, error) {
 	if run.key, err = registryKey(host.Dir()); err == nil {
 		err = run.start()
 	}
+	if err == nil {
+		err = writeRunningManifest(run.Info())
+		if err != nil && run.cmd != nil && run.cmd.Process != nil {
+			err = errors.Join(err, run.signal(syscall.SIGKILL))
+			_ = run.cmd.Wait()
+		}
+	}
 	if err != nil {
 		return nil, errors.Join(err, run.close())
 	}

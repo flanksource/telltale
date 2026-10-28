@@ -47,8 +47,13 @@ func Open(options OpenOptions) (*tracing.Runtime, func() error, error) {
 	if options.Kinds == nil {
 		return nil, nil, errors.New("open trace store: the kinds it holds are required")
 	}
+	schemas, err := storeSchemas(options.Kinds)
+	if err != nil {
+		return nil, nil, err
+	}
 	results, err := recordresults.Open(recordresults.OpenOptions{
 		Prefix: Prefix, ConnectionName: Prefix, Register: options.Kinds.RegisterResultTypes,
+		Schemas:  schemas,
 		Settings: recordstore.Settings{Prefix: Prefix, Backend: recordstore.BackendSQLite, Dir: options.Dir, TTL: options.Retention},
 	})
 	if err != nil {
@@ -59,6 +64,30 @@ func Open(options OpenOptions) (*tracing.Runtime, func() error, error) {
 		Probes:   probe.NewManager(probe.ManagerOptions{LockDir: filepath.Join(options.Dir, "locks")}),
 		Sessions: query.NewSessionRegistry(query.RegistryOptions{BeforeRead: results.Registry.BeforeRead}),
 	}, results.Close, nil
+}
+
+// A shared SQLite backend retains the first opener's resolver. Fill it before
+// opening the backend so concurrent registries cannot see half its catalog.
+func storeSchemas(kinds *tracing.Kinds) (*recordstore.Schemas, error) {
+	infos, err := kinds.List()
+	if err != nil {
+		return nil, err
+	}
+	schemas := recordstore.NewSchemas()
+	for _, info := range infos {
+		plugin, ok := kinds.Get(info.Name)
+		if !ok {
+			return nil, fmt.Errorf("trace kind %q disappeared from catalog", info.Name)
+		}
+		schema, err := plugin.Schema(info.Name)
+		if err != nil {
+			return nil, err
+		}
+		if err := schemas.Register(schema.Kind, schema.Columns, schema.Options); err != nil {
+			return nil, err
+		}
+	}
+	return schemas, nil
 }
 
 // ReopenOptions say which store Reopen serves.

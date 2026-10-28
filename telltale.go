@@ -129,8 +129,37 @@ func writeManifest(result *Result) error {
 	if err != nil {
 		return fmt.Errorf("encode run manifest: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(result.Dir, ManifestFile), data, 0o644); err != nil {
+	return writeManifestData(result.Dir, data)
+}
+
+func writeRunningManifest(info RunInfo) error {
+	info.Live = nil
+	data, err := json.MarshalIndent(info, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode running manifest: %w", err)
+	}
+	return writeManifestData(info.Dir, data)
+}
+
+func writeManifestData(dir string, data []byte) error {
+	file, err := os.CreateTemp(dir, ".run-*.json")
+	if err != nil {
+		return fmt.Errorf("create run manifest: %w", err)
+	}
+	defer func() { _ = os.Remove(file.Name()) }()
+	if err := file.Chmod(0o644); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("set run manifest permissions: %w", err)
+	}
+	if _, err := file.Write(data); err != nil {
+		_ = file.Close()
 		return fmt.Errorf("write run manifest: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close run manifest: %w", err)
+	}
+	if err := os.Rename(file.Name(), filepath.Join(dir, ManifestFile)); err != nil {
+		return fmt.Errorf("replace run manifest: %w", err)
 	}
 	return nil
 }

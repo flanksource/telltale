@@ -10,6 +10,7 @@ import (
 	"github.com/flanksource/clicky/api"
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/pkg/traces"
+	"github.com/flanksource/telltale/pkg/traces/read"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/goprof"
 	"github.com/spf13/cobra"
@@ -26,6 +27,7 @@ func (f *runFlags) bind(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.options.WorkDir, "work-dir", f.options.WorkDir, "Directory holding .telltale/traces")
 	cmd.Flags().DurationVar(&f.options.Duration, "duration", 0, "Stop the run after this long, e.g. 30s (0 runs until the command exits or Ctrl+C)")
 	cmd.Flags().DurationVar(&f.options.Every, "every", 0, "Read the checkpointed captures this often, e.g. 10s")
+	cmd.Flags().Bool("follow", false, "Print each capture's rows while recording")
 }
 
 // newRunCommand is `run` with one subcommand per registered trace kind, each
@@ -125,7 +127,8 @@ func runTraced(cmd *cobra.Command, options telltale.StartOptions, start func(con
 	case len(options.Command) == 0:
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Recording the host into %s; Ctrl+C stops\n", started.Dir())
 	}
-	result, err := started.Wait()
+	follow := cmd.Flags().Lookup("follow") != nil && cmd.Flags().Lookup("follow").Value.String() == "true"
+	result, err := read.Wait(cmd.Context(), started, follow, recordPrinter(cmd))
 	if err != nil {
 		return err
 	}

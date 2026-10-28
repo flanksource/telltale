@@ -72,9 +72,13 @@ func resultInfo(result *Result) RunInfo {
 	if result.ExitCode != 0 || len(result.CheckpointErrors) > 0 {
 		status = StatusFailed
 	}
+	exitCode := &result.ExitCode
+	if result.EndedAt.IsZero() {
+		status, exitCode = StatusRunning, nil
+	}
 	return RunInfo{
 		RunID: result.RunID, Dir: result.Dir, Status: status, Command: result.Command, PID: result.PID, StartedAt: result.StartedAt,
-		EndedAt: result.EndedAt, ExitCode: &result.ExitCode, Captures: result.Captures, Process: result.Process,
+		EndedAt: result.EndedAt, ExitCode: exitCode, Captures: result.Captures, Process: result.Process,
 		CheckpointErrors: result.CheckpointErrors,
 	}
 }

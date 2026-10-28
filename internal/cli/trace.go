@@ -38,6 +38,7 @@ func newTraceRunCommand() *cobra.Command {
 	run.Flags().StringVar(&options.WorkDir, "work-dir", options.WorkDir, "Directory holding .telltale/traces")
 	run.Flags().DurationVar(&options.Duration, "duration", 0, "Stop the command after this long, e.g. 30s")
 	run.Flags().DurationVar(&options.Every, "every", 0, "Read the checkpointed captures this often, e.g. 10s")
+	run.Flags().Bool("follow", false, "Print each capture's rows while recording")
 	setHelp(run, func(cmd *cobra.Command) api.Text { return traceRunHelp(cmd).Text })
 	return run
 }

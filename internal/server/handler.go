@@ -12,6 +12,7 @@ import (
 	"github.com/flanksource/telltale/internal/rules"
 	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/credentials/apitoken"
+	"github.com/flanksource/telltale/pkg/traceserve/records"
 	"github.com/spf13/cobra"
 )
 
@@ -52,6 +53,7 @@ func routes(options HandlerOptions, ui http.Handler) http.Handler {
 	root.Handle("/api/agents/connect", hub)
 	root.Handle(TracesMount, options.Traces)
 	root.Handle(TracesMount+"/", options.Traces)
+	root.Handle("GET "+TracesMount+"/{run}/traces/{kind}/records", records.Handler(options.WorkDir))
 	root.Handle(TopMount, options.Top)
 	root.Handle(TopProcessesPath, options.Top)
 	root.Handle(TopFacetsPath, options.Top)
