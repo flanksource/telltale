@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
 	"github.com/flanksource/clicky/task"
 	cctx "github.com/flanksource/commons/context"
 	"github.com/flanksource/telltale"
+	"github.com/flanksource/telltale/internal/otelreceiver"
 	"github.com/flanksource/telltale/internal/rules"
 	"github.com/flanksource/telltale/webapp"
 	"github.com/spf13/cobra"
@@ -29,6 +31,8 @@ type Options struct {
 	WorkDir      string
 	RulesFile    string
 	EnforceRules bool
+	OTLP         otelreceiver.Options
+	SelfTrace    bool
 }
 
 func Run(ctx context.Context, options Options) (err error) {
@@ -62,6 +66,11 @@ func Run(ctx context.Context, options Options) (err error) {
 		}
 	}()
 	apiURL := "http://" + listener.Addr().String()
+	telemetry, err := openTelemetry(ctx, options)
+	if err != nil {
+		return err
+	}
+	defer func() { err = errors.Join(err, telemetry.close()) }()
 	connections, err := telltale.OpenConnections()
 	if err != nil {
 		return err
@@ -74,45 +83,69 @@ func Run(ctx context.Context, options Options) (err error) {
 	top := NewTopHandler(options.WorkDir)
 	requireAPIAuth := !listener.Addr().(*net.TCPAddr).IP.IsLoopback()
 	defer func() { err = errors.Join(err, top.Close()) }()
+	handlerOptions := HandlerOptions{Root: options.Root, Version: options.Version, WorkDir: options.WorkDir, RequireAPIAuth: requireAPIAuth, Traces: traceMount, Top: top, Rules: monitor, Connections: connections, Received: telemetry.store, OTLP: telemetry.httpHandler(requireAPIAuth), SelfTrace: telemetry.tracer}
 	var handler http.Handler
 	if options.Dev {
 		var vite *viteServer
 		vite, err = startVite(ctx, devOptions{Options: options, apiURL: apiURL, cancel: cancel})
 		if err == nil {
 			defer func() { err = errors.Join(err, vite.stop()) }()
-			handler = routes(HandlerOptions{Root: options.Root, Version: options.Version, WorkDir: options.WorkDir, RequireAPIAuth: requireAPIAuth, Traces: traceMount, Top: top, Rules: monitor}, vite.proxy())
+			handler, err = routes(handlerOptions, vite.proxy())
 		}
 	} else {
-		handler, err = servingHandler(options, traceMount, top, monitor, requireAPIAuth)
+		handler, err = servingHandler(handlerOptions)
 	}
 	if err != nil {
 		return err
 	}
+	telemetry.start(cancel)
+	if telemetry.listener != nil {
+		endpoints := otlpEndpoints{
+			GRPC:     telemetry.listener.Addr(),
+			API:      listener.Addr(),
+			GRPCAuth: !telemetry.listener.Addr().(*net.TCPAddr).IP.IsLoopback(),
+			HTTPAuth: requireAPIAuth,
+		}
+		if endpoints.GRPCAuth || requireAPIAuth {
+			if endpoints.Host, err = os.Hostname(); err != nil {
+				return fmt.Errorf("name this host for the OTLP endpoints: %w", err)
+			}
+		}
+		if _, err := fmt.Fprint(options.Root.OutOrStdout(), endpoints); err != nil {
+			return fmt.Errorf("write OTLP endpoints: %w", err)
+		}
+	}
 	if _, err := fmt.Fprintf(options.Root.OutOrStdout(), "Telltale API: %s\n", apiURL); err != nil {
 		return fmt.Errorf("write server URL: %w", err)
 	}
-	err = serve(ctx, listener, handler)
+	err = serve(ctx, httpOptions{listener: listener, handler: handler})
 	if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) {
 		err = errors.Join(err, cause)
 	}
 	return err
 }
 
-func servingHandler(options Options, traces, top http.Handler, monitor *rules.Service, requireAPIAuth bool) (http.Handler, error) {
+func servingHandler(options HandlerOptions) (http.Handler, error) {
 	assets, err := webapp.Assets()
 	if err != nil {
 		return nil, err
 	}
-	return NewHandler(HandlerOptions{Root: options.Root, Version: options.Version, WorkDir: options.WorkDir, RequireAPIAuth: requireAPIAuth, Assets: assets, Traces: traces, Top: top, Rules: monitor})
+	options.Assets = assets
+	return NewHandler(options)
 }
 
-func serve(ctx context.Context, listener net.Listener, handler http.Handler) error {
+type httpOptions struct {
+	listener net.Listener
+	handler  http.Handler
+}
+
+func serve(ctx context.Context, options httpOptions) error {
 	task.SetNoRender(true)
-	httpServer := &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: time.Minute}
+	httpServer := &http.Server{Handler: options.handler, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: time.Minute}
 	done := make(chan struct{})
 	run := task.StartTask("HTTP server", func(_ cctx.Context, _ *task.Task) (bool, error) {
 		defer close(done)
-		err := httpServer.Serve(listener)
+		err := httpServer.Serve(options.listener)
 		if errors.Is(err, http.ErrServerClosed) {
 			err = nil
 		}

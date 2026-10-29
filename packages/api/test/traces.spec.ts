@@ -71,6 +71,18 @@ interface Listed {
 }
 
 describe("recorded trace runs", () => {
+  it("serves typed result-profile columns and query rows for a recorded capture", async () => {
+    const listed = await (await fetch(`${apiURL}/api/traces`)).json() as Listed;
+    const recorded = listed.runs[0];
+    const capture = recorded.captures.find(item => item.kind === "http")!;
+    const path = `${apiURL}${recorded.mount}/traces/http/records?stream=${encodeURIComponent(capture.ref.stream)}`;
+    const schema = await fetch(path, { headers: { Accept: "application/schema+json" } });
+    expect(schema.status).toBe(200);
+    expect(await schema.json()).toMatchObject({ optionsSchema: { properties: { where: { type: "string" } } }, columns: expect.arrayContaining([expect.objectContaining({ name: "url" })]) });
+    const rows = await fetch(path + "&limit=1");
+    expect(rows.status).toBe(200);
+    expect(await rows.json()).toMatchObject({ rows: [expect.objectContaining({ url: upstreamURL })] });
+  });
   it("lists the run with the proxy capture it armed", async () => {
     const response = await fetch(`${apiURL}/api/traces`);
     expect(response.status).toBe(200);

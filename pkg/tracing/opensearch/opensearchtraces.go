@@ -28,13 +28,13 @@ type Params struct {
 	Format    string `json:"format,omitempty" clicky:"title=Format"`
 	DateField string `json:"dateField,omitempty" clicky:"title=Date field"`
 	// Search narrows the spans read.
-	Search *esdsl.Search `json:"search,omitempty"`
+	Search *esdsl.Search `json:"search,omitempty" clicky:"format=json,title=Structured search"`
 	// From and To bound the window, as date math such as now-1h or RFC3339.
 	From string `json:"from,omitempty" clicky:"title=From"`
 	To   string `json:"to,omitempty" clicky:"title=To"`
-	// Follow goes on reading the spans indexed after the window, until the
+	// FollowIndex goes on reading the spans indexed after the window, until the
 	// session stops; it has no To.
-	Follow bool `json:"follow,omitempty" clicky:"title=Follow"`
+	FollowIndex bool `json:"followIndex,omitempty" clicky:"title=Follow index"`
 	// Poll and Lag, durations such as 2s, pace a follow and hold it behind now.
 	Poll string `json:"poll,omitempty" clicky:"title=Poll"`
 	Lag  string `json:"lag,omitempty" clicky:"title=Lag"`
@@ -44,7 +44,7 @@ func (p Params) Validate() error {
 	if strings.TrimSpace(p.Connection) == "" {
 		return errors.New("connection is required: the opentelemetry connection whose index holds the spans")
 	}
-	if p.Follow && p.To != "" {
+	if p.FollowIndex && p.To != "" {
 		return errors.New("a follow has no end: drop to, or read the window without follow")
 	}
 	if p.Format != "" && p.Format != "flat" && p.Format != "jaeger" {
@@ -127,7 +127,7 @@ func (spans) Schema() recordresults.ResultType[Span] {
 	return recordresults.ResultType[Span]{Title: "OpenSearch traces", TimeColumn: "timestamp", KeyColumn: "sourceKey"}
 }
 
-// Handle reads the window, and with Follow every span indexed after it,
+// Handle reads the window, and with FollowIndex every span indexed after it,
 // emitting each span it reads in order.
 func (spans) Handle(ctx dbcontext.Context, params Params, records tracing.Emitter[Span], _ tracing.Records[Span]) error {
 	poll, lag, err := params.pacing()
@@ -138,7 +138,7 @@ func (spans) Handle(ctx dbcontext.Context, params Params, records tracing.Emitte
 	var emitErr error
 	readErr := providers.ReadOpenTelemetrySpans(ctx, providers.OpenTelemetryRead{
 		Connection: params.Connection, Options: params.providerOptions(),
-		From: params.From, To: params.To, Follow: params.Follow, Poll: poll, Lag: lag,
+		From: params.From, To: params.To, Follow: params.FollowIndex, Poll: poll, Lag: lag,
 	}, func(row query.Row) {
 		if err := records.Emit(emitCtx, FromRow(row)); err != nil && emitErr == nil {
 			emitErr = err

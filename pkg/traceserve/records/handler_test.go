@@ -125,6 +125,26 @@ var _ = Describe("run records route", func() {
 		filtered := get(url.Values{"stream": {capture.Stream()}, "from": {at.Add(time.Second).Format(time.RFC3339)}, "until": {at.Add(4 * time.Second).Format(time.RFC3339)}, "afterSeq": {"1"}, "toSeq": {"4"}, "filter": {"value=>=1", "label=worker"}, "q": {"work"}, "where": {"row.value < 3"}, "limit": {"1"}})
 		Expect(filtered.Rows).To(ConsistOf(And(HaveKeyWithValue("value", float64(2)), HaveKeyWithValue("runId", "run-http"))))
 	})
+	It("serves the query form and typed columns from the kind's result profile", func() {
+		appendRows(1)
+		req, err := http.NewRequest(http.MethodGet, path, nil)
+		Expect(err).NotTo(HaveOccurred())
+		req.Header.Set("Accept", "application/schema+json")
+		response, err := server.Client().Do(req)
+		Expect(err).NotTo(HaveOccurred())
+		defer func() { Expect(response.Body.Close()).To(Succeed()) }()
+		Expect(response.StatusCode).To(Equal(http.StatusOK))
+		var result struct {
+			OptionsSchema map[string]any `json:"optionsSchema"`
+			Columns       []struct {
+				Name string `json:"name"`
+				Type string `json:"type"`
+			} `json:"columns"`
+		}
+		Expect(json.NewDecoder(response.Body).Decode(&result)).To(Succeed())
+		Expect(result.OptionsSchema["properties"]).To(HaveKey("where"))
+		Expect(result.Columns).To(ContainElement(And(HaveField("Name", "value"), HaveField("Type", "number"))))
+	})
 	It("aggregates all matching rows by default and executes named views over seq windows", func() {
 		appendRows(0, 1, 2, 3)
 		stats := get(url.Values{"stats": {"value"}, "groupBy": {"label"}})

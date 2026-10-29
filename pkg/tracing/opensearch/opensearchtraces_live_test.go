@@ -125,7 +125,7 @@ var _ = Describe("opensearch trace kind (live)", func() {
 	})
 
 	It("follows the index until stopped, storing each span once, including those indexed later", func() {
-		session := start(`"from": "now-1h", "follow": true, "poll": "200ms"`)
+		session := start(`"from": "now-1h", "followIndex": true, "poll": "200ms"`)
 		Eventually(func() int64 { return session.Snapshot().EventCount }).WithTimeout(30 * time.Second).Should(Equal(int64(2)))
 		indexSpans(span{id: "s3", traceID: "t2", service: "checkout", at: time.Now()})
 		Eventually(func() int64 { return session.Snapshot().EventCount }).WithTimeout(30 * time.Second).Should(Equal(int64(3)))

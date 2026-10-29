@@ -9,7 +9,13 @@ import (
 
 	"github.com/flanksource/clicky/route"
 	"github.com/flanksource/clicky/rpc"
+	"github.com/flanksource/commons-db/cmd/query/connections"
+	"github.com/flanksource/commons-db/connection/store"
+	"github.com/flanksource/telltale"
+	"github.com/flanksource/telltale/internal/otelreceiver"
 	"github.com/flanksource/telltale/internal/rules"
+	"github.com/flanksource/telltale/internal/selftrace"
+	"github.com/flanksource/telltale/internal/tracequery"
 	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/credentials/apitoken"
 	"github.com/flanksource/telltale/pkg/traceserve/records"
@@ -25,8 +31,12 @@ type HandlerOptions struct {
 	// Traces serves the run stores at TracesMount.
 	Traces http.Handler
 	// Top serves the live process groups at TopMount.
-	Top   http.Handler
-	Rules *rules.Service
+	Top         http.Handler
+	Rules       *rules.Service
+	Connections *store.Store
+	Received    *otelreceiver.Store
+	OTLP        http.Handler
+	SelfTrace   *selftrace.Tracer
 }
 
 func NewHandler(options HandlerOptions) (http.Handler, error) {
@@ -36,20 +46,41 @@ func NewHandler(options HandlerOptions) (http.Handler, error) {
 	if _, err := fs.ReadFile(options.Assets, "index.html"); err != nil {
 		return nil, fmt.Errorf("web assets unavailable; run make build or serve --dev: %w", err)
 	}
-	return routes(options, assetHandler(options.Assets)), nil
+	return routes(options, assetHandler(options.Assets))
 }
 
-func routes(options HandlerOptions, ui http.Handler) http.Handler {
+func routes(options HandlerOptions, ui http.Handler) (http.Handler, error) {
+	if options.Connections == nil {
+		var err error
+		options.Connections, err = telltale.OpenConnections()
+		if err != nil {
+			return nil, err
+		}
+	}
+	connectionAPI, err := connectionHandler(options.Connections)
+	if err != nil {
+		return nil, err
+	}
 	api := http.NewServeMux()
 	rpc.NewSwaggerServer(&rpc.ServeConfig{Version: options.Version}, options.Root,
-		&rpc.OpenAPIConfig{Title: "Telltale", Version: options.Version, Extensions: []func(*rpc.OpenAPISpec){addRulesPaths}}).RegisterRoutes(route.NewRouter(api))
+		&rpc.OpenAPIConfig{Title: "Telltale", Version: options.Version, Extensions: []func(*rpc.OpenAPISpec){addRulesPaths, connections.AddConnectionsOpenAPI, addConnectionPaths, addOtelPaths, addReceiverPath}}).RegisterRoutes(route.NewRouter(api))
 	root := http.NewServeMux()
+	if options.OTLP == nil {
+		options.OTLP = http.NotFoundHandler()
+	}
+	root.Handle("/v1/traces", options.OTLP)
 	installer := http.NewServeMux()
 	rpc.NewSwaggerServer(&rpc.ServeConfig{Version: options.Version, Executor: &rpc.ExecutorConfig{Enabled: true}}, options.Root, nil).
 		RegisterExecutionRoutes(route.NewRouter(installer))
 	root.Handle("/api/v1/agents/install/java", http.NewCrossOriginProtection().Handler(installer))
 	hub := agentclient.NewHub(agentclient.Default, agentclient.NewTokenStore(options.WorkDir))
 	root.HandleFunc("/api/agents", hub.List)
+	otel := otelHandler(tracequery.Service{WorkDir: options.WorkDir, Connections: options.Connections, Received: options.Received})
+	root.Handle("/api/otel", otel)
+	root.Handle("/api/otel/", otel)
+	root.Handle("/api/v1/connection", connectionAPI)
+	root.Handle("/api/v1/connection/", connectionAPI)
+	root.Handle("/api/v1/connections/", connectionAPI)
 	root.Handle("/api/agents/connect", hub)
 	root.Handle(TracesMount, options.Traces)
 	root.Handle(TracesMount+"/", options.Traces)
@@ -64,17 +95,21 @@ func routes(options HandlerOptions, ui http.Handler) http.Handler {
 	root.Handle("/api", http.NotFoundHandler())
 	root.Handle("/health", api)
 	root.Handle("/", ui)
-	if !options.RequireAPIAuth {
-		return root
+	var handler http.Handler = root
+	if options.RequireAPIAuth {
+		protected := hub.Authorize(apitoken.ScopeAPI, root)
+		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if (r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/")) && r.URL.Path != "/api/agents/connect" {
+				protected.ServeHTTP(w, r)
+				return
+			}
+			root.ServeHTTP(w, r)
+		})
 	}
-	protected := hub.Authorize(apitoken.ScopeAPI, root)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if (r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/")) && r.URL.Path != "/api/agents/connect" {
-			protected.ServeHTTP(w, r)
-			return
-		}
-		root.ServeHTTP(w, r)
-	})
+	if options.SelfTrace != nil {
+		handler = options.SelfTrace.Handler(handler)
+	}
+	return handler, nil
 }
 
 func assetHandler(assets fs.FS) http.Handler {
@@ -92,7 +127,7 @@ func assetHandler(assets fs.FS) http.Handler {
 		info, err := fs.Stat(assets, path)
 		// A client route is the page: any path without an extension, and the
 		// /top/<program> pages, whose program names may hold dots.
-		if errors.Is(err, fs.ErrNotExist) && (!strings.Contains(path, ".") || strings.HasPrefix(path, "top/")) && !strings.HasPrefix(path, "assets/") {
+		if errors.Is(err, fs.ErrNotExist) && (!strings.Contains(path, ".") || strings.HasPrefix(path, "top/") || strings.HasPrefix(path, "arm/") || strings.HasPrefix(path, "records/")) && !strings.HasPrefix(path, "assets/") {
 			path = "index.html"
 		} else if err != nil || info.IsDir() {
 			http.NotFound(w, r)

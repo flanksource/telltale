@@ -135,7 +135,7 @@ var _ = Describe("opensearch trace kind", func() {
 	})
 
 	It("follows the index until stopped, storing the spans indexed after it caught up", func() {
-		session := start(`{"connection": "connection://traces", "follow": true, "poll": "20ms"}`)
+		session := start(`{"connection": "connection://traces", "followIndex": true, "poll": "20ms"}`)
 		Eventually(func() int64 { return session.Snapshot().EventCount }).WithTimeout(5 * time.Second).Should(Equal(int64(2)))
 		index.write(span{id: "s3", traceID: "t2", service: "checkout", at: at.Add(2 * time.Second)})
 		Eventually(func() int64 { return session.Snapshot().EventCount }).WithTimeout(5 * time.Second).Should(Equal(int64(3)))
@@ -158,7 +158,7 @@ var _ = Describe("opensearch trace kind", func() {
 			Expect(opensearch.Kind().ValidateParams(json.RawMessage(raw))).To(MatchError(ContainSubstring(message)))
 		},
 		Entry("no connection", `{}`, "connection"),
-		Entry("a follow with an end", `{"connection": "c", "follow": true, "to": "now"}`, "follow"),
+		Entry("a follow with an end", `{"connection": "c", "followIndex": true, "to": "now"}`, "follow"),
 		Entry("a poll that is not a duration", `{"connection": "c", "poll": "often"}`, "poll"),
 		Entry("an unknown format", `{"connection": "c", "format": "zipkin"}`, "format"),
 	)

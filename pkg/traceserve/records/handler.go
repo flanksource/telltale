@@ -47,6 +47,10 @@ func Handler(workDir string) http.Handler {
 			}
 		}()
 		refs, err := selectStreams(selected.Refs, values.Get("stream"))
+		if err == nil && r.Header.Get("Accept") == "application/schema+json" {
+			serveSchema(w, r, refs)
+			return
+		}
 		if err == nil {
 			err = read.ValidateSelection(r.Context(), refs, q)
 		}
