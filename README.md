@@ -31,6 +31,8 @@ telltale serve
 
 `telltale run <kind>` arms a single trace kind, its params as flags. There is one subcommand for every kind in the registry, which `pkg/traces` fills in `init()` before the CLI is built, so a kind registered by another package's `init()` gets its own command with no CLI change. `telltale run <kind> --help` shows what the kind records, its flags with their defaults and choices, the variables it exports and examples.
 
+Flag types, descriptions, defaults, choices, and required inputs come from the kind's parameter schema and also describe the generated arguments in `/api/openapi.json`. Nested fields use kebab-case flags such as `--environment-keys`; string maps take comma-separated `key=value` pairs, such as `--levels worker=debug,api=info`, and maps with arbitrary values take a JSON object, such as `--options '{"limit":100}'`. The goprof checkpoint schema describes `--profile`, `--seconds`, and `--source`, with defaults from the registered checkpoint. Common run controls remain `--work-dir`, `--duration`, and `--every`.
+
 ```sh
 telltale run http --seam proxy --mode mitm --hosts '*.example.com' -- curl -sS https://api.example.com
 telltale run sql --seam proxy --env ORDERS_DB_URL --params -- go test ./...
@@ -183,6 +185,12 @@ The other Go packages are importable too:
 | `pkg/traceserve` | Opens a trace store and serves its read, export and checkpoint routes |
 | `pkg/proxy/{credproxy,kubeproxy,mcpproxy,proxylog}` | Credential-injecting egress proxy, Kubernetes and MCP reverse proxies, JSONL request log |
 | `pkg/credentials` (vault), `pkg/credentials/{agentcreds,credsync,apitoken}` | Provider key vault, agent CLI logins, credential publishing, bearer tokens |
+
+## Receive OpenTelemetry traces
+
+Run `telltale serve --otlp --port 4318` to receive OTLP/HTTP at `/v1/traces` and OTLP/gRPC at `localhost:4317`. Open `/otel`, select **Received traces**, and search or inspect the waterfall. Ingestion runs continuously without arming, and received traces remain available after restart. See [receiver configuration and exporter examples](docs/otlp-receiver.md).
+
+Use `telltale serve --self-trace` to trace Telltale's own HTTP requests to the local receiver. It enables the receiver automatically; open `/otel?source=receiver&service=telltale` to inspect request spans and metadata.
 
 ## Development with local Clicky UI
 
