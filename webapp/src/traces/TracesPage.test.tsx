@@ -93,6 +93,7 @@ describe("trace runs", () => {
     expect(await screen.findByText("curl https://example.com")).toBeInTheDocument();
     expect(screen.getByText(/exited with code 0/)).toBeInTheDocument();
     expect(screen.getByRole("option", { name: `${runId} (succeeded)` })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open in query" })).toHaveAttribute("href", `/records/${runId}/http/proxy-1?toSeq=2`);
   });
 
   it("names an attached run by its pid and lists the checkpoints that failed", async () => {

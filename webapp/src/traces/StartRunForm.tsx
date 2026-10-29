@@ -5,13 +5,18 @@ import { UiLoader } from "@flanksource/clicky-ui/icons";
 import { fetchStartForm, startRun, StartRunError, type RunTraces, type StartForm, type StartRequest } from "./api";
 
 export interface StartRunFormProps {
+  agent?: string;
+  probe?: string;
   /** Called with the run the server started. */
   onStarted: (run: RunTraces) => void;
 }
 
-function StartRunFields({ form, onStarted }: StartRunFormProps & { form: StartForm }) {
+function StartRunFields({ form, onStarted, agent, probe }: StartRunFormProps & { form: StartForm }) {
   const queryClient = useQueryClient();
-  const [value, setValue] = useState<StartRequest>(form.defaults);
+  const [value, setValue] = useState<StartRequest>(() => agent && probe ? {
+    ...form.defaults, command: "",
+    traces: { [probe]: { enabled: true, target: { seam: "agent", agent } } },
+  } : form.defaults);
   const start = useMutation({
     mutationFn: startRun,
     onSuccess: run => {
@@ -54,9 +59,13 @@ function StartRunFields({ form, onStarted }: StartRunFormProps & { form: StartFo
 }
 
 /** The form that starts a run on the server: a shell command and the captures armed around it. */
-export function StartRunForm({ onStarted }: StartRunFormProps) {
+export function StartRunForm(props: StartRunFormProps) {
   const form = useQuery({ queryKey: ["trace-start-form"], queryFn: fetchStartForm, retry: false, staleTime: Infinity });
   if (form.isPending) return <p role="status">Loading the start form…</p>;
   if (form.isError) return <p role="alert">{form.error.message}</p>;
-  return <StartRunFields form={form.data} onStarted={onStarted} />;
+  const captures = (form.data.schema as JsonSchemaObject).properties?.traces;
+  if (props.probe && (!captures || typeof captures !== "object" || !captures.properties?.[props.probe])) {
+    return <p role="alert">Probe {props.probe} has no armable trace kind on this server.</p>;
+  }
+  return <StartRunFields form={form.data} {...props} />;
 }

@@ -15,6 +15,11 @@ function Shell() {
         items: [
           { key: "overview", label: "Overview", to: "/", active: page === "overview" },
           { key: "top", label: "Top", to: "/top", active: page === "top" || page === "process" },
+          { key: "connections", label: "Connections", to: "/connections", active: page === "connections" },
+          { key: "agents", label: "Agents", to: "/agents", active: page === "agents" },
+          { key: "arm", label: "Arm captures", to: "/arm", active: page === "arm" },
+          { key: "query", label: "Query", to: "/query", active: page === "query" || page === "records" },
+          { key: "otel", label: "Traces", to: "/otel", active: page === "otel" },
         ],
       }]}
       actions={<Button variant="outline" onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}>Switch to {resolvedTheme === "dark" ? "light" : "dark"} theme</Button>}

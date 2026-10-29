@@ -32,8 +32,12 @@ export function TracesPanel({ run }: { run: RunTraces }) {
     formats: (kind: string) => formats.byKind[kind] ?? [],
     fetchRecords: (window: TraceWindow, signal: AbortSignal) => fetchTraceRecords(run.mount, window, signal),
     exportUrl: (window: TraceWindow, format: string) => traceExportUrl(run.mount, window, format),
-    // No query app is served: a window opens as its raw records.
-    openUrl: (window: TraceWindow) => traceExportUrl(run.mount, window, "ndjson"),
+    openUrl: (window: TraceWindow) => {
+      const params = new URLSearchParams();
+      if (window.afterSeq) params.set("afterSeq", String(window.afterSeq));
+      if (window.toSeq) params.set("toSeq", String(window.toSeq));
+      return `/records/${encodeURIComponent(run.runId)}/${encodeURIComponent(window.kind)}/${encodeURIComponent(window.stream)}${params.size ? `?${params}` : ""}`;
+    },
   }), [formats.byKind, run.mount]);
 
   if (windows.length === 0) return <p className="text-sm text-muted-foreground">This run armed no captures.</p>;
