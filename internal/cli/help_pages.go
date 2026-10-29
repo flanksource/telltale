@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	flagmeta "github.com/flanksource/clicky/flags"
 	"github.com/flanksource/clicky/rpc"
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/pkg/traces"
@@ -90,6 +91,9 @@ func kindHelp(cmd *cobra.Command, registration traces.Registration) helpText {
 		h = h.command("telltale run "+registration.Name+" [flags] --pid PID", "")
 	}
 	h = h.section("Target: " + title).paragraph(says)
+	if seam := cmd.Flags().Lookup("seam"); seam != nil {
+		h = h.paragraph("Default seam: " + seam.DefValue + ". Supported seams: " + strings.Join(flagmeta.AllowedValues(seam), ", ") + ".")
+	}
 	if len(registration.Exports) > 0 {
 		h = h.section("Exports").paragraph(strings.Join(registration.Exports, " "))
 	}

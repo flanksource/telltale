@@ -88,9 +88,9 @@ type Sample struct {
 type CheckpointParams struct {
 	Key     string `json:"key,omitempty"`
 	PID     int    `json:"pid,omitempty"`
-	Source  string `json:"source"`
-	Profile string `json:"profile"`
-	Seconds int    `json:"seconds,omitempty"`
+	Source  string `json:"source" clicky:"title=Source,desc=Process profile source"`
+	Profile string `json:"profile" clicky:"title=Profile,desc=Go profile read at each checkpoint"`
+	Seconds int    `json:"seconds,omitempty" clicky:"title=Seconds,desc=Duration of a CPU profile window in seconds"`
 	Path    string `json:"path,omitempty"`
 	Reason  string `json:"reason,omitempty"`
 }

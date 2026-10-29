@@ -5,6 +5,7 @@ import (
 
 	"github.com/flanksource/clicky"
 	"github.com/flanksource/telltale"
+	"github.com/flanksource/telltale/internal/otelreceiver"
 	"github.com/flanksource/telltale/internal/server"
 	"github.com/spf13/cobra"
 )
@@ -18,7 +19,7 @@ func NewRoot(version string) *cobra.Command {
 		},
 	}
 	clicky.BindAllFlags(root.PersistentFlags(), "format")
-	options := server.Options{Root: root, Version: version, Host: "localhost", Port: 8080, UIPort: 5173, WebDirectory: "webapp", WorkDir: "."}
+	options := server.Options{Root: root, Version: version, Host: "localhost", Port: 8080, UIPort: 5173, WebDirectory: "webapp", WorkDir: ".", OTLP: otelreceiver.DefaultOptions()}
 	serve := &cobra.Command{
 		Use: "serve", Short: "Start the HTTP API and web UI", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -33,6 +34,13 @@ func NewRoot(version string) *cobra.Command {
 	serve.Flags().StringVar(&options.WorkDir, "work-dir", options.WorkDir, "Directory whose .telltale/traces run stores are served")
 	serve.Flags().StringVar(&options.RulesFile, "rules", "", "Continuously observe resource rules from this YAML file")
 	serve.Flags().BoolVar(&options.EnforceRules, "enforce-rules", false, "Execute resource rule hooks (default: observation only)")
+	serve.Flags().BoolVar(&options.OTLP.Enabled, "otlp", false, "Continuously receive OTLP traces into local storage")
+	serve.Flags().BoolVar(&options.SelfTrace, "self-trace", false, "Trace HTTP requests to the local OTLP receiver (enables --otlp)")
+	serve.Flags().StringVar(&options.OTLP.GRPCListen, "otlp-grpc-listen", options.OTLP.GRPCListen, "OTLP gRPC listen address")
+	serve.Flags().DurationVar(&options.OTLP.Retention, "otlp-retention", options.OTLP.Retention, "Received span retention from ingestion time")
+	serve.Flags().IntVar(&options.OTLP.MaxRequestBytes, "otlp-max-request-bytes", options.OTLP.MaxRequestBytes, "Maximum OTLP request bytes before and after decompression")
+	serve.Flags().IntVar(&options.OTLP.MaxSpans, "otlp-max-spans", options.OTLP.MaxSpans, "Maximum spans per OTLP request")
+	serve.Flags().IntVar(&options.OTLP.MaxInflight, "otlp-max-inflight", options.OTLP.MaxInflight, "Maximum concurrent OTLP exports across both transports")
 	root.AddCommand(serve, newTraceCommand(), newConnectionCommand(), newRunCommand(), newTopCommand(), newRulesCommand(), newAgentsCommand())
 	root.AddCommand(newRecordsCommand())
 	for _, preset := range telltale.Presets() {

@@ -102,6 +102,9 @@ func flagUsage(flag *pflag.Flag) string {
 
 func flagDescription(flag *pflag.Flag) string {
 	_, usage := pflag.UnquoteUsage(flag)
+	if len(flag.Annotations[cobra.BashCompOneRequiredFlag]) > 0 {
+		usage += " (required)"
+	}
 	switch flag.DefValue {
 	case "", "false", "0", "[]", "0s":
 		return usage
