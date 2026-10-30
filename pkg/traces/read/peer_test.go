@@ -28,14 +28,14 @@ func TestReadPeer(t *testing.T) {
 	if err := registerFixture(); err != nil {
 		t.Fatal(err)
 	}
-	info, err := telltale.Get(telltale.GetOptions{WorkDir: dir, RunID: "run-peer"})
+	info, err := telltale.Get(telltale.GetOptions{DataDir: dir, RunID: "run-peer"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if info.Status != telltale.StatusRunning || info.ExitCode != nil {
 		t.Fatalf("live manifest: %+v", info)
 	}
-	s, err := read.Resolve("read_fixture", read.Scope{WorkDir: dir})
+	s, err := read.Resolve("read_fixture", read.Scope{DataDir: dir})
 	if err != nil {
 		t.Fatal(err)
 	}

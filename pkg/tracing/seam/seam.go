@@ -297,21 +297,30 @@ func (s AgentSeam[P, R]) emit(ctx context.Context, raw json.RawMessage, resource
 		value = value.Elem()
 	}
 	if value.Kind() == reflect.Struct {
-		field := value.FieldByName("Resource")
-		if field.IsValid() && field.CanSet() && field.Type() == reflect.TypeFor[map[string]string]() {
-			merged := make(map[string]string, len(resource))
-			for key, item := range resource {
-				merged[key] = item
-			}
-			if !field.IsNil() {
-				for key, item := range field.Interface().(map[string]string) {
-					merged[key] = item
-				}
-			}
-			field.Set(reflect.ValueOf(merged))
-		}
+		mergeResource(value.FieldByName("Resource"), resource)
 	}
 	return out.Emit(ctx, row)
+}
+
+// mergeResource sets a record's Resource field, a string map or a typed map, to
+// the agent's resource overlaid with the record's own attributes.
+func mergeResource(field reflect.Value, resource map[string]string) {
+	if !field.IsValid() || !field.CanSet() {
+		return
+	}
+	switch field.Type() {
+	case reflect.TypeFor[map[string]string](), reflect.TypeFor[map[string]any]():
+	default:
+		return
+	}
+	merged := reflect.MakeMapWithSize(field.Type(), len(resource)+field.Len())
+	for key, item := range resource {
+		merged.SetMapIndex(reflect.ValueOf(key), reflect.ValueOf(item).Convert(field.Type().Elem()))
+	}
+	for iter := field.MapRange(); iter.Next(); {
+		merged.SetMapIndex(iter.Key(), iter.Value())
+	}
+	field.Set(merged)
 }
 
 // Handle delivers live frames until the capture ends.

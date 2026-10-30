@@ -12,19 +12,19 @@ import (
 var _ = Describe("record request mapping", func() {
 	It("maps HTTP names and repeated filters into the same scope and query as CLI names", func() {
 		values := url.Values{
-			"workDir": {"work"}, "run": {"run-one"}, "from": {"2026-10-28T10:00:00Z"}, "until": {"2026-10-28T11:00:00Z"},
+			"dataDir": {"work"}, "run": {"run-one"}, "from": {"2026-10-28T10:00:00Z"}, "until": {"2026-10-28T11:00:00Z"},
 			"afterSeq": {"2"}, "toSeq": {"8"}, "filter": {"pid=123", "cpuPercent=>=10"}, "where": {"row.pid == 123"},
 			"q": {"worker"}, "limit": {"3"}, "cursor": {"next"},
 		}
 		scope, q, aggregate, err := read.ParseRequest(values)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(scope).To(Equal(read.Scope{WorkDir: "work", Run: "run-one"}))
+		Expect(scope).To(Equal(read.Scope{DataDir: "work", Run: "run-one"}))
 		Expect(q).To(Equal(read.Query{
 			From: time.Date(2026, 10, 28, 10, 0, 0, 0, time.UTC), Until: time.Date(2026, 10, 28, 11, 0, 0, 0, time.UTC),
 			AfterSeq: 2, ToSeq: 8, Filters: []string{"pid=123", "cpuPercent=>=10"}, Where: "row.pid == 123", Search: "worker", Limit: 3, Cursor: "next",
 		}))
 		Expect(aggregate).To(Equal(read.Aggregate{}))
-		for cli, http := range map[string]string{"work-dir": "workDir", "after-seq": "afterSeq", "to-seq": "toSeq", "query": "q"} {
+		for cli, http := range map[string]string{"data-dir": "dataDir", "after-seq": "afterSeq", "to-seq": "toSeq", "query": "q"} {
 			values[cli] = values[http]
 			delete(values, http)
 		}

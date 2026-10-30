@@ -1,4 +1,4 @@
-// Specs for the opensearch trace kind: an import of a window ends by itself, a
+// Specs for the spans kind's OpenSearch host seam: an import of a window ends by itself, a
 // follow picks up spans indexed later, and a span read twice is stored once.
 
 package opensearch_test
@@ -21,7 +21,7 @@ import (
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/commons-db/types"
 	"github.com/flanksource/telltale/pkg/tracing"
-	"github.com/flanksource/telltale/pkg/tracing/opensearch"
+	"github.com/flanksource/telltale/pkg/tracing/spans"
 	"github.com/flanksource/telltale/pkg/tracing/tracingtest"
 )
 
@@ -92,7 +92,7 @@ func (i *spanIndex) write(s span) {
 
 var at = time.Date(2026, 10, 5, 9, 0, 0, 0, time.UTC)
 
-var _ = Describe("opensearch trace kind", func() {
+var _ = Describe("spans host seam", func() {
 	var index *spanIndex
 	var env tracingtest.Env
 
@@ -101,7 +101,7 @@ var _ = Describe("opensearch trace kind", func() {
 			span{id: "s1", traceID: "t1", service: "checkout", at: at},
 			span{id: "s2", traceID: "t1", service: "payments", at: at.Add(time.Second)},
 		)
-		env = tracingtest.NewEnv(map[string]tracing.TracePlugin{"opensearch": opensearch.Kind()})
+		env = tracingtest.NewEnv(map[string]tracing.TracePlugin{spans.Kind: spans.NewKind(nil)})
 	})
 
 	start := func(params string) *query.Session {
@@ -115,7 +115,7 @@ var _ = Describe("opensearch trace kind", func() {
 			}
 			return nil, nil
 		})
-		managed, err := env.Runtime.Start(ctx, tracing.StartRequest{Kind: "opensearch", Params: json.RawMessage(params)})
+		managed, err := env.Runtime.Start(ctx, tracing.StartRequest{Kind: spans.Kind, Params: json.RawMessage(`{"target": {"seam": "host"}, "opensearch": ` + params + `}`)})
 		Expect(err).ToNot(HaveOccurred())
 		return managed.Session()
 	}
@@ -126,11 +126,12 @@ var _ = Describe("opensearch trace kind", func() {
 		Expect(info.State).To(Equal(query.SessionCompleted))
 		rows := env.Rows(info)
 		Expect(rows).To(HaveLen(2))
-		Expect(rows[0]["traceId"]).To(Equal("t1"))
-		Expect(rows[0]["spanId"]).To(Equal("s1"))
-		Expect(rows[0]["service"]).To(Equal("checkout"))
-		Expect(rows[0]["sourceIndex"]).To(Equal("otel-traces-2026"))
-		Expect(rows[0]["sourceId"]).To(Equal("s1"))
+		Expect(rows[0]).To(SatisfyAll(
+			HaveKeyWithValue("key", "t1/s1"), HaveKeyWithValue("traceId", "t1"), HaveKeyWithValue("spanId", "s1"),
+			HaveKeyWithValue("service", "checkout"), HaveKeyWithValue("status", "unset"),
+			HaveKeyWithValue("source", map[string]any{"type": "opensearch", "index": "otel-traces-2026", "id": "s1"}),
+			HaveKeyWithValue("resource", map[string]any{"service.name": "checkout"}),
+		))
 		Expect(rows[1]["service"]).To(Equal("payments"))
 	})
 
@@ -155,11 +156,13 @@ var _ = Describe("opensearch trace kind", func() {
 
 	DescribeTable("refuses params it could not read with",
 		func(raw, message string) {
-			Expect(opensearch.Kind().ValidateParams(json.RawMessage(raw))).To(MatchError(ContainSubstring(message)))
+			Expect(spans.NewKind(nil).ValidateParams(json.RawMessage(raw))).To(MatchError(ContainSubstring(message)))
 		},
-		Entry("no connection", `{}`, "connection"),
-		Entry("a follow with an end", `{"connection": "c", "followIndex": true, "to": "now"}`, "follow"),
-		Entry("a poll that is not a duration", `{"connection": "c", "poll": "often"}`, "poll"),
-		Entry("an unknown format", `{"connection": "c", "format": "zipkin"}`, "format"),
+		Entry("the host seam without opensearch", `{"target": {"seam": "host"}}`, "opensearch.connection"),
+		Entry("opensearch off the host seam", `{"opensearch": {"connection": "c"}}`, "--seam host"),
+		Entry("no connection", `{"target": {"seam": "host"}, "opensearch": {}}`, "connection"),
+		Entry("a follow with an end", `{"target": {"seam": "host"}, "opensearch": {"connection": "c", "followIndex": true, "to": "now"}}`, "follow"),
+		Entry("a poll that is not a duration", `{"target": {"seam": "host"}, "opensearch": {"connection": "c", "poll": "often"}}`, "poll"),
+		Entry("an unknown format", `{"target": {"seam": "host"}, "opensearch": {"connection": "c", "format": "zipkin"}}`, "format"),
 	)
 })

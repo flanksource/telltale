@@ -74,8 +74,8 @@ var _ = BeforeSuite(func() {
 	}})).To(Succeed())
 })
 
-func fixture(workDir, runID string) (*traces.Host, *traces.Capture) {
-	host, err := traces.Open(traces.OpenOptions{WorkDir: workDir, RunID: runID})
+func fixture(dataDir, runID string) (*traces.Host, *traces.Capture) {
+	host, err := traces.Open(traces.OpenOptions{DataDir: dataDir, RunID: runID})
 	Expect(err).NotTo(HaveOccurred())
 	DeferCleanup(func() { Expect(host.Close(context.Background())).To(Succeed()) })
 	capture, err := host.Start("read_fixture", json.RawMessage(`{}`))
@@ -105,11 +105,11 @@ var _ = Describe("sqlite read side", func() {
 		appendRow(c2, reading{At: time.Now(), Value: 2, Label: "second"})
 		_, err = c2.Stop(context.Background())
 		Expect(err).NotTo(HaveOccurred())
-		selected, err := read.Resolve("read_fixture", read.Scope{WorkDir: dir, Since: cutoff})
+		selected, err := read.Resolve("read_fixture", read.Scope{DataDir: dir, Since: cutoff})
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(selected.Close)
 		Expect(selected.Refs).To(ConsistOf(HaveField("RunID", second.RunID())))
-		multiple, err := read.Resolve("read_fixture", read.Scope{WorkDir: dir, Runs: []string{first.RunID(), second.RunID()}})
+		multiple, err := read.Resolve("read_fixture", read.Scope{DataDir: dir, Runs: []string{first.RunID(), second.RunID()}})
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(multiple.Close)
 		rows, err := query.CollectRows(read.Rows(context.Background(), multiple.Refs, read.Query{All: true}))
@@ -141,7 +141,7 @@ var _ = Describe("sqlite read side", func() {
 		for _, tc := range []struct {
 			scope read.Scope
 			ids   []string
-		}{{read.Scope{WorkDir: dir}, []string{second.RunID()}}, {read.Scope{WorkDir: dir, Run: first.RunID()}, []string{first.RunID()}}, {read.Scope{WorkDir: dir, Runs: []string{first.RunID(), second.RunID()}}, []string{first.RunID(), second.RunID()}}} {
+		}{{read.Scope{DataDir: dir}, []string{second.RunID()}}, {read.Scope{DataDir: dir, Run: first.RunID()}, []string{first.RunID()}}, {read.Scope{DataDir: dir, Runs: []string{first.RunID(), second.RunID()}}, []string{first.RunID(), second.RunID()}}} {
 			selected, err := read.Resolve("read_fixture", tc.scope)
 			Expect(err).NotTo(HaveOccurred())
 			var ids []string
@@ -151,11 +151,11 @@ var _ = Describe("sqlite read side", func() {
 			Expect(ids).To(Equal(tc.ids))
 			Expect(selected.Close()).To(Succeed())
 		}
-		_, err := read.Resolve("read_fixture", read.Scope{WorkDir: GinkgoT().TempDir()})
+		_, err := read.Resolve("read_fixture", read.Scope{DataDir: GinkgoT().TempDir()})
 		Expect(err).To(MatchError(ContainSubstring("no run")))
-		_, err = read.Resolve("unknown", read.Scope{WorkDir: dir})
+		_, err = read.Resolve("unknown", read.Scope{DataDir: dir})
 		Expect(err).To(MatchError(ContainSubstring("unknown trace kind")))
-		_, err = read.Resolve("http", read.Scope{WorkDir: dir, Run: first.RunID()})
+		_, err = read.Resolve("http", read.Scope{DataDir: dir, Run: first.RunID()})
 		Expect(err).To(MatchError(ContainSubstring("no http")))
 	})
 	It("reads profile time/seq windows, filters, search, CEL, cursors and views from a second reader", func() {
@@ -165,7 +165,7 @@ var _ = Describe("sqlite read side", func() {
 		for i := range 4 {
 			appendRow(c, reading{At: base.Add(time.Duration(i) * time.Second), Value: float64(i), Label: "kept"})
 		}
-		s, err := read.Resolve("read_fixture", read.Scope{WorkDir: dir})
+		s, err := read.Resolve("read_fixture", read.Scope{DataDir: dir})
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(s.Close)
 		rows, err := query.CollectRows(read.Rows(context.Background(), s.Refs, read.Query{From: base.Add(time.Second), Until: base.Add(4 * time.Second), AfterSeq: 1, ToSeq: 4, Filters: []string{"value=>=2"}, Search: "kept", Where: "row.value < 3", All: true}))
@@ -195,7 +195,7 @@ var _ = Describe("sqlite read side", func() {
 	It("follows appends through the read-only opener, then drains and ends on capture seal", func() {
 		dir := GinkgoT().TempDir()
 		_, c := fixture(dir, "run-follow")
-		s, err := read.Resolve("read_fixture", read.Scope{WorkDir: dir})
+		s, err := read.Resolve("read_fixture", read.Scope{DataDir: dir})
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(s.Close)
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)

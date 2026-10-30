@@ -79,8 +79,19 @@ func readOpenSearch(ctx dbcontext.Context, request providers.OpenTelemetryRead) 
 		if readErr != nil {
 			return
 		}
-		span := imported.FromRow(row)
-		spans = append(spans, fromImported(span))
+		span, err := imported.FromRow(row)
+		if err != nil {
+			readErr = err
+			cancel()
+			return
+		}
+		converted, err := fromSpan(span, false)
+		if err != nil {
+			readErr = err
+			cancel()
+			return
+		}
+		spans = append(spans, converted)
 		if len(spans) > maxSpans {
 			readErr = fmt.Errorf("OpenSearch read exceeds %d spans; narrow the time window or index", maxSpans)
 			cancel()

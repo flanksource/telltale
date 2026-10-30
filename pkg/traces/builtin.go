@@ -48,7 +48,7 @@ func init() {
 			Summary: "Record the CPU, memory, disk, sockets and network of each tool's processes on the host",
 			Description: "Sorts every process on the host into the tool that owns it — claude, codex, cmux, gavel, go test, vitest, agent-browser, chrome and more — " +
 				"as a tree of groups, each with its working directory, checkout, agent session and cmux workspace, and records what each group and those under it use. " +
-				"Rules come from the built-in catalog and .telltale/groups.yaml. Network bytes are read with nettop on darwin only when asked for, as it costs over a core.",
+				"Rules come from the built-in catalog and groups.yaml in ./.telltale, else the global config dir. Network bytes are read with nettop on darwin only when asked for, as it costs over a core.",
 			Examples: []Example{
 				{Args: "--duration 10m", Says: "record every tool's groups for ten minutes"},
 				{Args: "--groups claude,vitest --net", Says: "record claude sessions and vitest runs with their network bytes"},

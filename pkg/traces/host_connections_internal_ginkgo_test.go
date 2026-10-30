@@ -22,7 +22,7 @@ var _ = Describe("a host's connections", func() {
 		connections, err := store.New(store.Layer{Name: store.LayerCWD, Dir: dir})
 		Expect(err).ToNot(HaveOccurred())
 
-		host, err := Open(OpenOptions{WorkDir: GinkgoT().TempDir(), RunID: RunID(time.Now()), Connections: connections})
+		host, err := Open(OpenOptions{DataDir: GinkgoT().TempDir(), RunID: RunID(time.Now()), Connections: connections})
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(func() { Expect(host.Close(context.Background())).To(Succeed()) })
 

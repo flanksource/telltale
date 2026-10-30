@@ -3,16 +3,15 @@ package groups
 import (
 	"cmp"
 	"context"
-	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	clickyprocess "github.com/flanksource/clicky/process"
+	"github.com/flanksource/telltale/pkg/datadir"
 	"github.com/flanksource/telltale/pkg/tracing/process"
 )
 
@@ -288,15 +287,13 @@ func countOf(held []clickyprocess.Descriptor, holds func(clickyprocess.Descripto
 
 func keyOf(p process.Observed) string { return process.Key(p.Process) }
 
-// CatalogFile is the groups catalog a work directory keeps, at
-// .telltale/groups.yaml, or "" when it keeps none.
-func CatalogFile(workDir string) (string, error) {
-	path := filepath.Join(workDir, ".telltale", "groups.yaml")
-	if _, err := os.Stat(path); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return "", nil
-		}
+// CatalogFile is the groups.yaml of the first config dir that keeps one (the
+// working directory's .telltale, then the global config dir), or "" when none
+// does.
+func CatalogFile() (string, error) {
+	dirs, err := datadir.ConfigDirs()
+	if err != nil {
 		return "", fmt.Errorf("groups catalog: %w", err)
 	}
-	return path, nil
+	return datadir.ConfigFile(dirs, "groups.yaml")
 }

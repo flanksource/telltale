@@ -1,5 +1,5 @@
 // Package traces is a run's trace host: one persistent trace store per run,
-// at .telltale/traces/<runID>, serving every trace kind a fixture
+// at <data dir>/traces/<runID>, serving every trace kind a fixture
 // can arm (`traces:`) and the run-wide process capture behind the Processes
 // tab. The store outlives the run so a saved snapshot can reopen it; Prune
 // bounds how many runs are kept.
@@ -26,8 +26,8 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
 )
 
-// Dir is where a work dir keeps its runs' trace stores, one directory each.
-const Dir = ".telltale/traces"
+// Dir is where a data dir keeps its runs' trace stores, one directory each.
+const Dir = "traces"
 
 const (
 	// pollEvery is how often a capture's records are committed, and so how
@@ -66,7 +66,7 @@ func RunID(started time.Time) string {
 
 // OpenOptions name the run a Host is opened for.
 type OpenOptions struct {
-	WorkDir string
+	DataDir string
 	RunID   string
 	// Connections answer the connection references its captures name, such
 	// as sql_xevent's connection, before any connections table; nil answers
@@ -74,14 +74,14 @@ type OpenOptions struct {
 	Connections *store.Store
 }
 
-// Open creates the run's store under WorkDir/.telltale/traces. A RunID already
+// Open creates the run's store under DataDir/traces. A RunID already
 // taken by an earlier run in the same second gets a -2, -3, … suffix, so a
 // run never writes into another's store; RunID reports the name used.
 func Open(options OpenOptions) (*Host, error) {
-	if options.WorkDir == "" || options.RunID == "" {
-		return nil, fmt.Errorf("open trace store: a work dir and a run id are required (got %q, %q)", options.WorkDir, options.RunID)
+	if options.DataDir == "" || options.RunID == "" {
+		return nil, fmt.Errorf("open trace store: a data dir and a run id are required (got %q, %q)", options.DataDir, options.RunID)
 	}
-	root := filepath.Join(options.WorkDir, Dir)
+	root := filepath.Join(options.DataDir, Dir)
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, fmt.Errorf("open trace store: %w", err)
 	}
@@ -114,9 +114,9 @@ func (h *Host) RegisterDumper(dumper stacks.Dumper) error {
 	return h.dumpers.Register(dumper)
 }
 
-// StoreDir is where the run runID of workDir keeps its trace store.
-func StoreDir(workDir, runID string) string {
-	return filepath.Join(workDir, Dir, runID)
+// StoreDir is where the run runID of dataDir keeps its trace store.
+func StoreDir(dataDir, runID string) string {
+	return filepath.Join(dataDir, Dir, runID)
 }
 
 // Reopen opens the store a finished run left in dir, such as for a saved

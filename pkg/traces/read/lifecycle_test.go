@@ -18,7 +18,7 @@ var _ = Describe("live run manifest", func() {
 	It("still returns the final result after the run context is cancelled", func() {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		run, err := telltale.Start(ctx, telltale.StartOptions{WorkDir: GinkgoT().TempDir(), PID: os.Getpid(), Duration: 5 * time.Second, Traces: []telltale.TraceSpec{{Kind: "process_samples"}}})
+		run, err := telltale.Start(ctx, telltale.StartOptions{DataDir: GinkgoT().TempDir(), PID: os.Getpid(), Duration: 5 * time.Second, Traces: []telltale.TraceSpec{{Kind: "process_samples"}}})
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() { Expect(run.Stop()).To(Succeed()); _, err := run.Wait(); Expect(err).NotTo(HaveOccurred()) })
 		result, err := read.Wait(ctx, run, true, func(query.Row) error { cancel(); return nil })
@@ -27,7 +27,7 @@ var _ = Describe("live run manifest", func() {
 		Expect(result.Captures).To(ConsistOf(HaveField("Kind", "process_samples")))
 	})
 	It("publishes seq-zero refs at start and replaces them with the compatible final result", func() {
-		run, err := telltale.Start(context.Background(), telltale.StartOptions{WorkDir: GinkgoT().TempDir(), PID: os.Getpid(), Duration: time.Second, Traces: []telltale.TraceSpec{{Kind: "process_samples"}}})
+		run, err := telltale.Start(context.Background(), telltale.StartOptions{DataDir: GinkgoT().TempDir(), PID: os.Getpid(), Duration: time.Second, Traces: []telltale.TraceSpec{{Kind: "process_samples"}}})
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() { Expect(run.Stop()).To(Succeed()); _, err := run.Wait(); Expect(err).NotTo(HaveOccurred()) })
 		data, err := os.ReadFile(filepath.Join(run.Dir(), telltale.ManifestFile))

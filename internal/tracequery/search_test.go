@@ -15,9 +15,9 @@ var _ = Describe("trace search", func() {
 	var spans []Span
 	BeforeEach(func() {
 		spans = []Span{
-			{TraceID: "trace-a", SpanID: "root", Service: "checkout", Operation: "POST /orders", StartedAt: at, DurationMs: 100, Status: "Ok"},
-			{TraceID: "trace-a", SpanID: "child", ParentID: "root", Service: "payments", Operation: "charge", StartedAt: at.Add(10 * time.Millisecond), DurationMs: 40, Status: "Error", Attributes: map[string]any{"http.status_code": 500}},
-			{TraceID: "trace-b", SpanID: "other", Service: "checkout", Operation: "GET /orders", StartedAt: at.Add(time.Second), DurationMs: 10, Status: "Ok"},
+			{TraceID: "trace-a", SpanID: "root", Service: "checkout", Operation: "POST /orders", StartedAt: at, DurationMs: 100, Status: "ok"},
+			{TraceID: "trace-a", SpanID: "child", ParentID: "root", Service: "payments", Operation: "charge", StartedAt: at.Add(10 * time.Millisecond), DurationMs: 40, Status: "error", Attributes: map[string]any{"http.status_code": 500}},
+			{TraceID: "trace-b", SpanID: "other", Service: "checkout", Operation: "GET /orders", StartedAt: at.Add(time.Second), DurationMs: 10, Status: "ok"},
 		}
 	})
 	It("matches all span predicates on the same span but returns whole-trace duration and error totals", func() {

@@ -24,10 +24,7 @@ func ParseRequest(values url.Values) (scope Scope, q Query, aggregate Aggregate,
 	if err != nil {
 		return
 	}
-	scope = Scope{WorkDir: values.Get("workDir"), Run: values.Get("run"), Runs: requestList(values["runs"])}
-	if scope.WorkDir == "" {
-		scope.WorkDir = "."
-	}
+	scope = Scope{DataDir: values.Get("dataDir"), Run: values.Get("run"), Runs: requestList(values["runs"])}
 	q = Query{Filters: values["filter"], Search: values.Get("q"), Where: values.Get("where"), Cursor: values.Get("cursor")}
 	aggregate = Aggregate{Columns: requestList(values["stats"]), GroupBy: values.Get("groupBy"), View: values.Get("view")}
 	if err = parseRequestTimes(values, &scope, &q); err != nil {
@@ -66,7 +63,7 @@ func ParseRequest(values url.Values) (scope Scope, q Query, aggregate Aggregate,
 }
 
 func requestValues(values url.Values) (url.Values, error) {
-	aliases := map[string]string{"work-dir": "workDir", "after-seq": "afterSeq", "to-seq": "toSeq", "query": "q", "group-by": "groupBy"}
+	aliases := map[string]string{"data-dir": "dataDir", "after-seq": "afterSeq", "to-seq": "toSeq", "query": "q", "group-by": "groupBy"}
 	normalized := url.Values{}
 	for key, entries := range values {
 		if alias, ok := aliases[key]; ok {

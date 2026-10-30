@@ -8,7 +8,6 @@ import (
 
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/models"
-	"github.com/flanksource/telltale/internal/otelreceiver"
 )
 
 const maxSpans = 100000
@@ -18,13 +17,6 @@ func (s Service) Sources() ([]Source, error) {
 		return nil, fmt.Errorf("trace source catalog is not configured")
 	}
 	result := []Source{{ID: "records", Name: "Recorded traces", Type: "records"}}
-	exists, err := otelreceiver.StoreExists(s.WorkDir)
-	if err != nil {
-		return nil, err
-	}
-	if s.Received != nil || exists {
-		result = append(result, Source{ID: otelreceiver.SourceID, Name: "Received traces", Type: "recordstore"})
-	}
 	connections, err := s.Connections.ListConnections()
 	if err != nil {
 		return nil, err
@@ -54,20 +46,18 @@ func (s Service) Search(ctx context.Context, r Request) (SearchResult, error) {
 	if err != nil {
 		return SearchResult{}, err
 	}
-	if r.Source != "records" {
-		ids := []string{}
-		for _, span := range spans {
-			if matches(span, r) && !slices.Contains(ids, span.TraceID) {
-				ids = append(ids, span.TraceID)
-			}
+	ids := []string{}
+	for _, span := range spans {
+		if matches(span, r) && !slices.Contains(ids, span.TraceID) {
+			ids = append(ids, span.TraceID)
 		}
-		if len(ids) > 0 {
-			full := r
-			full.From, full.Until = "", ""
-			spans, err = s.load(ctx, full, ids)
-			if err != nil {
-				return SearchResult{}, err
-			}
+	}
+	if len(ids) > 0 {
+		full := r
+		full.From, full.Until = "", ""
+		spans, err = s.load(ctx, full, ids)
+		if err != nil {
+			return SearchResult{}, err
 		}
 	}
 	return Search(spans, r)
@@ -90,11 +80,8 @@ func (s Service) Trace(ctx context.Context, r Request, id string) (Detail, error
 }
 
 func (s Service) load(ctx context.Context, r Request, ids []string) ([]Span, error) {
-	if r.Source == otelreceiver.SourceID {
-		return s.received(ctx, r, ids)
-	}
 	if r.Source == "records" {
-		return s.recorded(ctx, r)
+		return s.recorded(ctx, r, ids)
 	}
 	if r.Source == "" {
 		return nil, fmt.Errorf("source is required")

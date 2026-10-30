@@ -13,14 +13,14 @@ import (
 // KeepRuns is how many runs' trace stores Prune keeps by default.
 const KeepRuns = 20
 
-// Prune removes every run store under workDir/.telltale/traces but the newest
-// keep, newest by run id (a run id is its start time). A work dir that has
+// Prune removes every run store under dataDir/traces but the newest
+// keep, newest by run id (a run id is its start time). A data dir that has
 // never traced a run has nothing to prune.
-func Prune(workDir string, keep int) error {
+func Prune(dataDir string, keep int) error {
 	if keep < 1 {
 		return fmt.Errorf("prune trace stores: keep must be at least 1, got %d", keep)
 	}
-	root := filepath.Join(workDir, Dir)
+	root := filepath.Join(dataDir, Dir)
 	entries, err := os.ReadDir(root)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil

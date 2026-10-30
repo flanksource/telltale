@@ -80,7 +80,7 @@ var _ = Describe("run records route", func() {
 	BeforeEach(func() {
 		feeding = &feed{rows: make(chan reading), ack: make(chan error, 1)}
 		dir := GinkgoT().TempDir()
-		host, err := traces.Open(traces.OpenOptions{WorkDir: dir, RunID: "run-http"})
+		host, err := traces.Open(traces.OpenOptions{DataDir: dir, RunID: "run-http"})
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() { Expect(host.Close(context.Background())).To(Succeed()) })
 		capture, err = host.Start(fixtureKind, json.RawMessage(`{}`))
@@ -269,7 +269,7 @@ var _ = Describe("run records route", func() {
 	})
 	It("reads and follows an in-process live run until it finishes", func() {
 		dir := GinkgoT().TempDir()
-		run, err := telltale.Start(context.Background(), telltale.StartOptions{WorkDir: dir, PID: os.Getpid(), Duration: time.Second, Traces: []telltale.TraceSpec{{Kind: "process_samples"}}})
+		run, err := telltale.Start(context.Background(), telltale.StartOptions{DataDir: dir, PID: os.Getpid(), Duration: time.Second, Traces: []telltale.TraceSpec{{Kind: "process_samples"}}})
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() { Expect(run.Stop()).To(Succeed()); _, err := run.Wait(); Expect(err).NotTo(HaveOccurred()) })
 		mux := http.NewServeMux()

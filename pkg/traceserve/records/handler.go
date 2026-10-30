@@ -18,8 +18,8 @@ import (
 )
 
 // Handler serves GET records routes with run and kind path values. The host
-// supplies the work directory; requests cannot choose another directory or run.
-func Handler(workDir string) http.Handler {
+// supplies the data directory; requests cannot choose another directory or run.
+func Handler(dataDir string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		values, err := recordValues(r)
 		if err != nil {
@@ -31,7 +31,7 @@ func Handler(workDir string) http.Handler {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		scope.WorkDir, scope.Run = workDir, r.PathValue("run")
+		scope.DataDir, scope.Run = dataDir, r.PathValue("run")
 		selected, err := selectRun(r.PathValue("kind"), scope)
 		if err != nil {
 			status := http.StatusBadRequest
@@ -106,7 +106,7 @@ func selectRun(kind string, scope read.Scope) (*read.Selection, error) {
 	if scope.Run == "" || strings.ContainsAny(scope.Run, "/\\") {
 		return nil, fmt.Errorf("invalid run %q", scope.Run)
 	}
-	run, live, err := telltale.Live(scope.WorkDir, scope.Run)
+	run, live, err := telltale.Live(scope.DataDir, scope.Run)
 	if err != nil {
 		return nil, err
 	}

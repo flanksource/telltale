@@ -9,9 +9,8 @@ import (
 	"time"
 )
 
-func isError(status string) bool {
-	return slices.Contains([]string{"error", "2", "true"}, strings.ToLower(status))
-}
+// isError reads the canonical status every span source normalizes to.
+func isError(status string) bool { return status == "error" }
 
 func duration(value string) (float64, error) {
 	if value == "" {

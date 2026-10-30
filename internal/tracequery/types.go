@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/flanksource/commons-db/connection/store"
-	"github.com/flanksource/telltale/internal/otelreceiver"
 )
 
 var ErrTraceNotFound = errors.New("trace not found")
@@ -84,7 +83,6 @@ type Detail struct {
 }
 
 type Service struct {
-	WorkDir     string
+	DataDir     string
 	Connections *store.Store
-	Received    *otelreceiver.Store
 }

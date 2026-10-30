@@ -1,23 +1,27 @@
 package tracequery
 
 import (
-	"strings"
-
-	imported "github.com/flanksource/telltale/pkg/tracing/opensearch"
+	"github.com/flanksource/telltale/internal/otelreceiver"
+	sdk "github.com/flanksource/telltale/sdk"
 )
 
-func fromImported(span imported.Span) Span {
-	attributes := map[string]any{}
-	resource := map[string]any{}
-	for key, value := range span.Attributes {
-		if name, ok := strings.CutPrefix(key, "resource."); ok {
-			resource[strings.TrimPrefix(name, "attributes.")] = value
-		} else {
-			attributes[strings.TrimPrefix(key, "tag.")] = value
+// fromSpan is the query view of a stored span, whichever source recorded it.
+// A received span's attributes and resource come from its native OTLP
+// request, which keeps them exact, and withOTLP adds that request itself.
+func fromSpan(span sdk.Span, withOTLP bool) (Span, error) {
+	span, err := otelreceiver.RestoreNative(span)
+	if err != nil {
+		return Span{}, err
+	}
+	result := Span{
+		TraceID: span.TraceID, SpanID: span.SpanID, ParentID: span.ParentID, Service: span.Service, Operation: span.Operation,
+		Kind: span.Kind, StartedAt: span.StartedAt, DurationMs: span.DurationMs, Status: span.Status,
+		Attributes: span.Attributes, Resource: span.Resource,
+	}
+	if withOTLP && span.Native != "" {
+		if result.OTLP, err = otelreceiver.NativeJSON(span); err != nil {
+			return Span{}, err
 		}
 	}
-	if span.Service != "" {
-		resource["service.name"] = span.Service
-	}
-	return Span{TraceID: span.TraceID, SpanID: span.SpanID, ParentID: span.ParentID, Service: span.Service, Operation: span.Operation, StartedAt: span.Timestamp, DurationMs: span.DurationMs, Status: span.Status, Attributes: attributes, Resource: resource}
+	return result, nil
 }

@@ -14,7 +14,7 @@ import (
 )
 
 type Scope struct {
-	WorkDir string
+	DataDir string
 	Run     string
 	Runs    []string
 	Since   time.Time
@@ -61,8 +61,8 @@ func Resolve(kind string, scope Scope) (_ *Selection, err error) {
 	if scope.Run != "" && len(scope.Runs) > 0 {
 		return nil, fmt.Errorf("--run and --runs are mutually exclusive")
 	}
-	if scope.WorkDir == "" {
-		scope.WorkDir = "."
+	if scope.DataDir == "" {
+		return nil, fmt.Errorf("read %s: a data dir is required", kind)
 	}
 	ids := scope.Runs
 	if scope.Run != "" {
@@ -74,7 +74,7 @@ func Resolve(kind string, scope Scope) (_ *Selection, err error) {
 		if !scope.Since.IsZero() {
 			limit = 0
 		}
-		runs, err = telltale.List(telltale.ListOptions{WorkDir: scope.WorkDir, Kind: kind, Since: scope.Since, Limit: limit})
+		runs, err = telltale.List(telltale.ListOptions{DataDir: scope.DataDir, Kind: kind, Since: scope.Since, Limit: limit})
 		if err != nil {
 			return nil, err
 		}
@@ -85,11 +85,11 @@ func Resolve(kind string, scope Scope) (_ *Selection, err error) {
 				return nil, fmt.Errorf("run %q selected twice", id)
 			}
 			seen[id] = true
-			info, err := telltale.Get(telltale.GetOptions{WorkDir: scope.WorkDir, RunID: id})
+			info, err := telltale.Get(telltale.GetOptions{DataDir: scope.DataDir, RunID: id})
 			if err != nil {
 				return nil, err
 			}
-			if !scope.Since.IsZero() && info.StartedAt.Before(scope.Since) {
+			if !scope.Since.IsZero() && !info.Standing && info.StartedAt.Before(scope.Since) {
 				continue
 			}
 			runs = append(runs, info)
@@ -114,7 +114,7 @@ func Resolve(kind string, scope Scope) (_ *Selection, err error) {
 		if len(refs) == 0 {
 			return nil, fmt.Errorf("run %s has no %s capture", run.RunID, kind)
 		}
-		runtime, closeStore, err := traces.Reopen(traces.StoreDir(scope.WorkDir, run.RunID))
+		runtime, closeStore, err := telltale.Reopen(scope.DataDir, run.RunID)
 		if err != nil {
 			return nil, err
 		}
