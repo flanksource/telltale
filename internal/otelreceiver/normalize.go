@@ -20,7 +20,7 @@ type spanContext struct {
 }
 
 func normalize(request ptraceotlp.ExportRequest, options Options) (batch, error) {
-	result := batch{Spans: []Span{}}
+	result := batch{Spans: []sdk.Span{}}
 	if request.Traces().SpanCount() > options.MaxSpans {
 		return result, fmt.Errorf("%w: at most %d spans", ErrLimit, options.MaxSpans)
 	}
@@ -48,10 +48,10 @@ func normalize(request ptraceotlp.ExportRequest, options Options) (batch, error)
 	return result, nil
 }
 
-func convertSpan(input spanContext) (Span, error) {
+func convertSpan(input spanContext) (sdk.Span, error) {
 	span := input.span
 	if span.TraceID().IsEmpty() || span.SpanID().IsEmpty() || span.StartTimestamp() == 0 || span.EndTimestamp() < span.StartTimestamp() || uint64(span.EndTimestamp()) > math.MaxInt64 || span.SpanID() == span.ParentSpanID() {
-		return Span{}, fmt.Errorf("invalid span: nonzero trace/span IDs, valid timestamps and a distinct parent are required")
+		return sdk.Span{}, fmt.Errorf("invalid span: nonzero trace/span IDs, valid timestamps and a distinct parent are required")
 	}
 	native := ptraceotlp.NewExportRequest()
 	resource := native.Traces().ResourceSpans().AppendEmpty()
@@ -63,41 +63,38 @@ func convertSpan(input spanContext) (Span, error) {
 	span.CopyTo(scope.Spans().AppendEmpty())
 	span = scope.Spans().At(0)
 	if err := redact(spanContext{resource: resource, scope: scope, span: span}); err != nil {
-		return Span{}, err
-	}
-	service := ""
-	if value, found := resource.Resource().Attributes().Get("service.name"); found {
-		if value.Type() != pcommon.ValueTypeStr {
-			return Span{}, fmt.Errorf("invalid span: service.name must be a string")
-		}
-		service = value.Str()
+		return sdk.Span{}, err
 	}
 	encoded, err := native.MarshalProto()
 	if err != nil {
-		return Span{}, fmt.Errorf("encode OTLP span: %w", err)
+		return sdk.Span{}, fmt.Errorf("encode OTLP span: %w", err)
 	}
 	jsonData, err := native.MarshalJSON()
 	if err != nil {
-		return Span{}, err
+		return sdk.Span{}, err
 	}
 	digest, err := nativeDigest(jsonData)
 	if err != nil {
-		return Span{}, err
+		return sdk.Span{}, err
 	}
 	parent := ""
 	if !span.ParentSpanID().IsEmpty() {
 		parent = span.ParentSpanID().String()
 	}
-	return Span{
-		Key:     span.TraceID().String() + "/" + span.SpanID().String(),
+	record := sdk.Span{
 		TraceID: span.TraceID().String(), SpanID: span.SpanID().String(), ParentID: parent,
-		Service: service, Operation: span.Name(), Kind: span.Kind().String(),
+		Operation: span.Name(), Kind: span.Kind().String(),
 		StartedAt:  span.StartTimestamp().AsTime(),
 		DurationMs: float64(span.EndTimestamp()-span.StartTimestamp()) / float64(time.Millisecond),
 		Status:     span.Status().Code().String(),
 		Attributes: span.Attributes().AsRaw(), Resource: resource.Resource().Attributes().AsRaw(),
 		Native: base64.StdEncoding.EncodeToString(encoded), Digest: digest,
-	}, nil
+		Source: sdk.SpanSource{Type: sdk.SpanSourceOTLP},
+	}
+	if err := record.Normalize(); err != nil {
+		return sdk.Span{}, fmt.Errorf("invalid span: %w", err)
+	}
+	return record, nil
 }
 
 func redact(input spanContext) error {

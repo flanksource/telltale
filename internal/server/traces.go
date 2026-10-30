@@ -1,5 +1,5 @@
 package server
 
-// TracesMount is where the server mounts the runs of its work dir
+// TracesMount is where the server mounts the runs of its data dir
 // (telltale.Handler).
 const TracesMount = "/api/traces"

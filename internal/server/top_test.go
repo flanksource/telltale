@@ -20,7 +20,7 @@ var _ = Describe("the live process groups", func() {
 	var top *server.TopHandler
 
 	BeforeEach(func() {
-		top = server.NewTopHandler(GinkgoT().TempDir())
+		top = server.NewTopHandler()
 		DeferCleanup(top.Close)
 	})
 

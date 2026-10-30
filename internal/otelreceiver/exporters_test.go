@@ -73,7 +73,7 @@ var _ = Describe("standard SDK exporters", func() {
 		Expect(spans).To(HaveLen(2))
 		Expect(spans).To(ContainElement(And(HaveField("Operation", "charge"), HaveField("ParentID", root.SpanContext().SpanID().String()))))
 		for _, span := range spans {
-			native, err := span.NativeJSON()
+			native, err := NativeJSON(span)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(string(native)).To(ContainSubstring("example-sdk"))
 			Expect(string(native)).NotTo(ContainSubstring("private-event-value"))

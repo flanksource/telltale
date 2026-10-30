@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -15,6 +16,8 @@ import (
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/internal/otelreceiver"
 	"github.com/flanksource/telltale/internal/rules"
+	"github.com/flanksource/telltale/pkg/datadir"
+	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/webapp"
 	"github.com/spf13/cobra"
 )
@@ -27,8 +30,11 @@ type Options struct {
 	Dev          bool
 	UIPort       int
 	WebDirectory string
-	// WorkDir holds the run stores `telltale trace run` recorded.
-	WorkDir      string
+	// DataDir is the cache root holding the run stores, the OTLP receiver's
+	// store and the rule event journal.
+	DataDir string
+	// ConfigDirs hold the agent tokens and groups catalog, first one winning.
+	ConfigDirs   []datadir.ConfigDir
 	RulesFile    string
 	EnforceRules bool
 	OTLP         otelreceiver.Options
@@ -38,6 +44,9 @@ type Options struct {
 func Run(ctx context.Context, options Options) (err error) {
 	if options.Root == nil {
 		return fmt.Errorf("command root is required")
+	}
+	if options.DataDir == "" || len(options.ConfigDirs) == 0 {
+		return fmt.Errorf("serve: a data dir and config dirs are required (got %q, %v)", options.DataDir, options.ConfigDirs)
 	}
 	if options.Port < 0 || options.Port > 65535 || options.UIPort < 1 || options.UIPort > 65535 {
 		return fmt.Errorf("port must be 0..65535 and ui-port must be 1..65535")
@@ -49,7 +58,7 @@ func Run(ctx context.Context, options Options) (err error) {
 	}
 	var monitor *rules.Service
 	if options.RulesFile != "" {
-		monitor, err = rules.Open(options.WorkDir, options.RulesFile, options.EnforceRules)
+		monitor, err = rules.Open(options.DataDir, options.RulesFile, options.EnforceRules)
 		if err != nil {
 			return err
 		}
@@ -75,15 +84,15 @@ func Run(ctx context.Context, options Options) (err error) {
 	if err != nil {
 		return err
 	}
-	traceMount, err := telltale.NewHandler(telltale.HandlerOptions{WorkDir: options.WorkDir, Prefix: TracesMount, Connections: connections})
+	traceMount, err := telltale.NewHandler(telltale.HandlerOptions{DataDir: options.DataDir, Prefix: TracesMount, Connections: connections})
 	if err != nil {
 		return err
 	}
 	defer func() { err = errors.Join(err, traceMount.Close()) }()
-	top := NewTopHandler(options.WorkDir)
+	top := NewTopHandler()
 	requireAPIAuth := !listener.Addr().(*net.TCPAddr).IP.IsLoopback()
 	defer func() { err = errors.Join(err, top.Close()) }()
-	handlerOptions := HandlerOptions{Root: options.Root, Version: options.Version, WorkDir: options.WorkDir, RequireAPIAuth: requireAPIAuth, Traces: traceMount, Top: top, Rules: monitor, Connections: connections, Received: telemetry.store, OTLP: telemetry.httpHandler(requireAPIAuth), SelfTrace: telemetry.tracer}
+	handlerOptions := HandlerOptions{Root: options.Root, Version: options.Version, DataDir: options.DataDir, ConfigDirs: options.ConfigDirs, RequireAPIAuth: requireAPIAuth, Traces: traceMount, Top: top, Rules: monitor, Connections: connections, OTLP: telemetry.httpHandler(requireAPIAuth), SelfTrace: telemetry.tracer}
 	var handler http.Handler
 	if options.Dev {
 		var vite *viteServer
@@ -99,6 +108,20 @@ func Run(ctx context.Context, options Options) (err error) {
 		return err
 	}
 	telemetry.start(cancel)
+	dataDir, err := filepath.Abs(options.DataDir)
+	if err != nil {
+		return fmt.Errorf("resolve data dir %q: %w", options.DataDir, err)
+	}
+	dirs := storageDirs{Runs: filepath.Join(dataDir, traces.Dir), Config: options.ConfigDirs, Connections: connections.Layers()}
+	if telemetry.store != nil {
+		dirs.Spans = otelreceiver.StorePath(dataDir)
+	}
+	if monitor != nil {
+		dirs.RuleEvents = rules.JournalPath(dataDir)
+	}
+	if _, err := fmt.Fprint(options.Root.OutOrStdout(), dirs); err != nil {
+		return fmt.Errorf("write storage directories: %w", err)
+	}
 	if telemetry.listener != nil {
 		endpoints := otlpEndpoints{
 			GRPC:     telemetry.listener.Addr(),

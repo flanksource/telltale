@@ -12,6 +12,7 @@ import (
 	"github.com/flanksource/telltale/internal/otelreceiver"
 	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/credentials/apitoken"
+	"github.com/flanksource/telltale/pkg/datadir"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"google.golang.org/grpc"
@@ -23,10 +24,10 @@ var _ = Describe("local exporter integration", func() {
 		GinkgoT().Setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "https://example.invalid:2")
 		dir := GinkgoT().TempDir()
 		options := otelreceiver.DefaultOptions()
-		store, err := otelreceiver.OpenStore(otelreceiver.StoreOptions{WorkDir: dir, Retention: options.Retention, Writable: true})
+		store, err := otelreceiver.OpenStore(otelreceiver.StoreOptions{DataDir: dir, Retention: options.Retention, Writable: true})
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(store.Close)
-		receiver, err := otelreceiver.New(otelreceiver.Config{Store: store, Options: options, Verifier: apitoken.NewVerifier(agentclient.NewTokenStore(dir).Lookup)})
+		receiver, err := otelreceiver.New(otelreceiver.Config{Store: store, Options: options, Verifier: apitoken.NewVerifier(agentclient.NewTokenStore([]datadir.ConfigDir{{Name: datadir.ConfigGlobal, Dir: dir}}).Lookup)})
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() { Expect(receiver.Stop(context.Background())).To(Succeed()) })
 		listener, err := net.Listen("tcp", "127.0.0.1:0")

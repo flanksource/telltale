@@ -34,31 +34,26 @@ func openTelemetry(ctx context.Context, options Options) (_ *telemetry, err erro
 			err = errors.Join(err, t.close())
 		}
 	}()
-	exists, err := otelreceiver.StoreExists(options.WorkDir)
-	if err != nil || (!options.OTLP.Enabled && !exists) {
-		return t, err
+	// Without --otlp the server writes no spans; the receiver pseudo-run reads a
+	// store an earlier receiver left (telltale.Reopen).
+	if !options.OTLP.Enabled {
+		return t, nil
 	}
-	if options.OTLP.Enabled {
-		if err := options.OTLP.Validate(); err != nil {
-			return nil, err
-		}
-		t.listener, err = net.Listen("tcp", options.OTLP.GRPCListen)
-		if err != nil {
-			return nil, fmt.Errorf("listen OTLP gRPC: %w", err)
-		}
-		if options.SelfTrace && !t.listener.Addr().(*net.TCPAddr).IP.IsLoopback() {
-			return nil, fmt.Errorf("self-trace requires a loopback OTLP gRPC listener")
-		}
+	if err := options.OTLP.Validate(); err != nil {
+		return nil, err
 	}
-	retention := otelreceiver.DefaultOptions().Retention
-	if options.OTLP.Enabled {
-		retention = options.OTLP.Retention
+	t.listener, err = net.Listen("tcp", options.OTLP.GRPCListen)
+	if err != nil {
+		return nil, fmt.Errorf("listen OTLP gRPC: %w", err)
 	}
-	t.store, err = otelreceiver.OpenStore(otelreceiver.StoreOptions{WorkDir: options.WorkDir, Retention: retention, Writable: options.OTLP.Enabled})
-	if err != nil || !options.OTLP.Enabled {
-		return t, err
+	if options.SelfTrace && !t.listener.Addr().(*net.TCPAddr).IP.IsLoopback() {
+		return nil, fmt.Errorf("self-trace requires a loopback OTLP gRPC listener")
 	}
-	verifier := apitoken.NewVerifier(agentclient.NewTokenStore(options.WorkDir).Lookup)
+	t.store, err = otelreceiver.OpenStore(otelreceiver.StoreOptions{DataDir: options.DataDir, Retention: options.OTLP.Retention, Writable: true})
+	if err != nil {
+		return nil, err
+	}
+	verifier := apitoken.NewVerifier(agentclient.NewTokenStore(options.ConfigDirs).Lookup)
 	t.receiver, err = otelreceiver.New(otelreceiver.Config{Store: t.store, Options: options.OTLP, Verifier: verifier})
 	if err != nil {
 		return nil, err

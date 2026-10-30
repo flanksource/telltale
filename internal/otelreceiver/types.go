@@ -8,6 +8,7 @@ import (
 	"math"
 	"time"
 
+	sdk "github.com/flanksource/telltale/sdk"
 	"go.opentelemetry.io/collector/pdata/ptrace/ptraceotlp"
 )
 
@@ -38,39 +39,39 @@ func (o Options) Validate() error {
 	return nil
 }
 
-type Span struct {
-	Key        string         `json:"key" filter:"exact"`
-	TraceID    string         `json:"traceId" filter:"exact"`
-	SpanID     string         `json:"spanId" filter:"exact"`
-	ParentID   string         `json:"parentId,omitempty"`
-	Service    string         `json:"service" filter:"terms"`
-	Operation  string         `json:"operation" filter:"terms"`
-	Kind       string         `json:"kind"`
-	StartedAt  time.Time      `json:"startedAt"`
-	DurationMs float64        `json:"durationMs"`
-	Status     string         `json:"status" filter:"terms"`
-	Attributes map[string]any `json:"-"`
-	Resource   map[string]any `json:"-"`
-	Native     string         `json:"native" filter:"-" pretty:"hide"`
-	Digest     string         `json:"digest" filter:"-" pretty:"hide"`
-	ReceivedAt time.Time      `json:"receivedAt" pretty:"hide"`
-}
-
 type batch struct {
-	Spans    []Span
+	Spans    []sdk.Span
 	Rejected int64
 	Reason   string
 }
 
-func (s Span) NativeJSON() (json.RawMessage, error) {
-	request, err := s.nativeRequest()
+// RestoreNative rebuilds a received span's attributes and resource from its
+// native OTLP request, which keeps the 64-bit integers its stored JSON columns
+// round. A span without a native request is returned as stored.
+func RestoreNative(s sdk.Span) (sdk.Span, error) {
+	if s.Native == "" {
+		return s, nil
+	}
+	request, err := nativeRequest(s)
+	if err != nil {
+		return sdk.Span{}, err
+	}
+	resource := request.Traces().ResourceSpans().At(0)
+	s.Resource = resource.Resource().Attributes().AsRaw()
+	s.Attributes = resource.ScopeSpans().At(0).Spans().At(0).Attributes().AsRaw()
+	return s, nil
+}
+
+// NativeJSON is the redacted OTLP request a received span was stored with.
+func NativeJSON(s sdk.Span) (json.RawMessage, error) {
+	request, err := nativeRequest(s)
 	if err != nil {
 		return nil, err
 	}
 	return request.MarshalJSON()
 }
 
-func (s Span) nativeRequest() (ptraceotlp.ExportRequest, error) {
+func nativeRequest(s sdk.Span) (ptraceotlp.ExportRequest, error) {
 	encoded, err := base64.StdEncoding.DecodeString(s.Native)
 	if err != nil {
 		return ptraceotlp.ExportRequest{}, fmt.Errorf("decode stored OTLP span %s: %w", s.Key, err)

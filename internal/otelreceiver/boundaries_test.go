@@ -14,6 +14,7 @@ import (
 
 	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/credentials/apitoken"
+	"github.com/flanksource/telltale/pkg/datadir"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.opentelemetry.io/collector/pdata/ptrace/ptraceotlp"
@@ -27,7 +28,7 @@ import (
 var _ = Describe("receiver boundaries", func() {
 	It("enforces API scope and revocation in both transports", func() {
 		receiver, store := testReceiver(DefaultOptions())
-		tokens := agentclient.NewTokenStore(store.options.WorkDir)
+		tokens := agentclient.NewTokenStore([]datadir.ConfigDir{{Name: datadir.ConfigGlobal, Dir: store.options.DataDir}})
 		api, err := tokens.Mint("exporter", apitoken.ScopeAPI)
 		Expect(err).NotTo(HaveOccurred())
 		agent, err := tokens.Mint("agent", apitoken.ScopeAgent)
@@ -64,7 +65,7 @@ var _ = Describe("receiver boundaries", func() {
 		record.RevokedAt = &now
 		encoded, err := json.Marshal(record)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(os.WriteFile(filepath.Join(store.options.WorkDir, ".telltale", "agent-tokens", api.ID+".json"), encoded, 0600)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(store.options.DataDir, "agent-tokens", api.ID+".json"), encoded, 0600)).To(Succeed())
 		ctx := metadata.AppendToOutgoingContext(context.Background(), "authorization", "Bearer "+api.Secret.Value())
 		_, err = client.Export(ctx, exampleRequest())
 		Expect(status.Code(err)).To(Equal(codes.Unauthenticated))

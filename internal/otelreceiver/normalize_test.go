@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	sdk "github.com/flanksource/telltale/sdk"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -58,8 +59,12 @@ var _ = Describe("OTLP span conversion", func() {
 		Expect(converted.Rejected).To(BeZero())
 		Expect(converted.Spans).To(HaveLen(1))
 		span := converted.Spans[0]
-		Expect(span).To(SatisfyAll(HaveField("Service", "checkout"), HaveField("DurationMs", float64(120)), HaveField("Resource", HaveKeyWithValue("replicas", int64(2)))))
-		native, err := span.NativeJSON()
+		Expect(span).To(SatisfyAll(
+			HaveField("Key", "01000000000000000000000000000000/0200000000000000"), HaveField("Service", "checkout"), HaveField("Operation", "POST /orders"),
+			HaveField("Status", "unset"), HaveField("DurationMs", float64(120)), HaveField("Source", sdk.SpanSource{Type: sdk.SpanSourceOTLP}),
+			HaveField("Resource", HaveKeyWithValue("replicas", int64(2))),
+		))
+		native, err := NativeJSON(span)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(native)).NotTo(ContainSubstring("private-"))
 		decoded := ptraceotlp.NewExportRequest()

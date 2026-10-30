@@ -12,12 +12,12 @@ import (
 	"github.com/flanksource/commons-db/cmd/query/connections"
 	"github.com/flanksource/commons-db/connection/store"
 	"github.com/flanksource/telltale"
-	"github.com/flanksource/telltale/internal/otelreceiver"
 	"github.com/flanksource/telltale/internal/rules"
 	"github.com/flanksource/telltale/internal/selftrace"
 	"github.com/flanksource/telltale/internal/tracequery"
 	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/credentials/apitoken"
+	"github.com/flanksource/telltale/pkg/datadir"
 	"github.com/flanksource/telltale/pkg/traceserve/records"
 	"github.com/spf13/cobra"
 )
@@ -26,7 +26,8 @@ type HandlerOptions struct {
 	Assets         fs.FS
 	Root           *cobra.Command
 	Version        string
-	WorkDir        string
+	DataDir        string
+	ConfigDirs     []datadir.ConfigDir
 	RequireAPIAuth bool
 	// Traces serves the run stores at TracesMount.
 	Traces http.Handler
@@ -34,7 +35,6 @@ type HandlerOptions struct {
 	Top         http.Handler
 	Rules       *rules.Service
 	Connections *store.Store
-	Received    *otelreceiver.Store
 	OTLP        http.Handler
 	SelfTrace   *selftrace.Tracer
 }
@@ -73,9 +73,9 @@ func routes(options HandlerOptions, ui http.Handler) (http.Handler, error) {
 	rpc.NewSwaggerServer(&rpc.ServeConfig{Version: options.Version, Executor: &rpc.ExecutorConfig{Enabled: true}}, options.Root, nil).
 		RegisterExecutionRoutes(route.NewRouter(installer))
 	root.Handle("/api/v1/agents/install/java", http.NewCrossOriginProtection().Handler(installer))
-	hub := agentclient.NewHub(agentclient.Default, agentclient.NewTokenStore(options.WorkDir))
+	hub := agentclient.NewHub(agentclient.Default, agentclient.NewTokenStore(options.ConfigDirs))
 	root.HandleFunc("/api/agents", hub.List)
-	otel := otelHandler(tracequery.Service{WorkDir: options.WorkDir, Connections: options.Connections, Received: options.Received})
+	otel := otelHandler(tracequery.Service{DataDir: options.DataDir, Connections: options.Connections})
 	root.Handle("/api/otel", otel)
 	root.Handle("/api/otel/", otel)
 	root.Handle("/api/v1/connection", connectionAPI)
@@ -84,7 +84,7 @@ func routes(options HandlerOptions, ui http.Handler) (http.Handler, error) {
 	root.Handle("/api/agents/connect", hub)
 	root.Handle(TracesMount, options.Traces)
 	root.Handle(TracesMount+"/", options.Traces)
-	root.Handle("GET "+TracesMount+"/{run}/traces/{kind}/records", records.Handler(options.WorkDir))
+	root.Handle("GET "+TracesMount+"/{run}/traces/{kind}/records", records.Handler(options.DataDir))
 	root.Handle(TopMount, options.Top)
 	root.Handle(TopProcessesPath, options.Top)
 	root.Handle(TopFacetsPath, options.Top)

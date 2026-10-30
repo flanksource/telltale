@@ -12,13 +12,14 @@ import (
 	"github.com/flanksource/clicky/task"
 	cctx "github.com/flanksource/commons/context"
 	"github.com/flanksource/telltale/internal/otelreceiver"
+	"github.com/flanksource/telltale/pkg/datadir"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("self-trace lifecycle", func() {
 	It("drains an active HTTP handler before flushing its span and stopping the receiver", func() {
-		options := Options{WorkDir: GinkgoT().TempDir(), Version: "test", SelfTrace: true, OTLP: otelreceiver.DefaultOptions()}
+		options := Options{DataDir: GinkgoT().TempDir(), ConfigDirs: []datadir.ConfigDir{{Name: datadir.ConfigGlobal, Dir: GinkgoT().TempDir()}}, Version: "test", SelfTrace: true, OTLP: otelreceiver.DefaultOptions()}
 		options.OTLP.GRPCListen = "127.0.0.1:0"
 		telemetry, err := openTelemetry(context.Background(), options)
 		Expect(err).NotTo(HaveOccurred())
@@ -71,7 +72,7 @@ var _ = Describe("self-trace lifecycle", func() {
 		_, err = run.GetResult()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(telemetry.close()).To(Succeed())
-		store, err := otelreceiver.OpenStore(otelreceiver.StoreOptions{WorkDir: options.WorkDir, Retention: options.OTLP.Retention})
+		store, err := otelreceiver.OpenStore(otelreceiver.StoreOptions{DataDir: options.DataDir, Retention: options.OTLP.Retention})
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(store.Close)
 		spans, err := store.Read(context.Background(), otelreceiver.ReadOptions{})
@@ -79,11 +80,11 @@ var _ = Describe("self-trace lifecycle", func() {
 		Expect(spans).To(HaveExactElements(And(HaveField("Operation", "GET /last"), HaveField("Service", "telltale"))))
 	})
 	It("refuses a wildcard self-export listener before creating storage", func() {
-		options := Options{WorkDir: GinkgoT().TempDir(), SelfTrace: true, OTLP: otelreceiver.DefaultOptions()}
+		options := Options{DataDir: GinkgoT().TempDir(), ConfigDirs: []datadir.ConfigDir{{Name: datadir.ConfigGlobal, Dir: GinkgoT().TempDir()}}, SelfTrace: true, OTLP: otelreceiver.DefaultOptions()}
 		options.OTLP.GRPCListen = "0.0.0.0:0"
 		_, err := openTelemetry(context.Background(), options)
 		Expect(err).To(MatchError(ContainSubstring("requires a loopback")))
-		exists, err := otelreceiver.StoreExists(options.WorkDir)
+		exists, err := otelreceiver.StoreExists(options.DataDir)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(exists).To(BeFalse())
 	})

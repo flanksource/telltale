@@ -44,7 +44,6 @@ const topIdle = 30 * time.Second
 // TopHandler serves TopMount, one Top per choice of all and net, each read
 // every groups.DefaultInterval while asked for.
 type TopHandler struct {
-	workDir string
 	sampler *process.Sampler
 	every   time.Duration
 	mu      sync.Mutex
@@ -56,10 +55,10 @@ type topChoice struct {
 	all, net bool
 }
 
-// NewTopHandler serves the groups of the host, with the rules of workDir's
-// .telltale/groups.yaml applied over the built-in ones.
-func NewTopHandler(workDir string) *TopHandler {
-	return &TopHandler{workDir: workDir, sampler: process.NewSampler(), every: groups.DefaultInterval, tops: map[topChoice]*liveTop{}}
+// NewTopHandler serves the groups of the host, with the rules of the
+// groups.yaml its config dirs keep applied over the built-in ones.
+func NewTopHandler() *TopHandler {
+	return &TopHandler{sampler: process.NewSampler(), every: groups.DefaultInterval, tops: map[topChoice]*liveTop{}}
 }
 
 func (h *TopHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -172,7 +171,7 @@ func (h *TopHandler) live(choice topChoice) (*liveTop, error) {
 	if live, ok := h.tops[choice]; ok {
 		return live, nil
 	}
-	catalog, err := groups.CatalogFile(h.workDir)
+	catalog, err := groups.CatalogFile()
 	if err != nil {
 		return nil, err
 	}

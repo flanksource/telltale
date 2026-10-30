@@ -1,9 +1,7 @@
 package otelreceiver
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -11,21 +9,32 @@ import (
 	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/telltale/pkg/traces/read"
 	"github.com/flanksource/telltale/pkg/tracing"
+	"github.com/flanksource/telltale/pkg/tracing/spans"
+	sdk "github.com/flanksource/telltale/sdk"
 )
 
-func (s *Store) Read(ctx context.Context, options ReadOptions) ([]Span, error) {
+func (s *Store) Read(ctx context.Context, options ReadOptions) ([]sdk.Span, error) {
 	s.lifecycle.RLock()
 	defer s.lifecycle.RUnlock()
 	if s.closed {
 		return nil, fmt.Errorf("OTLP store is closed")
 	}
-	return s.read(ctx, options)
+	stored, err := s.read(ctx, options)
+	if err != nil {
+		return nil, err
+	}
+	for i := range stored {
+		if stored[i], err = RestoreNative(stored[i]); err != nil {
+			return nil, err
+		}
+	}
+	return stored, nil
 }
 
-func (s *Store) read(ctx context.Context, options ReadOptions) ([]Span, error) {
+func (s *Store) read(ctx context.Context, options ReadOptions) ([]sdk.Span, error) {
 	_, err := s.results.Backend.Meta(ctx, stream)
 	if errors.Is(err, recordstore.ErrNotFound) {
-		return []Span{}, nil
+		return []sdk.Span{}, nil
 	}
 	if err != nil {
 		return nil, err
@@ -40,33 +49,20 @@ func (s *Store) read(ctx context.Context, options ReadOptions) ([]Span, error) {
 	if limit <= 0 {
 		limit = 100000
 	}
-	refs := []read.Ref{{Runtime: s.runtime, TraceRef: tracing.TraceRef{Kind: kind, Stream: stream}}}
-	spans := []Span{}
+	refs := []read.Ref{{Runtime: s.runtime, TraceRef: tracing.TraceRef{Kind: spans.Kind, Stream: stream}}}
+	result := []sdk.Span{}
 	for row, err := range read.Rows(ctx, refs, query) {
 		if err != nil {
 			return nil, err
 		}
-		encoded, err := json.Marshal(row)
+		span, err := spans.Decode(row)
 		if err != nil {
 			return nil, err
 		}
-		decoder := json.NewDecoder(bytes.NewReader(encoded))
-		decoder.UseNumber()
-		var span Span
-		if err := decoder.Decode(&span); err != nil {
-			return nil, err
-		}
-		native, err := span.nativeRequest()
-		if err != nil {
-			return nil, err
-		}
-		resource := native.Traces().ResourceSpans().At(0)
-		span.Resource = resource.Resource().Attributes().AsRaw()
-		span.Attributes = resource.ScopeSpans().At(0).Spans().At(0).Attributes().AsRaw()
-		spans = append(spans, span)
-		if len(spans) > limit {
+		result = append(result, span)
+		if len(result) > limit {
 			return nil, fmt.Errorf("received OTLP spans exceed %d; narrow the time window", limit)
 		}
 	}
-	return spans, nil
+	return result, nil
 }

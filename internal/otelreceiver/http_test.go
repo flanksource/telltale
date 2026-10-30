@@ -10,6 +10,7 @@ import (
 
 	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/credentials/apitoken"
+	"github.com/flanksource/telltale/pkg/datadir"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -18,10 +19,10 @@ import (
 
 func testReceiver(options Options) (*Receiver, *Store) {
 	GinkgoHelper()
-	store, err := OpenStore(StoreOptions{WorkDir: GinkgoT().TempDir(), Retention: options.Retention, Writable: true})
+	store, err := OpenStore(StoreOptions{DataDir: GinkgoT().TempDir(), Retention: options.Retention, Writable: true})
 	Expect(err).NotTo(HaveOccurred())
 	DeferCleanup(store.Close)
-	receiver, err := New(Config{Store: store, Options: options, Verifier: apitoken.NewVerifier(agentclient.NewTokenStore(store.options.WorkDir).Lookup)})
+	receiver, err := New(Config{Store: store, Options: options, Verifier: apitoken.NewVerifier(agentclient.NewTokenStore([]datadir.ConfigDir{{Name: datadir.ConfigGlobal, Dir: store.options.DataDir}}).Lookup)})
 	Expect(err).NotTo(HaveOccurred())
 	DeferCleanup(func() { Expect(receiver.Stop(context.Background())).To(Succeed()) })
 	return receiver, store
