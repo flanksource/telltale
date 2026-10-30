@@ -48,7 +48,7 @@ var _ = Describe("recorded trace search", func() {
 		Expect(os.WriteFile(filepath.Join(host.Dir(), telltale.ManifestFile), data, 0600)).To(Succeed())
 		Expect(host.Close(ctx)).To(Succeed())
 		service := Service{DataDir: dir}
-		result, err := service.Search(ctx, Request{Source: "records", From: at.Add(10 * time.Millisecond).Format(time.RFC3339Nano), Until: at.Add(time.Second).Format(time.RFC3339Nano), Service: "payments"})
+		result, err := service.Search(ctx, Request{Source: "records", From: at.Add(10 * time.Millisecond).Format(time.RFC3339Nano), Until: at.Add(time.Second).Format(time.RFC3339Nano), Services: Modes{"payments": Include}})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Traces).To(HaveExactElements(And(HaveField("TraceID", "trace-a"), HaveField("SpanCount", 2), HaveField("DurationMs", float64(100)), HaveField("Errors", 1))))
 		all, err := service.Search(ctx, Request{Source: "records", Lookback: "1h"})

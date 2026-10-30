@@ -27,7 +27,7 @@ func otelHandler(service tracequery.Service) http.Handler {
 		connectionResponse(w, sources, nil, 200)
 	})
 	mux.HandleFunc("GET "+otelPath+"/form", func(w http.ResponseWriter, r *http.Request) {
-		connectionResponse(w, map[string]any{"schema": rpc.SchemaForStruct(tracequery.Request{}), "defaults": tracequery.Request{Source: "records", Lookback: "1h", Limit: 100}}, nil, 200)
+		connectionResponse(w, map[string]any{"schema": rpc.SchemaForStruct(tracequery.Request{}), "defaults": tracequery.Request{Source: "records", Lookback: "1h", Limit: 100, MinSpans: 2}}, nil, 200)
 	})
 	serve := func(w http.ResponseWriter, r *http.Request) {
 		request, err := traceRequest(r)

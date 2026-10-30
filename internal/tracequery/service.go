@@ -48,7 +48,7 @@ func (s Service) Search(ctx context.Context, r Request) (SearchResult, error) {
 	}
 	ids := []string{}
 	for _, span := range spans {
-		if matches(span, r) && !slices.Contains(ids, span.TraceID) {
+		if inWindow(span, r) && !slices.Contains(ids, span.TraceID) {
 			ids = append(ids, span.TraceID)
 		}
 	}

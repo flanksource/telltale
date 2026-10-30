@@ -6,7 +6,7 @@ Start Telltale with continuous trace ingestion enabled:
 telltale serve --otlp --port 4318
 ```
 
-This serves OTLP/HTTP at `http://localhost:4318/v1/traces`, OTLP/gRPC at `localhost:4317`, and the trace viewer at `http://localhost:4318/otel`. Keep **Recorded traces** as the source, choose the **receiver (OTLP receiver)** run, and choose **Find traces**. No Telltale agent, capture run, or arming step is required.
+This serves OTLP/HTTP at `http://localhost:4318/v1/traces`, OTLP/gRPC at `localhost:4317`, and the trace viewer at `http://localhost:4318/otel`. Choose **Received** as the source; the search runs as soon as it changes. No Telltale agent, capture run, or arming step is required.
 
 ## Trace Telltale itself
 
@@ -95,7 +95,7 @@ telltale records spans --run receiver --stats durationMs --group-by operation
 telltale records spans --run receiver --follow
 ```
 
-Over HTTP, `GET /api/traces` lists it, `GET /api/traces/receiver/traces/spans/records` reads its rows, and `GET /api/otel?source=records&run=receiver` searches it as traces; the `/otel` page offers it in the **Run** selector of **Recorded traces**. A recorded-trace search without a run covers command runs and the receiver together.
+Over HTTP, `GET /api/traces` lists it, `GET /api/traces/receiver/traces/spans/records` reads its rows, and `GET /api/otel?source=records&run=receiver` searches it as traces; the `/otel` page offers it as the **Received** source. A recorded-trace search without a run covers command runs and the receiver together.
 
 ## Persistence and responses
 

@@ -54,9 +54,10 @@ afterAll(async () => {
 });
 
 describe("OpenTelemetry search API", () => {
-  it("searches recorded SDK and imported spans as whole traces", async () => {
+  it("searches recorded SDK and imported spans as whole traces, counting root operations", async () => {
+    const filter = (value: Record<string, string>) => encodeURIComponent(JSON.stringify(value));
     const response = await fetch(
-      `${apiURL}/api/otel?source=records&service=payments&operation=charge&status=error&minDuration=100ms&tags=${encodeURIComponent(JSON.stringify({ "http.status_code": "500" }))}`,
+      `${apiURL}/api/otel?source=records&services=${filter({ payments: "include" })}&operations=${filter({ "POST /orders": "include" })}&statuses=${filter({ error: "include" })}&minDuration=100ms&minSpans=2&attributes=${filter({ "http.status_code=5*": "include" })}`,
     );
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({
@@ -70,6 +71,7 @@ describe("OpenTelemetry search API", () => {
           errors: 1,
         },
       ],
+      rootOperations: [{ operation: "POST /orders", count: 1, p50Ms: 120, p95Ms: 120 }],
     });
     const all = (await (
       await fetch(`${apiURL}/api/otel?source=records`)
@@ -100,13 +102,13 @@ describe("OpenTelemetry search API", () => {
       {
         schema: {
           properties: {
-            tags: { type: "object" },
+            attributes: { type: "object" },
             source: { type: "string" },
-            status: { enum: ["error", "ok"] },
+            minSpans: { type: "integer" },
             format: { enum: ["flat", "jaeger"] },
           },
         },
-        defaults: { source: "records", lookback: "1h" },
+        defaults: { source: "records", lookback: "1h", minSpans: 2 },
       },
     );
     expect(await (await fetch(`${apiURL}/api/otel/sources`)).json()).toEqual([
@@ -119,9 +121,10 @@ describe("OpenTelemetry search API", () => {
   it.each([
     "limit=1001",
     "minDuration=-1ms",
-    "status=maybe",
+    `statuses=${encodeURIComponent(JSON.stringify({ maybe: "include" }))}`,
+    `services=${encodeURIComponent(JSON.stringify({ checkout: "only" }))}`,
     "from=not-a-date",
-    "tags=oops",
+    "attributes=oops",
     "unknown=1",
     "source=records&source=records",
   ])("refuses invalid search %s", async (query) => {

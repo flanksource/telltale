@@ -1,6 +1,7 @@
 package tracequery
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"reflect"
@@ -38,8 +39,12 @@ func (r Request) validate() error {
 	if r.Limit < 0 || r.Limit > 1000 {
 		return fmt.Errorf("trace limit must be between 1 and 1000")
 	}
-	if r.Status != "" && r.Status != "error" && r.Status != "ok" {
-		return fmt.Errorf("status must be error or ok")
+	if r.MinSpans < 0 {
+		return fmt.Errorf("minimum spans must not be negative")
+	}
+	anyValue := func(string) error { return nil }
+	if err := errors.Join(r.Services.validate("service", anyValue), r.Operations.validate("operation", anyValue), r.Statuses.validate("status", validStatus), r.Attributes.validate("attribute", validAttribute)); err != nil {
+		return err
 	}
 	if r.Format != "" && r.Format != "flat" && r.Format != "jaeger" {
 		return fmt.Errorf("format must be flat or jaeger")
@@ -74,7 +79,8 @@ func groups(spans []Span) (map[string][]Span, error) {
 	return result, nil
 }
 
-func summarize(spans []Span) Summary {
+// summarize is a trace's summary and its root span: the parentless one, or the earliest.
+func summarize(spans []Span) (Summary, Span) {
 	first := spans[0]
 	start, end := first.StartedAt, first.StartedAt
 	root := first
@@ -102,10 +108,11 @@ func summarize(spans []Span) Summary {
 		result.Services = append(result.Services, service)
 	}
 	slices.Sort(result.Services)
-	return result
+	return result, root
 }
 
-func matches(span Span, r Request) bool {
+// inWindow reports whether span starts in the request's window and trace.
+func inWindow(span Span, r Request) bool {
 	if r.From != "" {
 		from, _ := time.Parse(time.RFC3339Nano, r.From)
 		if span.StartedAt.Before(from) {
@@ -118,30 +125,22 @@ func matches(span Span, r Request) bool {
 			return false
 		}
 	}
-	if r.Service != "" && r.Service != span.Service || r.Operation != "" && r.Operation != span.Operation || r.TraceID != "" && r.TraceID != span.TraceID {
-		return false
-	}
-	if r.Status == "error" && !isError(span.Status) || r.Status == "ok" && isError(span.Status) {
-		return false
-	}
-	for key, want := range r.Tags {
-		value, ok := span.Attributes[key]
-		if !ok {
-			resource, found := span.Resource[key]
-			if !found {
-				return false
-			}
-			value = resource
-		}
-		if fmt.Sprint(value) != want {
-			return false
-		}
-	}
-	return true
+	return r.TraceID == "" || r.TraceID == span.TraceID
 }
 
+// passes reports whether a trace passes every filter but the root operation
+// and span-count ones, which the root operation counts leave out.
+func (r Request) passes(summary Summary, spans []Span, min, max float64) bool {
+	return summary.DurationMs >= min && (r.MaxDuration == "" || summary.DurationMs <= max) &&
+		r.Services.pass(func(service string) bool { return slices.Contains(summary.Services, service) }) &&
+		r.Statuses.pass(func(status string) bool { return (status == "error") == (summary.Errors > 0) }) &&
+		r.Attributes.passAttributes(spans)
+}
+
+// Search filters whole traces with a span in the window: by their duration,
+// services, status, any span's attributes, root operation and span count.
 func Search(spans []Span, r Request) (SearchResult, error) {
-	result := SearchResult{Traces: []Summary{}, Services: []string{}, Operations: []string{}}
+	result := SearchResult{Traces: []Summary{}, Services: []string{}, RootOperations: []OperationStats{}, Attributes: []AttributeCount{}}
 	if err := r.validate(); err != nil {
 		return result, err
 	}
@@ -151,21 +150,25 @@ func Search(spans []Span, r Request) (SearchResult, error) {
 	}
 	min, _ := duration(r.MinDuration)
 	max, _ := duration(r.MaxDuration)
-	services, operations := map[string]bool{}, map[string]bool{}
+	services := map[string]bool{}
+	facets := newFacets()
 	for _, trace := range grouped {
-		matched := false
-		for _, span := range trace {
-			services[span.Service] = true
-			if r.Service == "" || span.Service == r.Service {
-				operations[span.Operation] = true
-			}
-			matched = matched || matches(span, r)
+		if !slices.ContainsFunc(trace, func(span Span) bool { return inWindow(span, r) }) {
+			continue
 		}
-		summary := summarize(trace)
-		if matched && summary.DurationMs >= min && (r.MaxDuration == "" || summary.DurationMs <= max) {
+		summary, root := summarize(trace)
+		for _, service := range summary.Services {
+			services[service] = true
+		}
+		if !r.passes(summary, trace, min, max) {
+			continue
+		}
+		facets.add(summary, root)
+		if summary.SpanCount >= r.MinSpans && r.Operations.pass(func(operation string) bool { return operation == summary.Operation }) {
 			result.Traces = append(result.Traces, summary)
 		}
 	}
+	result.RootOperations, result.Attributes = facets.operations(), facets.attributes()
 	slices.SortFunc(result.Traces, func(a, b Summary) int {
 		if cmp := b.StartedAt.Compare(a.StartedAt); cmp != 0 {
 			return cmp
@@ -183,11 +186,7 @@ func Search(spans []Span, r Request) (SearchResult, error) {
 	for key := range services {
 		result.Services = append(result.Services, key)
 	}
-	for key := range operations {
-		result.Operations = append(result.Operations, key)
-	}
 	slices.Sort(result.Services)
-	slices.Sort(result.Operations)
 	return result, nil
 }
 
@@ -233,7 +232,8 @@ func Trace(spans []Span, id string) (Detail, error) {
 			finished[id] = true
 		}
 	}
-	result := Detail{Summary: summarize(selected), Spans: selected, MissingParents: []string{}}
+	summary, _ := summarize(selected)
+	result := Detail{Summary: summary, Spans: selected, MissingParents: []string{}}
 	for id := range missing {
 		result.MissingParents = append(result.MissingParents, id)
 	}

@@ -56,7 +56,7 @@ var _ = Describe("received traces through the receiver pseudo-run", func() {
 
 		service := Service{DataDir: dir}
 		window := Request{Source: "records", Run: otelreceiver.SourceID, From: at.Add(10 * time.Millisecond).Format(time.RFC3339Nano), Until: at.Add(time.Second).Format(time.RFC3339Nano)}
-		window.Operation, window.Status, window.MinDuration = "charge", "error", "100ms"
+		window.Operations, window.Statuses, window.MinDuration = Modes{"order": Include}, Modes{"error": Include}, "100ms"
 		result, err := service.Search(ctx, window)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Traces).To(HaveExactElements(And(HaveField("SpanCount", 2), HaveField("DurationMs", float64(120)), HaveField("Errors", 1))))

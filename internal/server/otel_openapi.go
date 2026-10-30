@@ -14,8 +14,8 @@ func addOtelPaths(spec *rpc.OpenAPISpec) {
 		op := rpc.OpenAPIOperation{Summary: "OpenTelemetry trace search " + suffix, Tags: []string{"OpenTelemetry"}, Responses: map[string]rpc.OpenAPIResponse{"200": {Description: "Trace result", Content: map[string]rpc.OpenAPIMediaType{"application/json": {Schema: response}}}, "400": {Description: "Invalid search or unavailable source"}, "404": {Description: "Trace not found"}}}
 		if suffix == "" || suffix == "/trace/{id}" {
 			for name, schema := range request.Properties {
-				if name == "tags" {
-					schema = &rpc.OpenAPISchema{Type: "string", Description: "JSON object of exact span or resource attribute values"}
+				if schema.Type == "object" {
+					schema = &rpc.OpenAPISchema{Type: "string", Description: schema.Description + ", as a JSON object of value to include or exclude"}
 				}
 				op.Parameters = append(op.Parameters, rpc.OpenAPIParameter{Name: name, In: "query", Required: name == "source", Schema: schema})
 			}
