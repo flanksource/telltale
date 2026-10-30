@@ -49,17 +49,17 @@ var _ = Describe("the start form", func() {
 })
 
 var _ = Describe("a start request", func() {
-	It("runs its command with sh -c in the work dir, arming the enabled kinds with their params", func() {
+	It("runs its command with sh -c in the server's working directory, recording into the data dir, arming the enabled kinds with their params", func() {
 		options, err := telltale.StartRequest{
 			Command: "curl -sS example.com", Facets: true,
 			Traces: map[string]json.RawMessage{
 				httpproxy.Kind: json.RawMessage(`{"enabled":true,"mode":"mitm","target":{"seam":"proxy"}}`),
 				pgproxy.Kind:   json.RawMessage(`{"enabled":false,"connection":""}`),
 			},
-		}.Options("/work")
+		}.Options("/cache/telltale")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(options).To(Equal(telltale.StartOptions{
-			WorkDir: "/work", Dir: "/work", Command: []string{"sh", "-c", "curl -sS example.com"}, Facets: true,
+			DataDir: "/cache/telltale", Command: []string{"sh", "-c", "curl -sS example.com"}, Facets: true,
 			TraceRoot: telltale.TraceRootCommand,
 			Traces:    []telltale.TraceSpec{{Kind: httpproxy.Kind, Params: json.RawMessage(`{"mode":"mitm","target":{"seam":"proxy"}}`)}},
 		}))
@@ -73,7 +73,7 @@ var _ = Describe("a start request", func() {
 				"process_tree": json.RawMessage(`{"enabled":true}`),
 				pgproxy.Kind:   json.RawMessage(`[]`),
 			},
-		}.Options("/work")
+		}.Options("/cache/telltale")
 		var invalid *telltale.ValidationError
 		Expect(err).To(BeAssignableToTypeOf(invalid))
 		Expect(err.(*telltale.ValidationError).Fields).To(ConsistOf(

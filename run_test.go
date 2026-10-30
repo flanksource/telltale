@@ -43,7 +43,7 @@ var _ = Describe("running a command under trace", func() {
 	run := func(command []string, specs ...telltale.TraceSpec) (*telltale.Result, string) {
 		output := &bytes.Buffer{}
 		started, err := telltale.Start(context.Background(), telltale.StartOptions{
-			WorkDir: GinkgoT().TempDir(), Command: command, Traces: specs, Stdout: output, Stderr: output,
+			DataDir: GinkgoT().TempDir(), Command: command, Traces: specs, Stdout: output, Stderr: output,
 		})
 		Expect(err).ToNot(HaveOccurred())
 		result, err := started.Wait()
@@ -78,7 +78,7 @@ var _ = Describe("running a command under trace", func() {
 
 	It("refuses a kind the catalog does not serve before running anything", func() {
 		_, err := telltale.Start(context.Background(), telltale.StartOptions{
-			WorkDir: GinkgoT().TempDir(), Command: []string{"true"}, Traces: []telltale.TraceSpec{{Kind: "nosuchkind"}},
+			DataDir: GinkgoT().TempDir(), Command: []string{"true"}, Traces: []telltale.TraceSpec{{Kind: "nosuchkind"}},
 		})
 		Expect(err).To(MatchError(ContainSubstring(`unknown trace kind "nosuchkind"`)))
 	})
@@ -102,9 +102,9 @@ func sleeper(seconds string) *exec.Cmd {
 
 var _ = Describe("a run attached to a running process", func() {
 	It("traces the process's tree until its duration passes, leaving the process running", func() {
-		target, workDir := sleeper("30"), GinkgoT().TempDir()
+		target, dataDir := sleeper("30"), GinkgoT().TempDir()
 		run, err := telltale.Start(context.Background(), telltale.StartOptions{
-			WorkDir: workDir, PID: target.Process.Pid, Duration: time.Second,
+			DataDir: dataDir, PID: target.Process.Pid, Duration: time.Second,
 			Traces: []telltale.TraceSpec{{Kind: process.SamplesKind}},
 		})
 		Expect(err).ToNot(HaveOccurred())
@@ -116,7 +116,7 @@ var _ = Describe("a run attached to a running process", func() {
 		Expect(result.Captures).To(ConsistOf(HaveField("Kind", process.SamplesKind)))
 		Expect(target.Process.Signal(syscall.Signal(0))).To(Succeed(), "an attached run leaves its process running")
 
-		info, err := telltale.Get(telltale.GetOptions{WorkDir: workDir, RunID: result.RunID})
+		info, err := telltale.Get(telltale.GetOptions{DataDir: dataDir, RunID: result.RunID})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(info.Status).To(Equal(telltale.StatusSucceeded))
 		Expect(info.PID).To(Equal(target.Process.Pid))
@@ -124,7 +124,7 @@ var _ = Describe("a run attached to a running process", func() {
 
 	It("ends when the process exits", func() {
 		target := sleeper("1")
-		run, err := telltale.Start(context.Background(), telltale.StartOptions{WorkDir: GinkgoT().TempDir(), PID: target.Process.Pid})
+		run, err := telltale.Start(context.Background(), telltale.StartOptions{DataDir: GinkgoT().TempDir(), PID: target.Process.Pid})
 		Expect(err).ToNot(HaveOccurred())
 		Eventually(run.Done(), 10*time.Second).Should(BeClosed())
 	})
@@ -132,7 +132,7 @@ var _ = Describe("a run attached to a running process", func() {
 	It("dumps an attached process's stacks as it stops", func() {
 		target := sleeper("30")
 		run, err := telltale.Start(context.Background(), telltale.StartOptions{
-			WorkDir: GinkgoT().TempDir(), PID: target.Process.Pid, Duration: 500 * time.Millisecond,
+			DataDir: GinkgoT().TempDir(), PID: target.Process.Pid, Duration: 500 * time.Millisecond,
 			Traces: []telltale.TraceSpec{{Kind: stacks.Kind}},
 		})
 		Expect(err).ToNot(HaveOccurred())
@@ -143,28 +143,28 @@ var _ = Describe("a run attached to a running process", func() {
 	})
 
 	It("records the checkpoints that fail without ending the run, and fails it", func() {
-		target, workDir := sleeper("30"), GinkgoT().TempDir()
+		target, dataDir := sleeper("30"), GinkgoT().TempDir()
 		run, err := telltale.Start(context.Background(), telltale.StartOptions{
-			WorkDir: workDir, PID: target.Process.Pid, Duration: 500 * time.Millisecond,
+			DataDir: dataDir, PID: target.Process.Pid, Duration: 500 * time.Millisecond,
 			Traces: []telltale.TraceSpec{{Kind: stacks.Kind, Checkpoint: json.RawMessage(`{"transport": "gops"}`)}},
 		})
 		Expect(err).ToNot(HaveOccurred())
 		result, err := run.Wait()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result.CheckpointErrors).To(ConsistOf(ContainSubstring("stacks stop checkpoint")))
-		info, err := telltale.Get(telltale.GetOptions{WorkDir: workDir, RunID: result.RunID})
+		info, err := telltale.Get(telltale.GetOptions{DataDir: dataDir, RunID: result.RunID})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(info.Status).To(Equal(telltale.StatusFailed))
 	})
 
 	DescribeTable("refuses what it cannot attach to before opening a store",
 		func(options func(pid int) telltale.StartOptions, refusal string) {
-			workDir := GinkgoT().TempDir()
+			dataDir := GinkgoT().TempDir()
 			started := options(sleeper("30").Process.Pid)
-			started.WorkDir = workDir
+			started.DataDir = dataDir
 			_, err := telltale.Start(context.Background(), started)
 			Expect(err).To(MatchError(ContainSubstring(refusal)))
-			Expect(filepath.Join(workDir, ".telltale")).ToNot(BeADirectory())
+			Expect(os.ReadDir(dataDir)).To(BeEmpty())
 		},
 		Entry("a proxy the command is pointed at", func(pid int) telltale.StartOptions {
 			return telltale.StartOptions{PID: pid, Traces: []telltale.TraceSpec{{Kind: httpproxy.Kind}}}
@@ -184,9 +184,9 @@ var _ = Describe("a run attached to a running process", func() {
 
 var _ = Describe("a host run", func() {
 	It("records the host's process groups with neither a command nor a process until its duration passes", func() {
-		workDir := GinkgoT().TempDir()
+		dataDir := GinkgoT().TempDir()
 		run, err := telltale.Start(context.Background(), telltale.StartOptions{
-			WorkDir: workDir, Duration: 2500 * time.Millisecond,
+			DataDir: dataDir, Duration: 2500 * time.Millisecond,
 			Traces: []telltale.TraceSpec{{Kind: groups.Kind, Params: json.RawMessage(`{"interval": "1s", "all": true}`)}},
 		})
 		Expect(err).ToNot(HaveOccurred())
@@ -208,7 +208,7 @@ var _ = Describe("a host run", func() {
 		Expect(result.Process).To(BeNil())
 		Expect(result.Captures).To(ConsistOf(And(HaveField("Kind", groups.Kind), HaveField("Summary", HaveKeyWithValue("count", BeNumerically(">", 0))))))
 
-		stored, err := telltale.Get(telltale.GetOptions{WorkDir: workDir, RunID: result.RunID})
+		stored, err := telltale.Get(telltale.GetOptions{DataDir: dataDir, RunID: result.RunID})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(stored).To(And(HaveField("Status", telltale.StatusSucceeded), HaveField("Process", BeNil())))
 	})
@@ -217,7 +217,7 @@ var _ = Describe("a host run", func() {
 var _ = Describe("a run of a command with checkpointed captures", func() {
 	It("reads them of the command every interval", func() {
 		run, err := telltale.Start(context.Background(), telltale.StartOptions{
-			WorkDir: GinkgoT().TempDir(), Command: []string{"sleep", "3"}, Every: time.Second, TraceRoot: telltale.TraceRootCommand,
+			DataDir: GinkgoT().TempDir(), Command: []string{"sleep", "3"}, Every: time.Second, TraceRoot: telltale.TraceRootCommand,
 			Traces: []telltale.TraceSpec{{Kind: stacks.Kind}},
 		})
 		Expect(err).ToNot(HaveOccurred())
@@ -230,13 +230,13 @@ var _ = Describe("a run of a command with checkpointed captures", func() {
 
 var _ = Describe("a run traced from its command", func() {
 	It("is live until stopped, then records the command's output and how it ended", func() {
-		workDir := GinkgoT().TempDir()
+		dataDir := GinkgoT().TempDir()
 		run, err := telltale.Start(context.Background(), telltale.StartOptions{
-			WorkDir: workDir, Dir: workDir, Command: []string{"sh", "-c", "echo started; sleep 30"}, TraceRoot: telltale.TraceRootCommand,
+			DataDir: dataDir, Dir: dataDir, Command: []string{"sh", "-c", "echo started; sleep 30"}, TraceRoot: telltale.TraceRootCommand,
 		})
 		Expect(err).ToNot(HaveOccurred())
 
-		info, err := telltale.Get(telltale.GetOptions{WorkDir: workDir, RunID: run.ID()})
+		info, err := telltale.Get(telltale.GetOptions{DataDir: dataDir, RunID: run.ID()})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(info.Status).To(Equal(telltale.StatusRunning))
 		Expect(info.Live).ToNot(BeNil())
@@ -246,24 +246,24 @@ var _ = Describe("a run traced from its command", func() {
 			data, err := os.ReadFile(filepath.Join(run.Dir(), telltale.OutputFile))
 			return string(data), err
 		}).Should(Equal("started\n"))
-		Expect(telltale.Stop(telltale.StopOptions{WorkDir: workDir, RunID: run.ID()})).To(Succeed())
+		Expect(telltale.Stop(telltale.StopOptions{DataDir: dataDir, RunID: run.ID()})).To(Succeed())
 
 		result, err := run.Wait()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result.ExitCode).ToNot(Equal(0))
 		Expect(filepath.Join(run.Dir(), telltale.ManifestFile)).To(BeARegularFile())
 
-		info, err = telltale.Get(telltale.GetOptions{WorkDir: workDir, RunID: run.ID()})
+		info, err = telltale.Get(telltale.GetOptions{DataDir: dataDir, RunID: run.ID()})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(info.Status).To(Equal(telltale.StatusFailed))
 		Expect(info.Live).To(BeNil())
-		Expect(telltale.Stop(telltale.StopOptions{WorkDir: workDir, RunID: run.ID()})).To(MatchError(telltale.ErrNotLive))
+		Expect(telltale.Stop(telltale.StopOptions{DataDir: dataDir, RunID: run.ID()})).To(MatchError(telltale.ErrNotLive))
 	})
 
 	It("is stopped when the context it was started under ends", func() {
 		ctx, cancel := context.WithCancel(context.Background())
 		run, err := telltale.Start(ctx, telltale.StartOptions{
-			WorkDir: GinkgoT().TempDir(), Command: []string{"sleep", "30"}, TraceRoot: telltale.TraceRootCommand,
+			DataDir: GinkgoT().TempDir(), Command: []string{"sleep", "30"}, TraceRoot: telltale.TraceRootCommand,
 		})
 		Expect(err).ToNot(HaveOccurred())
 		cancel()

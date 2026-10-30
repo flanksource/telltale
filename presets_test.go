@@ -2,6 +2,7 @@ package telltale_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strconv"
 	"time"
@@ -49,7 +50,7 @@ var _ = Describe("presets", func() {
 	It("ps follows an attached process's tree with every facet", func() {
 		target := sleeper("30")
 		run, err := preset("ps").Start(context.Background(), telltale.StartOptions{
-			WorkDir: GinkgoT().TempDir(), PID: target.Process.Pid, Duration: time.Second,
+			DataDir: GinkgoT().TempDir(), PID: target.Process.Pid, Duration: time.Second,
 		})
 		Expect(err).ToNot(HaveOccurred())
 		result, err := run.Wait()
@@ -63,10 +64,10 @@ var _ = Describe("presets", func() {
 		gopsDir := GinkgoT().TempDir()
 		GinkgoT().Setenv("GOPS_CONFIG_DIR", gopsDir)
 		target := sleeper("30")
-		workDir := GinkgoT().TempDir()
-		_, err := preset("gops").Start(context.Background(), telltale.StartOptions{WorkDir: workDir, PID: target.Process.Pid})
+		dataDir := GinkgoT().TempDir()
+		_, err := preset("gops").Start(context.Background(), telltale.StartOptions{DataDir: dataDir, PID: target.Process.Pid})
 		Expect(err).To(MatchError(ContainSubstring("runs no gops agent: no " + filepath.Join(gopsDir, strconv.Itoa(target.Process.Pid)))))
-		Expect(filepath.Join(workDir, ".telltale")).ToNot(BeADirectory())
+		Expect(os.ReadDir(dataDir)).To(BeEmpty())
 	})
 
 	It("gops reads a Go process's goroutines and heap over its agent", func() {
@@ -74,7 +75,7 @@ var _ = Describe("presets", func() {
 		GinkgoT().Setenv("GOPS_CONFIG_DIR", gopsDir)
 		child := tracingtest.StartGoChild(tracingtest.GoChildBinary(GinkgoT().TempDir()), "-gops", gopsDir)
 		run, err := preset("gops").Start(context.Background(), telltale.StartOptions{
-			WorkDir: GinkgoT().TempDir(), PID: child.PID, Duration: 500 * time.Millisecond,
+			DataDir: GinkgoT().TempDir(), PID: child.PID, Duration: 500 * time.Millisecond,
 		})
 		Expect(err).ToNot(HaveOccurred())
 		result, err := run.Wait()

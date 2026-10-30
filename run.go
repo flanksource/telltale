@@ -63,7 +63,7 @@ func Start(ctx context.Context, options StartOptions) (*Run, error) {
 		return nil, err
 	}
 	startedAt := time.Now()
-	host, err := traces.Open(traces.OpenOptions{WorkDir: options.WorkDir, RunID: traces.RunID(startedAt), Connections: options.Connections})
+	host, err := traces.Open(traces.OpenOptions{DataDir: options.DataDir, RunID: traces.RunID(startedAt), Connections: options.Connections})
 	if err != nil {
 		return nil, err
 	}
@@ -393,12 +393,12 @@ func (r *Run) close() error {
 	if r.output != nil {
 		errs = append(errs, r.output.Close())
 	}
-	errs = append(errs, r.host.Close(ctx), traces.Prune(r.options.WorkDir, traces.KeepRuns))
+	errs = append(errs, r.host.Close(ctx), traces.Prune(r.options.DataDir, traces.KeepRuns))
 	return errors.Join(errs...)
 }
 
 // registry is the runs this process is running, by the absolute path of
-// their store, which is how Stop, Get and List find a run from its work dir
+// their store, which is how Stop, Get and List find a run from its data dir
 // and id.
 type registry struct {
 	mu   sync.Mutex
@@ -438,15 +438,15 @@ func (g *registry) get(dir string) (*Run, bool, error) {
 	return run, ok, nil
 }
 
-// Live is the run runID of workDir if this process is running it.
-func Live(workDir, runID string) (*Run, bool, error) {
-	return live.get(traces.StoreDir(workDir, runID))
+// Live is the run runID of dataDir if this process is running it.
+func Live(dataDir, runID string) (*Run, bool, error) {
+	return live.get(traces.StoreDir(dataDir, runID))
 }
 
 // Stop stops the run options name, ErrNotLive when this process is not
 // running it.
 func Stop(options StopOptions) error {
-	run, ok, err := Live(options.WorkDir, options.RunID)
+	run, ok, err := Live(options.DataDir, options.RunID)
 	if err != nil {
 		return err
 	}
@@ -458,6 +458,6 @@ func Stop(options StopOptions) error {
 
 // StopOptions name a run to stop.
 type StopOptions struct {
-	WorkDir string
+	DataDir string
 	RunID   string
 }

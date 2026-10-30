@@ -63,9 +63,10 @@ func (e *ValidationError) Error() string {
 }
 
 // Options are the StartOptions the request asks for, its command run with
-// `sh -c` in workDir and traced from its own root (TraceRootCommand). A
-// refused request is a *ValidationError naming each field.
-func (r StartRequest) Options(workDir string) (StartOptions, error) {
+// `sh -c` in the server's working directory, recorded under dataDir and
+// traced from its own root (TraceRootCommand). A refused request is a
+// *ValidationError naming each field.
+func (r StartRequest) Options(dataDir string) (StartOptions, error) {
 	kinds, err := traces.Kinds()
 	if err != nil {
 		return StartOptions{}, err
@@ -104,7 +105,7 @@ func (r StartRequest) Options(workDir string) (StartOptions, error) {
 	if len(fields) > 0 {
 		return StartOptions{}, &ValidationError{Fields: fields}
 	}
-	options := StartOptions{WorkDir: workDir, Dir: workDir, PID: r.PID, Traces: specs, Facets: r.Facets, TraceRoot: TraceRootCommand}
+	options := StartOptions{DataDir: dataDir, PID: r.PID, Traces: specs, Facets: r.Facets, TraceRoot: TraceRootCommand}
 	if strings.TrimSpace(r.Command) != "" {
 		options.Command = []string{"sh", "-c", r.Command}
 	}
@@ -207,7 +208,7 @@ func StartSchema() (*rpc.OpenAPISchema, map[string]any, error) {
 			"every":    {Type: "string", Title: "Checkpoint interval", Description: "Read checkpoints at this interval, e.g. 10s"},
 			"command": {
 				Type: "string", Title: "Command", Format: "textarea",
-				Description: "Run with sh -c in the server's work dir",
+				Description: "Run with sh -c in the server's working directory",
 				Extensions:  map[string]any{"x-clicky-order": 0},
 			},
 			"facets": {

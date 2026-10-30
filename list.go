@@ -27,10 +27,12 @@ const (
 	// StatusUnfinished is a store with no manifest that this process is not
 	// running: a run that crashed, or one another process is still running.
 	StatusUnfinished Status = "unfinished"
+	// StatusStanding is a standing store (StandingStore) nothing is writing now.
+	StatusStanding Status = "standing"
 )
 
 // Statuses are every Status, in the order a client offers them.
-var Statuses = []Status{StatusRunning, StatusSucceeded, StatusFailed, StatusUnfinished}
+var Statuses = []Status{StatusRunning, StatusSucceeded, StatusFailed, StatusUnfinished, StatusStanding}
 
 // ParseStatus refuses a value that names no Status.
 func ParseStatus(value string) (Status, error) {
@@ -60,6 +62,9 @@ type RunInfo struct {
 	// Unavailable says why an unfinished run has nothing to read.
 	Unavailable      string   `json:"unavailable,omitempty"`
 	CheckpointErrors []string `json:"checkpointErrors,omitempty"`
+	// Standing marks a standing store served as a pseudo-run: continuous, with
+	// no start or end.
+	Standing bool `json:"standing,omitempty"`
 }
 
 // LiveRun is what a running run offers beyond its stored streams.
@@ -85,7 +90,7 @@ func resultInfo(result *Result) RunInfo {
 
 // GetOptions name one run.
 type GetOptions struct {
-	WorkDir string
+	DataDir string
 	RunID   string
 }
 
@@ -95,7 +100,10 @@ func Get(options GetOptions) (RunInfo, error) {
 	if options.RunID == "" || options.RunID == "." || options.RunID == ".." || strings.ContainsAny(options.RunID, `/\`) {
 		return RunInfo{}, fmt.Errorf("get run: %q is not a run id", options.RunID)
 	}
-	dir := traces.StoreDir(options.WorkDir, options.RunID)
+	if _, ok := standingStore(options.RunID); ok {
+		return getStanding(options.DataDir, options.RunID)
+	}
+	dir := traces.StoreDir(options.DataDir, options.RunID)
 	run, ok, err := live.get(dir)
 	if err != nil {
 		return RunInfo{}, err
@@ -116,9 +124,9 @@ func Get(options GetOptions) (RunInfo, error) {
 	return resultInfo(manifest), nil
 }
 
-// ListOptions choose which runs of a work dir List returns.
+// ListOptions choose which runs of a data dir List returns.
 type ListOptions struct {
-	WorkDir string
+	DataDir string
 	// Query matches runs whose id or command, or "pid N" of an attached
 	// run, contains it, ignoring case.
 	Query string
@@ -127,16 +135,39 @@ type ListOptions struct {
 	// Kind keeps runs that armed a capture of this trace kind.
 	Kind string
 	// Since keeps runs started at or after it; a run with no known start
-	// (unfinished) is then left out.
+	// (unfinished) is then left out. A standing store, continuous, is kept.
 	Since time.Time
 	// Limit caps how many runs are returned; 0 returns every match.
 	Limit int
 }
 
-// List describes the runs under options.WorkDir that match options, newest
-// first. A work dir that has never traced a run has none.
+// List describes the runs under options.DataDir that match options, newest
+// first. The standing stores the data dir has follow
+// them, so the newest run of a kind is still a command run when there is one.
 func List(options ListOptions) ([]RunInfo, error) {
-	entries, err := os.ReadDir(filepath.Join(options.WorkDir, traces.Dir))
+	runs, err := listRuns(options)
+	if err != nil {
+		return nil, err
+	}
+	stores, err := standingInfos(options.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	for _, info := range stores {
+		if options.Limit > 0 && len(runs) == options.Limit {
+			break
+		}
+		if options.matches(info) {
+			runs = append(runs, info)
+		}
+	}
+	return runs, nil
+}
+
+// listRuns describes the command runs of List. A data dir that has never
+// traced a run has none.
+func listRuns(options ListOptions) ([]RunInfo, error) {
+	entries, err := os.ReadDir(filepath.Join(options.DataDir, traces.Dir))
 	if errors.Is(err, os.ErrNotExist) {
 		return []RunInfo{}, nil
 	}
@@ -148,7 +179,7 @@ func List(options ListOptions) ([]RunInfo, error) {
 		if !entry.IsDir() {
 			continue
 		}
-		info, err := Get(GetOptions{WorkDir: options.WorkDir, RunID: entry.Name()})
+		info, err := Get(GetOptions{DataDir: options.DataDir, RunID: entry.Name()})
 		if errors.Is(err, os.ErrNotExist) {
 			continue // pruned since it was listed
 		}
@@ -178,5 +209,5 @@ func (o ListOptions) matches(info RunInfo) bool {
 	if o.Kind != "" && !slices.ContainsFunc(info.Captures, func(c CaptureResult) bool { return c.Kind == o.Kind }) {
 		return false
 	}
-	return o.Since.IsZero() || (!info.StartedAt.IsZero() && !info.StartedAt.Before(o.Since))
+	return o.Since.IsZero() || info.Standing || (!info.StartedAt.IsZero() && !info.StartedAt.Before(o.Since))
 }

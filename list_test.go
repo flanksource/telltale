@@ -14,11 +14,11 @@ import (
 )
 
 var _ = Describe("listing runs", func() {
-	var workDir, succeeded, failed, unfinished string
+	var dataDir, succeeded, failed, unfinished string
 	var started time.Time
 
 	finish := func(command string, specs ...telltale.TraceSpec) string {
-		run, err := telltale.Start(context.Background(), telltale.StartOptions{WorkDir: workDir, Command: []string{"sh", "-c", command}, Traces: specs})
+		run, err := telltale.Start(context.Background(), telltale.StartOptions{DataDir: dataDir, Command: []string{"sh", "-c", command}, Traces: specs})
 		Expect(err).ToNot(HaveOccurred())
 		_, err = run.Wait()
 		Expect(err).ToNot(HaveOccurred())
@@ -26,16 +26,16 @@ var _ = Describe("listing runs", func() {
 	}
 
 	BeforeEach(func() {
-		workDir = GinkgoT().TempDir()
+		dataDir = GinkgoT().TempDir()
 		started = time.Now()
 		succeeded = finish("echo ok", telltale.TraceSpec{Kind: httpproxy.Kind})
 		failed = finish("exit 4")
 		unfinished = "run-1999-01-01T00-00-00Z"
-		Expect(os.MkdirAll(filepath.Join(workDir, traces.Dir, unfinished), 0o755)).To(Succeed())
+		Expect(os.MkdirAll(filepath.Join(dataDir, traces.Dir, unfinished), 0o755)).To(Succeed())
 	})
 
 	ids := func(options telltale.ListOptions) []string {
-		options.WorkDir = workDir
+		options.DataDir = dataDir
 		runs, err := telltale.List(options)
 		Expect(err).ToNot(HaveOccurred())
 		var names []string
@@ -66,28 +66,28 @@ var _ = Describe("listing runs", func() {
 	)
 
 	It("describes a finished run from its manifest and an unfinished one by why it has nothing", func() {
-		run, err := telltale.Get(telltale.GetOptions{WorkDir: workDir, RunID: failed})
+		run, err := telltale.Get(telltale.GetOptions{DataDir: dataDir, RunID: failed})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(run.Status).To(Equal(telltale.StatusFailed))
 		Expect(*run.ExitCode).To(Equal(4))
 		Expect(run.Command).To(Equal([]string{"sh", "-c", "exit 4"}))
 
-		run, err = telltale.Get(telltale.GetOptions{WorkDir: workDir, RunID: unfinished})
+		run, err = telltale.Get(telltale.GetOptions{DataDir: dataDir, RunID: unfinished})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(run).To(Equal(telltale.RunInfo{
-			RunID: unfinished, Dir: filepath.Join(workDir, traces.Dir, unfinished), Status: telltale.StatusUnfinished,
+			RunID: unfinished, Dir: filepath.Join(dataDir, traces.Dir, unfinished), Status: telltale.StatusUnfinished,
 			Unavailable: "the run did not finish: it left no run.json",
 		}))
 	})
 
 	It("refuses a run that is gone and an id that is a path", func() {
-		_, err := telltale.Get(telltale.GetOptions{WorkDir: workDir, RunID: "run-2000-01-01T00-00-00Z"})
+		_, err := telltale.Get(telltale.GetOptions{DataDir: dataDir, RunID: "run-2000-01-01T00-00-00Z"})
 		Expect(err).To(MatchError(os.ErrNotExist))
-		_, err = telltale.Get(telltale.GetOptions{WorkDir: workDir, RunID: "../escape"})
+		_, err = telltale.Get(telltale.GetOptions{DataDir: dataDir, RunID: "../escape"})
 		Expect(err).To(MatchError(ContainSubstring("is not a run id")))
 	})
 
-	It("finds nothing in a work dir that never traced a run", func() {
-		Expect(telltale.List(telltale.ListOptions{WorkDir: GinkgoT().TempDir()})).To(BeEmpty())
+	It("finds nothing in a data dir that never traced a run", func() {
+		Expect(telltale.List(telltale.ListOptions{DataDir: GinkgoT().TempDir()})).To(BeEmpty())
 	})
 })

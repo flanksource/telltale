@@ -1,8 +1,8 @@
 // Package telltale runs commands under trace and finds the runs it recorded:
-// Start opens a run's store at .telltale/traces/<run id>, arms the captures
+// Start opens a run's store at <data dir>/traces/<run id>, arms the captures
 // asked for, points the command at them through their exports and records the
 // process tree it spawns; Stop ends a live run; List and Get read the runs a
-// work dir holds, live or stored.
+// data dir holds, live or stored.
 package telltale
 
 import (
@@ -58,8 +58,8 @@ const (
 
 // StartOptions say what Start runs and traces.
 type StartOptions struct {
-	// WorkDir holds the run stores, under traces.Dir.
-	WorkDir string
+	// DataDir holds the run stores, under traces.Dir.
+	DataDir string
 	// Dir is the directory the command runs in; empty is this process's.
 	Dir string
 	// Command is the program and its arguments. A run has a Command or a
