@@ -17,8 +17,9 @@ import (
 // TopMount serves the latest frame of the host's process groups, read live
 // and kept nowhere: GET with all=true to include the processes no tool's
 // group holds, net=true to read network bytes with nettop. Under it,
-// TopProcessesPath serves the processes running a program (name=) or a
-// process and those under it (pid=).
+// TopProcessesPath serves the processes running a program (name=), a
+// process and those under it (pid=), or those whose name, command or pid
+// holds a search text (q=).
 const TopMount = "/api/top"
 
 // TopProcessesPath is the processes route under TopMount.
@@ -126,15 +127,23 @@ func (h *TopHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// processFilter is the program (name=) or the process (pid=) a processes
-// request asks for: one, not both.
+// processFilter is the program (name=), the process (pid=) or the search
+// text (q=) a processes request asks for: exactly one of them.
 func processFilter(r *http.Request) (groups.ProcessFilter, error) {
-	name, pid := r.URL.Query().Get("name"), r.URL.Query().Get("pid")
+	name, pid, query := r.URL.Query().Get("name"), r.URL.Query().Get("pid"), r.URL.Query().Get("q")
+	given := 0
+	for _, value := range []string{name, pid, query} {
+		if value != "" {
+			given++
+		}
+	}
 	switch {
-	case (name == "") == (pid == ""):
-		return groups.ProcessFilter{}, errors.New("give a program's name= or a process's pid=, one of them")
+	case given != 1:
+		return groups.ProcessFilter{}, errors.New("give a program's name=, a process's pid= or a search q=, one of them")
 	case name != "":
 		return groups.ProcessFilter{Name: name}, nil
+	case query != "":
+		return groups.ProcessFilter{Query: query}, nil
 	}
 	parsed, err := queryPID(r)
 	return groups.ProcessFilter{PID: parsed}, err

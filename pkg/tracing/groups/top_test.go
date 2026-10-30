@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/flanksource/telltale/pkg/tracing/groups"
@@ -65,6 +66,9 @@ var _ = Describe("Top", func() {
 		Expect(byPID).To(ConsistOf(And(HaveField("PID", sleeper.Process.Pid), HaveField("Name", "sleep"), HaveField("Processes", 1))))
 		Expect(top.Processes(groups.ProcessFilter{Name: "sleep"})).To(ContainElement(HaveField("PID", sleeper.Process.Pid)))
 		Expect(top.Processes(groups.ProcessFilter{GroupKey: byPID[0].GroupKey})).To(Equal(byPID))
+		Expect(top.Processes(groups.ProcessFilter{Query: "SLEEP 30"})).To(ContainElement(HaveField("PID", sleeper.Process.Pid)), "the command holds the text, in any case")
+		Expect(top.Processes(groups.ProcessFilter{Query: strconv.Itoa(sleeper.Process.Pid)})).To(ContainElement(HaveField("PID", sleeper.Process.Pid)))
+		Expect(top.Processes(groups.ProcessFilter{Query: "no-such-telltale-process"})).To(BeEmpty())
 	})
 
 	It("shows the telltale reading the host as its own tool group", func(ctx SpecContext) {

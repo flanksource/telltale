@@ -94,6 +94,13 @@ describe("processes of a program or a process", () => {
     expect(reading.processes.map(process => process.pid)).toContain(1);
   });
 
+  it("serves the processes whose pid holds a search text", async () => {
+    const response = await fetch(`${apiURL}/api/top/processes?q=1&all=true`);
+    expect(response.status).toBe(200);
+    const reading = await response.json() as { processes: Array<{ pid: number }> };
+    expect(reading.processes.map(process => process.pid)).toContain(1);
+  });
+
   it("refuses a request that names both a program and a process", async () => {
     const response = await fetch(`${apiURL}/api/top/processes?name=x&pid=1`);
     expect(response.status).toBe(400);

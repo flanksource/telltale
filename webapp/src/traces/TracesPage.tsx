@@ -32,6 +32,12 @@ function readPageState(): PageState {
 
 function usePageState(): [PageState, (next: Partial<PageState>) => void] {
   const [state, setState] = useState(readPageState);
+  // Navigation, such as the ⌘K search selecting a run, changes the URL under the mounted page.
+  useEffect(() => {
+    const follow = () => setState(readPageState());
+    window.addEventListener("popstate", follow);
+    return () => window.removeEventListener("popstate", follow);
+  }, []);
   useEffect(() => {
     // The page owns only its own parameters: others, such as the process groups panel's, stay.
     const params = new URLSearchParams(window.location.search);

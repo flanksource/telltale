@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseNdjson, runFilterQuery, traceExportUrl, type RunTraces, type StartForm, type TracesStatus } from "./api";
 import { sampleFrame } from "../top/testFrames";
@@ -130,6 +130,20 @@ describe("trace runs", () => {
     vi.stubGlobal("fetch", vi.fn((url: string) => Promise.resolve(url === "/api/traces/start" ? json(startForm) : new Response("store unreadable", { status: 500 }))));
     renderPage();
     expect(await screen.findByText(/list trace runs failed/)).toHaveTextContent("list trace runs failed (500): store unreadable");
+  });
+
+  it("selects the run a navigation puts in the URL while the page is shown", async () => {
+    const other: RunTraces = { ...finished, runId: "run-older", mount: "/api/traces/run-older", command: ["wget", "https://example.org"] };
+    serve({ runs: [finished, other] });
+    renderPage();
+    expect(await screen.findByText("curl https://example.com")).toBeInTheDocument();
+
+    act(() => {
+      window.history.pushState(null, "", "/?run=run-older");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+
+    expect(await screen.findByText("wget https://example.org")).toBeInTheDocument();
   });
 
   it("lists with the filters it keeps in the URL", async () => {

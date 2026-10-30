@@ -157,9 +157,13 @@ export async function fetchTopFrame({ all, net }: TopQuery, signal?: AbortSignal
 
 export const TOP_PROCESSES_ENDPOINT = `${TOP_ENDPOINT}/processes`;
 
-/** The latest reading of the processes running a program (name) or of a process and those under it (pid), including those no group holds. */
-export async function fetchTopProcesses(target: ProcessTarget, signal?: AbortSignal): Promise<TopProcesses> {
-  const query = new URLSearchParams({ ...("name" in target ? { name: target.name } : { pid: String(target.pid) }), all: "true" });
+/** A process target, or the processes whose name, command or pid holds a search text. */
+export type ProcessQuery = ProcessTarget | { q: string };
+
+/** The latest reading of the processes running a program (name), of a process and those under it (pid), or of those matching a search (q), including those no group holds. */
+export async function fetchTopProcesses(target: ProcessQuery, signal?: AbortSignal): Promise<TopProcesses> {
+  const pick: Record<string, string> = "name" in target ? { name: target.name } : "q" in target ? { q: target.q } : { pid: String(target.pid) };
+  const query = new URLSearchParams({ ...pick, all: "true" });
   const res = await fetch(`${TOP_PROCESSES_ENDPOINT}?${query}`, { headers: { Accept: "application/json" }, ...(signal ? { signal } : {}) });
   if (!res.ok) throw await failure(res, "read processes");
   return res.json() as Promise<TopProcesses>;

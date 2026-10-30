@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -58,11 +59,20 @@ type ProcessSample struct {
 }
 
 // ProcessFilter picks processes: those of a group, those running a
-// program, or a process and every one under it.
+// program, a process and every one under it, or those whose name, command
+// or pid holds the Query text, case-insensitively.
 type ProcessFilter struct {
 	GroupKey string
 	Name     string
 	PID      int
+	Query    string
+}
+
+func (p ProcessSample) holds(query string) bool {
+	query = strings.ToLower(query)
+	return strings.Contains(strings.ToLower(p.Name), query) ||
+		strings.Contains(strings.ToLower(p.Command), query) ||
+		strings.Contains(strconv.Itoa(p.PID), query)
 }
 
 // Options choose what a Top reads and shows.
@@ -210,6 +220,7 @@ func (t *Top) Processes(filter ProcessFilter) []ProcessSample {
 		case filter.PID != 0 && !picked[p.PID]:
 		case filter.GroupKey != "" && p.GroupKey != filter.GroupKey:
 		case filter.Name != "" && p.Name != filter.Name:
+		case filter.Query != "" && !p.holds(filter.Query):
 		default:
 			result = append(result, p)
 		}

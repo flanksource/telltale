@@ -2,6 +2,7 @@ import { AppShell, Button } from "@flanksource/clicky-ui/components";
 import { useTheme } from "@flanksource/clicky-ui/hooks";
 import { RouterProvider, useBrowserRouter, useRouter } from "@flanksource/clicky-ui/rpc";
 import { AppRoutes, matchRoute } from "./routes";
+import { CommandSearch } from "./search/CommandSearch";
 
 function Shell() {
   const { resolvedTheme, setTheme } = useTheme();
@@ -11,6 +12,7 @@ function Shell() {
     <AppShell
       brand={<span className="font-semibold">Telltale</span>}
       contentWidth="contained"
+      search={<CommandSearch />}
       navSections={[{
         items: [
           { key: "overview", label: "Overview", to: "/", active: page === "overview" },
