@@ -10,13 +10,20 @@ import (
 	"path/filepath"
 
 	"github.com/flanksource/telltale/pkg/credentials/apitoken"
+	"github.com/flanksource/telltale/pkg/datadir"
 )
 
-type TokenStore struct{ dir string }
+// TokenStore keeps one file per minted token in the agent-tokens dir of
+// each config dir.
+type TokenStore struct{ dirs []datadir.ConfigDir }
 
-func NewTokenStore(workDir string) *TokenStore {
-	return &TokenStore{dir: filepath.Join(workDir, ".telltale", "agent-tokens")}
+// NewTokenStore keeps tokens under dirs: Lookup checks them in order, Mint
+// writes to the global one.
+func NewTokenStore(dirs []datadir.ConfigDir) *TokenStore {
+	return &TokenStore{dirs: dirs}
 }
+
+const tokensDir = "agent-tokens"
 
 func (s *TokenStore) Mint(name string, scope apitoken.Scope) (apitoken.Minted, error) {
 	if err := apitoken.ValidateName(name); err != nil {
@@ -34,16 +41,21 @@ func (s *TokenStore) Mint(name string, scope apitoken.Scope) (apitoken.Minted, e
 	if err != nil {
 		return apitoken.Minted{}, err
 	}
-	if err := os.MkdirAll(s.dir, 0700); err != nil {
+	global, err := datadir.Global(s.dirs)
+	if err != nil {
+		return apitoken.Minted{}, fmt.Errorf("mint agent token: %w", err)
+	}
+	dir := filepath.Join(global, tokensDir)
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return apitoken.Minted{}, fmt.Errorf("create agent token directory: %w", err)
 	}
-	file, err := os.OpenFile(filepath.Join(s.dir, minted.ID+".json"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	file, err := os.OpenFile(filepath.Join(dir, minted.ID+".json"), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return apitoken.Minted{}, fmt.Errorf("create agent token: %w", err)
 	}
 	_, writeErr := file.Write(data)
 	if err := errors.Join(writeErr, file.Close()); err != nil {
-		removeErr := os.Remove(filepath.Join(s.dir, minted.ID+".json"))
+		removeErr := os.Remove(filepath.Join(dir, minted.ID+".json"))
 		return apitoken.Minted{}, fmt.Errorf("write agent token: %w", errors.Join(err, removeErr))
 	}
 	return minted, nil
@@ -54,10 +66,14 @@ func (s *TokenStore) Lookup(_ context.Context, id string) (apitoken.Record, erro
 	if err != nil || len(decoded) != 9 || base64.RawURLEncoding.EncodeToString(decoded) != id {
 		return apitoken.Record{}, apitoken.ErrUnknown
 	}
-	data, err := os.ReadFile(filepath.Join(s.dir, id+".json"))
-	if errors.Is(err, os.ErrNotExist) {
+	path, err := datadir.ConfigFile(s.dirs, filepath.Join(tokensDir, id+".json"))
+	if err != nil {
+		return apitoken.Record{}, fmt.Errorf("find agent token: %w", err)
+	}
+	if path == "" {
 		return apitoken.Record{}, apitoken.ErrUnknown
 	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return apitoken.Record{}, fmt.Errorf("read agent token: %w", err)
 	}

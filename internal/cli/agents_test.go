@@ -6,36 +6,40 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 
 	"github.com/flanksource/telltale/internal/cli"
 	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/credentials/apitoken"
+	"github.com/flanksource/telltale/pkg/datadir"
 	"github.com/flanksource/telltale/sdk/protocol"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("agent token command", func() {
-	It("prints a credential that verifies against the work directory store", func() {
+	It("prints a credential that verifies against the global config dir", func() {
 		dir := GinkgoT().TempDir()
+		GinkgoT().Setenv("XDG_CONFIG_HOME", dir)
 		output := &bytes.Buffer{}
 		root := cli.NewRoot("test")
 		root.SetOut(output)
-		root.SetArgs([]string{"agents", "token", "create", "agent", "--work-dir", dir})
+		root.SetArgs([]string{"agents", "token", "create", "agent"})
 		Expect(root.Execute()).To(Succeed())
-		verifier := apitoken.NewVerifier(agentclient.NewTokenStore(dir).Lookup)
+		verifier := apitoken.NewVerifier(agentclient.NewTokenStore([]datadir.ConfigDir{{Name: datadir.ConfigGlobal, Dir: filepath.Join(dir, "telltale")}}).Lookup)
 		_, err := verifier.Verify(context.Background(), strings.TrimSpace(output.String()))
 		Expect(err).NotTo(HaveOccurred())
 	})
 	It("creates an API-scoped token when requested", func() {
 		dir := GinkgoT().TempDir()
+		GinkgoT().Setenv("XDG_CONFIG_HOME", dir)
 		output := &bytes.Buffer{}
 		root := cli.NewRoot("test")
 		root.SetOut(output)
-		root.SetArgs([]string{"agents", "token", "create", "api", "--scope", "api", "--work-dir", dir})
+		root.SetArgs([]string{"agents", "token", "create", "api", "--scope", "api"})
 		Expect(root.Execute()).To(Succeed())
-		record, err := apitoken.NewVerifier(agentclient.NewTokenStore(dir).Lookup).Verify(context.Background(), strings.TrimSpace(output.String()))
+		record, err := apitoken.NewVerifier(agentclient.NewTokenStore([]datadir.ConfigDir{{Name: datadir.ConfigGlobal, Dir: filepath.Join(dir, "telltale")}}).Lookup).Verify(context.Background(), strings.TrimSpace(output.String()))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(record.Scope).To(Equal(apitoken.ScopeAPI))
 	})

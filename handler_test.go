@@ -21,15 +21,15 @@ const prefix = "/api/traces"
 
 var _ = Describe("the runs handler", func() {
 	var handler *telltale.Handler
-	var workDir, connectionsDir string
+	var dataDir, connectionsDir string
 	var connections *store.Store
 
 	BeforeEach(func() {
-		workDir, connectionsDir = GinkgoT().TempDir(), GinkgoT().TempDir()
+		dataDir, connectionsDir = GinkgoT().TempDir(), GinkgoT().TempDir()
 		var err error
 		connections, err = store.New(store.Layer{Name: store.LayerCWD, Dir: connectionsDir})
 		Expect(err).ToNot(HaveOccurred())
-		handler, err = telltale.NewHandler(telltale.HandlerOptions{WorkDir: workDir, Prefix: prefix, Connections: connections})
+		handler, err = telltale.NewHandler(telltale.HandlerOptions{DataDir: dataDir, Prefix: prefix, Connections: connections})
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(func() { Expect(handler.Close()).To(Succeed()) })
 	})
@@ -54,10 +54,10 @@ var _ = Describe("the runs handler", func() {
 		return runs
 	}
 
-	It("refuses a mount without a work dir, a rooted prefix or a connection store", func() {
-		_, err := telltale.NewHandler(telltale.HandlerOptions{WorkDir: workDir, Prefix: "api/traces/", Connections: connections})
+	It("refuses a mount without a data dir, a rooted prefix or a connection store", func() {
+		_, err := telltale.NewHandler(telltale.HandlerOptions{DataDir: dataDir, Prefix: "api/traces/", Connections: connections})
 		Expect(err).To(MatchError(ContainSubstring("prefix like /api/traces")))
-		_, err = telltale.NewHandler(telltale.HandlerOptions{WorkDir: workDir, Prefix: prefix})
+		_, err = telltale.NewHandler(telltale.HandlerOptions{DataDir: dataDir, Prefix: prefix})
 		Expect(err).To(MatchError(ContainSubstring("a connection store is required")))
 	})
 
@@ -79,14 +79,14 @@ var _ = Describe("the runs handler", func() {
 		Expect(err).To(MatchError(os.ErrNotExist))
 	})
 
-	It("lists no runs for a work dir that never traced one", func() {
+	It("lists no runs for a data dir that never traced one", func() {
 		status, body := get(prefix)
 		Expect(status).To(Equal(http.StatusOK))
 		Expect(body).To(MatchJSON(`{"runs": []}`))
 	})
 
 	It("lists a recorded run at its mount and serves its store there", func() {
-		run, err := telltale.Start(context.Background(), telltale.StartOptions{WorkDir: workDir, Command: []string{"true"}})
+		run, err := telltale.Start(context.Background(), telltale.StartOptions{DataDir: dataDir, Command: []string{"true"}})
 		Expect(err).ToNot(HaveOccurred())
 		result, err := run.Wait()
 		Expect(err).ToNot(HaveOccurred())
@@ -104,9 +104,9 @@ var _ = Describe("the runs handler", func() {
 	})
 
 	It("lists a run that left no manifest with why it is unavailable", func() {
-		Expect(os.MkdirAll(filepath.Join(workDir, ".telltale", "traces", "run-crashed"), 0o755)).To(Succeed())
+		Expect(os.MkdirAll(filepath.Join(dataDir, "traces", "run-crashed"), 0o755)).To(Succeed())
 		_, body := get(prefix)
-		Expect(body).To(MatchJSON(`{"runs": [{"runId": "run-crashed", "dir": "` + filepath.Join(workDir, ".telltale", "traces", "run-crashed") +
+		Expect(body).To(MatchJSON(`{"runs": [{"runId": "run-crashed", "dir": "` + filepath.Join(dataDir, "traces", "run-crashed") +
 			`", "status": "unfinished", "mount": "/api/traces/run-crashed", "unavailable": "the run did not finish: it left no run.json"}]}`))
 	})
 
@@ -185,7 +185,7 @@ var _ = Describe("the runs handler", func() {
 		status, body := post(`{"command":"sleep 30"}`, jsonHeader())
 		Expect(status).To(Equal(http.StatusCreated), body)
 		Expect(handler.Close()).To(Succeed())
-		runs, err := telltale.List(telltale.ListOptions{WorkDir: workDir})
+		runs, err := telltale.List(telltale.ListOptions{DataDir: dataDir})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(runs).To(ConsistOf(HaveField("Status", telltale.StatusFailed)))
 	})

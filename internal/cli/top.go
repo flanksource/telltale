@@ -30,11 +30,11 @@ type topFlags struct {
 	record   bool
 	once     bool
 	duration time.Duration
-	workDir  string
+	dataDir  string
 }
 
 func newTopCommand() *cobra.Command {
-	flags := topFlags{every: groups.DefaultInterval, sort: groups.SortCPU, groupBy: string(groups.GroupTree), workDir: "."}
+	flags := topFlags{every: groups.DefaultInterval, sort: groups.SortCPU, groupBy: string(groups.GroupTree)}
 	cmd := &cobra.Command{
 		Use:   "top",
 		Short: "Show the CPU, memory, disk, sockets and network of each tool's processes: agents, tests, browsers, builds, services",
@@ -44,8 +44,8 @@ func newTopCommand() *cobra.Command {
 			"and system (root's and the role accounts'), by program.\n\n" +
 			"Keys: ↑↓ move, ←→ fold, enter lists the selected group's processes, s sorts, S reverses, / filters, o shows other processes, " +
 			"b cycles grouping, n reads network bytes, q quits.\n\n" +
-			"Nothing is kept unless --record records a run into .telltale/traces, which `telltale trace list` and `telltale serve` show. " +
-			"Rules come from the built-in catalog and .telltale/groups.yaml (or --catalog).",
+			"Nothing is kept unless --record records a run into the data dir, which `telltale trace list` and `telltale serve` show. " +
+			"Rules come from the built-in catalog and groups.yaml in ./.telltale, else the global config dir (or --catalog).",
 		Example: "  telltale top\n  telltale top --groups claude --sort mem\n  telltale top --record --duration 10m --net\n  telltale top --once --format json",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -59,11 +59,11 @@ func newTopCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&flags.params.All, "all", false, "Also show the processes no tool's group holds, by scope and program")
 	cmd.Flags().StringSliceVar(&flags.params.Groups, "groups", nil, "Show only these groups and those under them, e.g. claude,vitest")
 	cmd.Flags().BoolVar(&flags.params.Net, "net", false, "Read each process's network bytes with nettop (darwin; nettop costs over a core)")
-	cmd.Flags().StringVar(&flags.params.Catalog, "catalog", "", "A groups.yaml applied over the built-in rules (default .telltale/groups.yaml when present)")
-	cmd.Flags().BoolVar(&flags.record, "record", false, "Record the groups into a run in .telltale/traces")
+	cmd.Flags().StringVar(&flags.params.Catalog, "catalog", "", "A groups.yaml applied over the built-in rules (default ./.telltale/groups.yaml, else the global config dir's, when present)")
+	cmd.Flags().BoolVar(&flags.record, "record", false, "Record the groups into a run in the data dir")
 	cmd.Flags().BoolVar(&flags.once, "once", false, "Print one frame, taken once CPU can be rated, and exit")
 	cmd.Flags().DurationVar(&flags.duration, "duration", 0, "Stop after this long (0 runs until q or Ctrl+C)")
-	cmd.Flags().StringVar(&flags.workDir, "work-dir", flags.workDir, "Directory holding .telltale/traces and .telltale/groups.yaml")
+	bindDataDir(cmd.Flags(), &flags.dataDir)
 	return cmd
 }
 
@@ -82,7 +82,7 @@ func (f topFlags) run(cmd *cobra.Command) error {
 	f.params.Interval = f.every.String()
 	if f.params.Catalog == "" {
 		var err error
-		if f.params.Catalog, err = groups.CatalogFile(f.workDir); err != nil {
+		if f.params.Catalog, err = groups.CatalogFile(); err != nil {
 			return err
 		}
 	}
@@ -179,7 +179,7 @@ func (f topFlags) recordRun(ctx context.Context) error {
 		return err
 	}
 	run, err := telltale.Start(ctx, telltale.StartOptions{
-		WorkDir: f.workDir, Duration: f.duration, Connections: connections,
+		DataDir: f.dataDir, Duration: f.duration, Connections: connections,
 		Traces: []telltale.TraceSpec{{Kind: groups.Kind, Params: raw}},
 	})
 	if err != nil {

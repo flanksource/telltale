@@ -23,8 +23,7 @@ type runFlags struct {
 
 // bind defines the flags every run command takes on cmd.
 func (f *runFlags) bind(cmd *cobra.Command) {
-	f.options.WorkDir = "."
-	cmd.Flags().StringVar(&f.options.WorkDir, "work-dir", f.options.WorkDir, "Directory holding .telltale/traces")
+	bindDataDir(cmd.Flags(), &f.options.DataDir)
 	cmd.Flags().DurationVar(&f.options.Duration, "duration", 0, "Stop the run after this long, e.g. 30s (0 runs until the command exits or Ctrl+C)")
 	cmd.Flags().DurationVar(&f.options.Every, "every", 0, "Read the checkpointed captures this often, e.g. 10s")
 	cmd.Flags().Bool("follow", false, "Print each capture's rows while recording")

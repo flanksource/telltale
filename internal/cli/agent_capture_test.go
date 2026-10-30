@@ -100,13 +100,13 @@ var _ = Describe("CLI agent captures", func() {
 				}
 			}
 		}()
-		workDir := GinkgoT().TempDir()
-		args := append([]string{"run", kind, "--work-dir", workDir, "--pid", strconv.Itoa(child.Process.Pid), "--duration", "2s"}, flags...)
+		dataDir := GinkgoT().TempDir()
+		args := append([]string{"run", kind, "--data-dir", dataDir, "--pid", strconv.Itoa(child.Process.Pid), "--duration", "2s"}, flags...)
 		_, stderr, runErr := execute(args...)
 		close(stop)
 		<-done
 		Expect(runErr).NotTo(HaveOccurred(), stderr)
-		result := manifest(workDir)
+		result := manifest(dataDir)
 		Expect(result.Captures).To(HaveLen(1))
 		Expect(result.Captures[0].Kind).To(Equal(kind))
 		runtime, closeStore, err := traces.Reopen(result.Dir)

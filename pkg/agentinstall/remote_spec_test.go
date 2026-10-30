@@ -14,6 +14,7 @@ import (
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/agentinstall"
+	"github.com/flanksource/telltale/pkg/datadir"
 	"github.com/flanksource/telltale/pkg/tracing/jfr/decode"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -35,7 +36,7 @@ var _ = Describe("Java hub installation", func() {
 			DeferCleanup(func() { _ = child.Process.Kill(); _ = child.Wait() })
 			pid = child.Process.Pid
 		}
-		store := agentclient.NewTokenStore(directory)
+		store := agentclient.NewTokenStore([]datadir.ConfigDir{{Name: datadir.ConfigGlobal, Dir: directory}})
 		token, err := store.Mint("java-fixture", "agent")
 		Expect(err).NotTo(HaveOccurred())
 		tokenFile := filepath.Join(directory, "token")
@@ -95,7 +96,7 @@ var _ = Describe("Java hub installation", func() {
 		DeferCleanup(func() { agentclient.Default = previous })
 		runParams, err := json.Marshal(map[string]any{"target": map[string]any{"seam": "agent", "agent": agent.Hello.AgentID}, "engine": "jfr"})
 		Expect(err).NotTo(HaveOccurred())
-		run, err := telltale.Start(ctx, telltale.StartOptions{WorkDir: filepath.Join(directory, "run"), Duration: 2 * time.Second, Every: time.Second, Traces: []telltale.TraceSpec{{Kind: "jvm_jfr", Params: runParams}}})
+		run, err := telltale.Start(ctx, telltale.StartOptions{DataDir: filepath.Join(directory, "run"), Duration: 2 * time.Second, Every: time.Second, Traces: []telltale.TraceSpec{{Kind: "jvm_jfr", Params: runParams}}})
 		Expect(err).NotTo(HaveOccurred())
 		recorded, err := run.Wait()
 		Expect(err).NotTo(HaveOccurred())

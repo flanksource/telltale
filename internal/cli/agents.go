@@ -12,6 +12,7 @@ import (
 
 	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/credentials/apitoken"
+	"github.com/flanksource/telltale/pkg/datadir"
 	"github.com/flanksource/telltale/sdk/protocol"
 	"github.com/spf13/cobra"
 )
@@ -59,12 +60,15 @@ func newAgentsCommand() *cobra.Command {
 	list.Flags().StringVar(&serverURL, "server", "", "Telltale server URL for connected agents")
 	get.Flags().StringVar(&serverURL, "server", "", "Telltale server URL for connected agents")
 	tokens := &cobra.Command{Use: "token", Short: "Manage hub credentials"}
-	var workDir string
 	var scope string
 	create := &cobra.Command{
-		Use: "create <name>", Short: "Create a hub token and print it once", Args: cobra.ExactArgs(1),
+		Use: "create <name>", Short: "Create a hub token in the global config dir and print it once", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			minted, err := agentclient.NewTokenStore(workDir).Mint(args[0], apitoken.Scope(scope))
+			dirs, err := datadir.ConfigDirs()
+			if err != nil {
+				return err
+			}
+			minted, err := agentclient.NewTokenStore(dirs).Mint(args[0], apitoken.Scope(scope))
 			if err != nil {
 				return err
 			}
@@ -72,7 +76,6 @@ func newAgentsCommand() *cobra.Command {
 			return err
 		},
 	}
-	create.Flags().StringVar(&workDir, "work-dir", ".", "Directory containing the hub state")
 	create.Flags().StringVar(&scope, "scope", string(apitoken.ScopeAgent), "Token scope: agent or api")
 	tokens.AddCommand(create)
 	agents.AddCommand(list, get, tokens, newAgentInstallCommand())

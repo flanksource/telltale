@@ -9,9 +9,8 @@ import (
 
 func newRulesCommand() *cobra.Command {
 	command := &cobra.Command{Use: "rules", Short: "Validate, preview and inspect CEL resource rules"}
-	var file, workDir, server string
+	var file, server string
 	command.PersistentFlags().StringVar(&file, "rules", "", "Rules YAML file")
-	command.PersistentFlags().StringVar(&workDir, "work-dir", ".", "Directory containing the process group catalog")
 	command.PersistentFlags().StringVar(&server, "server", "http://localhost:8080", "Running Telltale server for status and events")
 	validate := &cobra.Command{Use: "validate", Short: "Compile and type-check every rule and target expression", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		program, err := rules.Load(file)
@@ -21,7 +20,7 @@ func newRulesCommand() *cobra.Command {
 		return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]any{"valid": true, "revision": program.Revision, "rules": len(program.Config.Rules)})
 	}}
 	preview := &cobra.Command{Use: "preview", Short: "Preview resource conditions and exact hook targets without enforcing", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-		result, err := rules.PreviewFile(cmd.Context(), file, workDir)
+		result, err := rules.PreviewFile(cmd.Context(), file)
 		if err != nil {
 			return err
 		}

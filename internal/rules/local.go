@@ -7,12 +7,12 @@ import (
 	"time"
 )
 
-func PreviewFile(ctx context.Context, path, workDir string) ([]Preview, error) {
+func PreviewFile(ctx context.Context, path string) ([]Preview, error) {
 	program, err := Load(path)
 	if err != nil {
 		return nil, err
 	}
-	catalog, err := groups.CatalogFile(workDir)
+	catalog, err := groups.CatalogFile()
 	if err != nil {
 		return nil, err
 	}

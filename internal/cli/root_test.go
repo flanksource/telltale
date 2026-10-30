@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/flanksource/telltale/internal/cli"
@@ -12,6 +13,12 @@ import (
 )
 
 func TestCLI(t *testing.T) { RegisterFailHandler(Fail); RunSpecs(t, "CLI") }
+
+// Every spec keeps its trace data and config in temp dirs, never the user's.
+var _ = BeforeEach(func() {
+	GinkgoT().Setenv("XDG_CACHE_HOME", GinkgoT().TempDir())
+	GinkgoT().Setenv("XDG_CONFIG_HOME", GinkgoT().TempDir())
+})
 
 // captureStdout is what run printed to os.Stdout, where clicky prints results.
 func captureStdout(run func()) string {
@@ -52,9 +59,19 @@ var _ = Describe("command boundaries", func() {
 	)
 	It("prints in the format its flags ask for", func() {
 		root := cli.NewRoot("dev")
-		root.SetArgs([]string{"trace", "list", "--work-dir", GinkgoT().TempDir(), "--json"})
+		root.SetArgs([]string{"trace", "list", "--data-dir", GinkgoT().TempDir(), "--json"})
 		output := captureStdout(func() { Expect(root.Execute()).To(Succeed()) })
 		Expect(output).To(MatchJSON(`[]`))
+	})
+
+	It("reads trace data from the XDG cache dir when --data-dir is not given", func() {
+		cache := GinkgoT().TempDir()
+		GinkgoT().Setenv("XDG_CACHE_HOME", cache)
+		Expect(os.MkdirAll(filepath.Join(cache, "telltale", "traces", "run-crashed"), 0o755)).To(Succeed())
+		root := cli.NewRoot("dev")
+		root.SetArgs([]string{"trace", "list", "--json"})
+		output := captureStdout(func() { Expect(root.Execute()).To(Succeed()) })
+		Expect(output).To(MatchJSON(`[{"runId":"run-crashed","dir":"` + filepath.Join(cache, "telltale", "traces", "run-crashed") + `","status":"unfinished","unavailable":"the run did not finish: it left no run.json"}]`))
 	})
 
 	It("reports a supplied version without Git metadata", func() {

@@ -18,11 +18,11 @@ func newTraceCommand() *cobra.Command {
 }
 
 func newTraceRunCommand() *cobra.Command {
-	options := telltale.StartOptions{WorkDir: "."}
+	options := telltale.StartOptions{}
 	var specs []string
 	run := &cobra.Command{
 		Use:   "run [flags] -- command [args...]",
-		Short: "Run a command under trace, recording its traffic and process tree into .telltale/traces",
+		Short: "Run a command under trace, recording its traffic and process tree into the data dir",
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options.Command = args
@@ -35,7 +35,7 @@ func newTraceRunCommand() *cobra.Command {
 	}
 	run.Flags().StringArrayVar(&specs, "trace", []string{`http:{"target":{"seam":"proxy"}}`}, `Capture to arm, as kind or kind:{json params}, e.g. http:{"target":{"seam":"proxy"},"mode":"mitm"}`)
 	run.Flags().BoolVar(&options.Facets, "facets", false, "Read every process's facets and environment into the process tree")
-	run.Flags().StringVar(&options.WorkDir, "work-dir", options.WorkDir, "Directory holding .telltale/traces")
+	bindDataDir(run.Flags(), &options.DataDir)
 	run.Flags().DurationVar(&options.Duration, "duration", 0, "Stop the command after this long, e.g. 30s")
 	run.Flags().DurationVar(&options.Every, "every", 0, "Read the checkpointed captures this often, e.g. 10s")
 	run.Flags().Bool("follow", false, "Print each capture's rows while recording")
@@ -65,13 +65,15 @@ func parseTraceSpecs(values []string) ([]telltale.TraceSpec, error) {
 }
 
 func newTraceListCommand() *cobra.Command {
-	options := telltale.ListOptions{WorkDir: "."}
+	options := telltale.ListOptions{}
 	var statuses []string
 	var since time.Duration
 	list := &cobra.Command{
-		Use:   "list",
-		Short: "List the runs recorded under .telltale/traces, newest first",
-		Args:  cobra.NoArgs,
+		Use:     "list",
+		Short:   "List the runs recorded under the data dir, newest first",
+		Long:    "List the runs recorded under the data dir, newest first, then the standing stores of the data dir. The OTLP receiver's store is the pseudo-run receiver: running while telltale serve --otlp writes it, standing otherwise. Read it like a run with telltale records spans --run receiver.",
+		Example: "  telltale trace list --status failed --since 2h\n  telltale trace list --kind spans\n  telltale trace list --status running,standing",
+		Args:    cobra.NoArgs,
 		RunE: func(*cobra.Command, []string) error {
 			options.Status = options.Status[:0]
 			for _, value := range statuses {
@@ -92,7 +94,7 @@ func newTraceListCommand() *cobra.Command {
 			return nil
 		},
 	}
-	list.Flags().StringVar(&options.WorkDir, "work-dir", options.WorkDir, "Directory holding .telltale/traces")
+	bindDataDir(list.Flags(), &options.DataDir)
 	list.Flags().StringVarP(&options.Query, "query", "q", "", "Keep runs whose id or command contains this text, ignoring case")
 	list.Flags().StringSliceVar(&statuses, "status", nil, fmt.Sprintf("Keep runs in these statuses %v", telltale.Statuses))
 	list.Flags().StringVar(&options.Kind, "kind", "", "Keep runs that armed a capture of this trace kind")

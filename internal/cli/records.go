@@ -14,7 +14,7 @@ import (
 )
 
 func newRecordsCommand() *cobra.Command {
-	scope := read.Scope{WorkDir: "."}
+	scope := read.Scope{}
 	var q read.Query
 	var since, from, until, groupBy, view string
 	var cols []string
@@ -23,7 +23,7 @@ func newRecordsCommand() *cobra.Command {
 		Use: "records <kind>", Short: "Read, follow, or aggregate a run's stored records", Args: cobra.ExactArgs(1),
 		Long: `Read stored trace records through the kind's query profile. By default, select the newest run containing the kind and return up to 100 rows in profile order.
 
---since accepts a duration (2h) or RFC3339 timestamp: select all runs started at or after that instant and use it as the row-time lower bound. --from overrides only the row window; --until is exclusive. --run and --runs narrow the run selection. --follow requires a single selected run and ends when its streams seal.
+--since accepts a duration (2h) or RFC3339 timestamp: select all runs started at or after that instant and use it as the row-time lower bound. Standing stores, such as the OTLP receiver's (--run receiver), are continuous and always selectable. --from overrides only the row window; --until is exclusive. --run and --runs narrow the run selection. --follow requires a single selected run and ends when its streams seal.
 
 --filter uses profile column grammar, e.g. pid=123 or rssBytes=>=1048576. --where uses CEL with a row binding, e.g. row.cpuPercent != null && row.cpuPercent > 10. --limit applies after CEL; --all reads every matching row. A continuation cursor is printed to stderr when more rows remain.
 
@@ -33,6 +33,9 @@ func newRecordsCommand() *cobra.Command {
   telltale records process_samples --run run-2026-10-28T09-00-00Z --follow --format ndjson
   telltale records process_samples --stats cpuPercent,rssBytes --group-by pid
   telltale records process_samples --group-by pid --format csv
+  telltale records spans --run receiver --filter service=checkout --limit 5
+  telltale records spans --run receiver --stats durationMs --group-by operation
+  telltale records spans --run receiver --follow
   telltale records sql --view repeats`,
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
 			scope, q, aggregate, err := read.ParseRequest(recordValues(cmd))
@@ -97,7 +100,7 @@ func newRecordsCommand() *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&scope.WorkDir, "work-dir", ".", "Directory holding .telltale/traces")
+	bindDataDir(f, &scope.DataDir)
 	f.StringVar(&scope.Run, "run", "", "Run id (default: newest containing the kind)")
 	f.StringSliceVar(&scope.Runs, "runs", nil, "Comma-separated run ids")
 	f.StringVar(&since, "since", "", "Run-start cutoff and default row-time start: duration or RFC3339")

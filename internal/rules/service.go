@@ -55,12 +55,12 @@ type Service struct {
 	unlock       func() error
 }
 
-func Open(workDir, path string, enforce bool) (*Service, error) {
+func Open(dataDir, path string, enforce bool) (*Service, error) {
 	program, err := Load(path)
 	if err != nil {
 		return nil, err
 	}
-	catalogPath, err := groups.CatalogFile(workDir)
+	catalogPath, err := groups.CatalogFile()
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func Open(workDir, path string, enforce bool) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	journal, err := OpenJournal(workDir)
+	journal, err := OpenJournal(dataDir)
 	if err != nil {
 		source.Close()
 		return nil, err

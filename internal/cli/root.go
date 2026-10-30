@@ -7,22 +7,30 @@ import (
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/internal/otelreceiver"
 	"github.com/flanksource/telltale/internal/server"
+	"github.com/flanksource/telltale/pkg/datadir"
 	"github.com/spf13/cobra"
 )
 
 func NewRoot(version string) *cobra.Command {
 	root := &cobra.Command{
 		Use: "telltale", Short: "Telltale", Version: version, SilenceUsage: true,
-		PersistentPreRunE: func(*cobra.Command, []string) error {
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			clicky.Flags.UseFlags()
+			if err := resolveDataDir(cmd); err != nil {
+				return err
+			}
 			return EnableHTTPWireLogging()
 		},
 	}
 	clicky.BindAllFlags(root.PersistentFlags(), "format")
-	options := server.Options{Root: root, Version: version, Host: "localhost", Port: 8080, UIPort: 5173, WebDirectory: "webapp", WorkDir: ".", OTLP: otelreceiver.DefaultOptions()}
+	options := server.Options{Root: root, Version: version, Host: "localhost", Port: 8080, UIPort: 5173, WebDirectory: "webapp", OTLP: otelreceiver.DefaultOptions()}
 	serve := &cobra.Command{
 		Use: "serve", Short: "Start the HTTP API and web UI", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			var err error
+			if options.ConfigDirs, err = datadir.ConfigDirs(); err != nil {
+				return err
+			}
 			return server.Run(cmd.Context(), options)
 		},
 	}
@@ -31,7 +39,7 @@ func NewRoot(version string) *cobra.Command {
 	serve.Flags().BoolVar(&options.Dev, "dev", false, "Start Vite with local Clicky UI source and HMR")
 	serve.Flags().IntVar(&options.UIPort, "ui-port", options.UIPort, "Vite port in development")
 	serve.Flags().StringVar(&options.WebDirectory, "web-dir", options.WebDirectory, "Frontend source directory for --dev")
-	serve.Flags().StringVar(&options.WorkDir, "work-dir", options.WorkDir, "Directory whose .telltale/traces run stores are served")
+	bindDataDir(serve.Flags(), &options.DataDir)
 	serve.Flags().StringVar(&options.RulesFile, "rules", "", "Continuously observe resource rules from this YAML file")
 	serve.Flags().BoolVar(&options.EnforceRules, "enforce-rules", false, "Execute resource rule hooks (default: observation only)")
 	serve.Flags().BoolVar(&options.OTLP.Enabled, "otlp", false, "Continuously receive OTLP traces into local storage")

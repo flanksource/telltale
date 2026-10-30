@@ -116,13 +116,13 @@ func kindHelp(cmd *cobra.Command, registration traces.Registration) helpText {
 }
 
 func traceRunHelp(cmd *cobra.Command) helpText {
-	h := newHelp("Run a command under trace, recording its traffic and process tree into .telltale/traces.").
+	h := newHelp("Run a command under trace, recording its traffic and process tree into the data dir.").
 		section("Usage").
 		command("telltale trace run [flags] -- command [args...]", "").
 		section("How it works").
 		paragraph("Each --trace arms one capture before the command starts. A proxy capture exports the variables that point the command at it.").
 		paragraph("The process tree under telltale, which holds the command, is always recorded with its samples and stacks.").
-		paragraph("Everything is kept in a store at <work-dir>/.telltale/traces/<run id>; the newest 20 runs are kept.").
+		paragraph("Everything is kept in a store at <data-dir>/traces/<run id> (--data-dir defaults to $XDG_CACHE_HOME/telltale or the OS cache dir); the newest 20 runs are kept.").
 		paragraph("The command's exit code is the run's: a command that fails fails trace run.").
 		section("Trace kinds").
 		paragraph("Arm one as --trace kind, or with params as --trace 'kind:{\"param\": value}'.")
@@ -153,6 +153,7 @@ func traceRunHelp(cmd *cobra.Command) helpText {
 		section("See also").
 		command("telltale run <kind> --help", "one kind, its params as flags").
 		command("telltale trace list --status failed --since 2h", "the runs recorded").
+		command("telltale records spans --run receiver --filter service=checkout", "the spans telltale serve --otlp received").
 		command("telltale serve", "browse the runs in the web UI").
 		flags(cmd)
 }
