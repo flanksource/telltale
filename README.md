@@ -16,7 +16,7 @@ Open `http://localhost:8080`. The server exposes `/health` and `/api/openapi.jso
 
 ## Tracing a command
 
-`telltale trace run` runs a command under trace and keeps what it recorded in a run store at `.telltale/traces/<run id>` under `--work-dir` (default `.`). Each `--trace kind[:{json params}]` arms one capture and points the command at it through the environment it exports; the default is the `http` proxy seam. The process tree under telltale is always recorded.
+`telltale trace run` runs a command under trace and keeps what it recorded in a run store at `traces/<run id>` under the data dir: `--data-dir`, by default `$XDG_CACHE_HOME/telltale`, else the OS cache dir (`~/Library/Caches/telltale` on macOS, `~/.cache/telltale` on Linux). Telltale writes nothing relative to the working directory; see [Where telltale keeps its data](#where-telltale-keeps-its-data). Each `--trace kind[:{json params}]` arms one capture and points the command at it through the environment it exports; the default is the `http` proxy seam. The process tree under telltale is always recorded.
 
 ```sh
 # Record TLS traffic in full: the proxy terminates TLS with an ephemeral CA it exports to curl.
@@ -31,7 +31,7 @@ telltale serve
 
 `telltale run <kind>` arms a single trace kind, its params as flags. There is one subcommand for every kind in the registry, which `pkg/traces` fills in `init()` before the CLI is built, so a kind registered by another package's `init()` gets its own command with no CLI change. `telltale run <kind> --help` shows what the kind records, its flags with their defaults and choices, the variables it exports and examples.
 
-Flag types, descriptions, defaults, choices, and required inputs come from the kind's parameter schema and also describe the generated arguments in `/api/openapi.json`. Nested fields use kebab-case flags such as `--environment-keys`; string maps take comma-separated `key=value` pairs, such as `--levels worker=debug,api=info`, and maps with arbitrary values take a JSON object, such as `--options '{"limit":100}'`. The goprof checkpoint schema describes `--profile`, `--seconds`, and `--source`, with defaults from the registered checkpoint. Common run controls remain `--work-dir`, `--duration`, and `--every`.
+Flag types, descriptions, defaults, choices, and required inputs come from the kind's parameter schema and also describe the generated arguments in `/api/openapi.json`. Nested fields use kebab-case flags such as `--environment-keys`; string maps take comma-separated `key=value` pairs, such as `--levels worker=debug,api=info`, and maps with arbitrary values take a JSON object, such as `--options '{"limit":100}'`. The goprof checkpoint schema describes `--profile`, `--seconds`, and `--source`, with defaults from the registered checkpoint. Common run controls remain `--data-dir`, `--duration`, and `--every`.
 
 ```sh
 telltale run http --seam proxy --mode mitm --hosts '*.example.com' -- curl -sS https://api.example.com
@@ -51,7 +51,7 @@ Presets are named runs of several kinds, each a top-level command:
 
 Both also take `-- command [args...]`. A program registers its own with `telltale.RegisterPreset` in `init()`.
 
-`telltale serve` mounts the runs of `--work-dir` at `/api/traces`, and the web UI starts, stops, filters and shows them, live while they run:
+`telltale serve` mounts the runs of the data dir at `/api/traces`, and the web UI starts, stops, filters and shows them, live while they run:
 
 | Route | Does |
 |---|---|
@@ -75,7 +75,7 @@ telltale top --groups claude,vitest --sort mem # only these groups and those und
 telltale top --all                             # also the processes no tool holds: other ▸ <program>, system ▸ <program>
 telltale top --net                             # with network bytes (nettop, darwin)
 telltale top --once --format json              # one frame, once CPU can be rated
-telltale top --record --duration 10m           # record into .telltale/traces
+telltale top --record --duration 10m           # record into the data dir
 telltale trace list --kind process_groups
 ```
 
@@ -98,7 +98,7 @@ A brew service no rule matches becomes a `service` group of its own, so `postgre
 
 Nothing is kept unless you pass `--record`, which starts a host run: a run with neither a command nor a process, arming the `process_groups` trace kind (also `telltale run process_groups`). The screen then shows the frames as the run's store commits them. On darwin, network bytes come from `nettop`, which uses more than a core however long its interval, so it runs only with `--net`; other platforms refuse `--net`. Socket and connection counts come from `lsof` on every platform.
 
-The built-in rules (`pkg/tracing/groups/catalog.yaml`) cover claude, codex, cmux, captain, gavel, go test, vitest, playwright, agent-browser, lightpanda, chrome, vite, make, pnpm/npm and gopls. Rules in `.telltale/groups.yaml` under `--work-dir`, or in the file `--catalog` names, go ahead of the built-in ones. A rule with a built-in rule's name replaces it, and `disabled: true` drops it:
+The built-in rules (`pkg/tracing/groups/catalog.yaml`) cover claude, codex, cmux, captain, gavel, go test, vitest, playwright, agent-browser, lightpanda, chrome, vite, make, pnpm/npm and gopls. Rules in `./.telltale/groups.yaml`, else the global config dir's `groups.yaml`, or in the file `--catalog` names, go ahead of the built-in ones. A rule with a built-in rule's name replaces it, and `disabled: true` drops it:
 
 ```yaml
 groups:
@@ -126,24 +126,38 @@ The Top page includes Rules and Events tabs for conditions, escalation steps, li
 The module root package starts, stops, lists and serves runs for other Go programs:
 
 ```go
+dataDir, err := datadir.Cache() // github.com/flanksource/telltale/pkg/datadir, or a directory of your own
 run, err := telltale.Start(ctx, telltale.StartOptions{
-	WorkDir: ".", Command: []string{"curl", "-sS", "https://example.com"},
+	DataDir: dataDir, Command: []string{"curl", "-sS", "https://example.com"},
 	Traces:    []telltale.TraceSpec{{Kind: "http", Params: json.RawMessage(`{"target":{"seam":"proxy"}}`)}},
 	TraceRoot: telltale.TraceRootCommand, // trace the command's own tree, in its own process group
 })
-result, err := run.Wait() // or run.Stop(), or telltale.Stop(telltale.StopOptions{WorkDir: ".", RunID: run.ID()})
+result, err := run.Wait() // or run.Stop(), or telltale.Stop(telltale.StopOptions{DataDir: dataDir, RunID: run.ID()})
 
-runs, err := telltale.List(telltale.ListOptions{WorkDir: ".", Status: []telltale.Status{telltale.StatusFailed}, Limit: 10})
+runs, err := telltale.List(telltale.ListOptions{DataDir: dataDir, Status: []telltale.Status{telltale.StatusFailed}, Limit: 10})
 
 // Mount the routes above in your own server; Close stops the runs it started.
 connections, err := telltale.OpenConnections() // or store.Open("your-app"), or store.New(layers...)
-handler, err := telltale.NewHandler(telltale.HandlerOptions{WorkDir: ".", Prefix: "/api/traces", Connections: connections})
+handler, err := telltale.NewHandler(telltale.HandlerOptions{DataDir: dataDir, Prefix: "/api/traces", Connections: connections})
 mux.Handle("/api/traces", handler)
 mux.Handle("/api/traces/", handler)
 defer handler.Close()
 ```
 
 `StartOptions.PID` attaches to a running process in place of `Command`, `Duration` stops a run, and `Every` sets how often checkpointed captures are read. `traces.Register` adds a trace kind to the catalog every run, the CLI and the start form read; its `Target` says whether the kind is pointed at by a command, observes a process tree, or records telltale itself. `telltale.StartSchema()` returns the start form's JSON schema and defaults, and `telltale.StartRequest.Options` turns a submitted form into `StartOptions`, refusing bad fields with a `*telltale.ValidationError`. The form renders with Clicky UI's `JsonSchemaForm`.
+
+### Where telltale keeps its data
+
+Telltale never stores anything relative to the working directory. Trace data lives under the data dir, `--data-dir` on every command that reads or records runs, by default `$XDG_CACHE_HOME/telltale` when `XDG_CACHE_HOME` is set, else the OS cache dir (`~/Library/Caches/telltale` on macOS, `~/.cache/telltale` on Linux):
+
+| Path under the data dir | Holds |
+| --- | --- |
+| `traces/<run id>` | one store per command run; the newest 20 are kept |
+| `otel/spans/records.sqlite` | the OTLP receiver's spans, read as the run `receiver` |
+| `otel/receiver.lock` | the lock the writing receiver holds |
+| `monitor/events.sqlite` | the rule event journal of `serve --rules` |
+
+Config is read from the working directory's `.telltale`, then the global config dir, `$XDG_CONFIG_HOME/telltale` or `~/.config/telltale`; the first that has a file wins. That covers `groups.yaml` and the hub tokens in `agent-tokens/`. `telltale agents token create` writes to the global config dir. `telltale serve` prints every path it uses when it starts. Data under an older `./.telltale/traces`, `./.telltale/otel` or `./.telltale/monitor` is not read or migrated; delete it once it is no longer needed.
 
 ### Connections
 
@@ -180,7 +194,7 @@ The other Go packages are importable too:
 
 | Package | Purpose |
 |---|---|
-| `pkg/tracing` and its kinds (`http`, `httpproxy`, `pgproxy`, `sql`, `process`, `groups`, `stacks`, `goprof`, `terminal`, `jfr`, `opensearch`, `sqlserver/*`) | Trace plugin framework and capture kinds |
+| `pkg/tracing` and its kinds (`http`, `httpproxy`, `pgproxy`, `sql`, `process`, `groups`, `stacks`, `goprof`, `terminal`, `jfr`, `spans`, `sqlserver/*`) | Trace plugin framework and capture kinds |
 | `pkg/traces` | Per-run trace store host |
 | `pkg/traceserve` | Opens a trace store and serves its read, export and checkpoint routes |
 | `pkg/proxy/{credproxy,kubeproxy,mcpproxy,proxylog}` | Credential-injecting egress proxy, Kubernetes and MCP reverse proxies, JSONL request log |
@@ -188,9 +202,9 @@ The other Go packages are importable too:
 
 ## Receive OpenTelemetry traces
 
-Run `telltale serve --otlp --port 4318` to receive OTLP/HTTP at `/v1/traces` and OTLP/gRPC at `localhost:4317`. Open `/otel`, select **Received traces**, and search or inspect the waterfall. Ingestion runs continuously without arming, and received traces remain available after restart. See [receiver configuration and exporter examples](docs/otlp-receiver.md).
+Run `telltale serve --otlp --port 4318` to receive OTLP/HTTP at `/v1/traces` and OTLP/gRPC at `localhost:4317`. Open `/otel`, choose the **receiver** run of **Recorded traces**, and search or inspect the waterfall; `telltale trace list` shows the receiver as a pseudo-run and `telltale records spans --run receiver` reads its spans. Ingestion runs continuously without arming, and received traces remain available after restart. See [receiver configuration and exporter examples](docs/otlp-receiver.md).
 
-Use `telltale serve --self-trace` to trace Telltale's own HTTP requests to the local receiver. It enables the receiver automatically; open `/otel?source=receiver&service=telltale` to inspect request spans and metadata.
+Use `telltale serve --self-trace` to trace Telltale's own HTTP requests to the local receiver. It enables the receiver automatically; open `/otel?source=records&run=receiver&service=telltale` to inspect request spans and metadata.
 
 ## Development with local Clicky UI
 

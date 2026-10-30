@@ -43,11 +43,11 @@ telltale run jvm_jfr --seam agent --pid 1234 --duration 30s --every 10s
 
 Installation stages a versioned artifact under the chosen absolute directory, verifies its SHA-256 on the destination, rechecks process identity, and invokes the Java Attach helper. Local discovery files and staged credentials are private. Repeating a compatible local install reuses the authenticated agent; an incompatible agent requires restarting the JVM. `--dry-run` returns the destination and artifact hash without copying or attaching.
 
-Remote agents dial out to a Telltale server. Create an agent-scope token in the hub's work directory, save the printed value in a private file, and give that file to the installer with `--token-file`. The token value is never a command argument. The hub URL must use HTTP or HTTPS and be reachable both from the target JVM and the installer. Use HTTPS outside a trusted development network. If the hub protects its agent-list API, provide an API-scope token through `TELLTALE_API_TOKEN` to verify readiness.
+Remote agents dial out to a Telltale server. Create an agent-scope token as the user that runs the hub (it is minted into the global config dir, `~/.config/telltale/agent-tokens`), save the printed value in a private file, and give that file to the installer with `--token-file`. The token value is never a command argument. The hub URL must use HTTP or HTTPS and be reachable both from the target JVM and the installer. Use HTTPS outside a trusted development network. If the hub protects its agent-list API, provide an API-scope token through `TELLTALE_API_TOKEN` to verify readiness.
 
 ```sh
-telltale agents token create java-runtime --scope agent --work-dir /srv/telltale
-telltale serve --host 0.0.0.0 --port 8080 --work-dir /srv/telltale
+telltale agents token create java-runtime --scope agent
+telltale serve --host 0.0.0.0 --port 8080 --data-dir /srv/telltale
 telltale agents install java --destination ssh --host app-host --pid 1234 --directory /opt/telltale --java-home /opt/jdk --hub-url https://telltale.example.com --token-file /home/example/.config/telltale/java-token --service orders
 telltale agents install java --destination kubernetes --context development --namespace shop --pod orders-0 --container java --pid 1 --directory /opt/telltale --java-home /opt/java/openjdk --hub-url https://telltale.example.com --token-file /home/example/.config/telltale/java-token --service orders
 telltale agents list --server https://telltale.example.com
