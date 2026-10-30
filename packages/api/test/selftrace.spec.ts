@@ -16,7 +16,7 @@ const version = execFileSync(resolve(".bin/telltale"), ["--version"], {
 })
   .trim()
   .replace(/^telltale version /, "");
-let workDir: string;
+let testDir: string;
 let server: ChildProcessWithoutNullStreams;
 let apiURL: string;
 
@@ -25,10 +25,10 @@ async function start(flags: string[], host = "127.0.0.1") {
     resolve(".bin/telltale"),
     ["serve", "--host", host, "--port", "0", ...flags],
     {
-      cwd: workDir,
+      cwd: testDir,
       env: {
         ...process.env,
-        XDG_CONFIG_HOME: join(workDir, "config"),
+        XDG_CONFIG_HOME: join(testDir, "config"), XDG_CACHE_HOME: join(testDir, "cache"),
         OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "https://example.invalid:1",
       },
     },
@@ -61,11 +61,11 @@ async function stop() {
 
 beforeAll(async () => {
   await mkdir(".tmp", { recursive: true });
-  workDir = await mkdtemp(resolve(".tmp/selftrace-api-"));
+  testDir = await mkdtemp(resolve(".tmp/selftrace-api-"));
 });
 afterAll(async () => {
   await stop();
-  if (workDir) await rm(workDir, { recursive: true, force: true });
+  if (testDir) await rm(testDir, { recursive: true, force: true });
 });
 
 describe.sequential("HTTP self-tracing", () => {
@@ -78,7 +78,7 @@ describe.sequential("HTTP self-tracing", () => {
     await start(["--otlp", "--otlp-grpc-listen", "127.0.0.1:0"]);
     await fetch(`${apiURL}/health`);
     const search = await (
-      await fetch(`${apiURL}/api/otel?source=receiver&service=telltale`)
+      await fetch(`${apiURL}/api/otel?source=records&run=receiver&service=telltale`)
     ).json();
     expect(search).toMatchObject({ total: 0 });
     await stop();
@@ -87,7 +87,7 @@ describe.sequential("HTTP self-tracing", () => {
   it("automatically enables its receiver, exports locally and exposes request metadata", async () => {
     await start(["--self-trace", "--otlp-grpc-listen", "127.0.0.1:0"]);
     const response = await fetch(
-      `${apiURL}/api/otel/trace/example-missing?source=receiver&tags=${encodeURIComponent(JSON.stringify({ password: "private-query-value" }))}`,
+      `${apiURL}/api/otel/trace/example-missing?source=records&run=receiver&tags=${encodeURIComponent(JSON.stringify({ password: "private-query-value" }))}`,
       {
         headers: {
           traceparent: `00-${traceId}-1234567890abcdef-01`,
@@ -100,7 +100,7 @@ describe.sequential("HTTP self-tracing", () => {
       .poll(
         async () => {
           const result = await fetch(
-            `${apiURL}/api/otel/trace/${traceId}?source=receiver`,
+            `${apiURL}/api/otel/trace/${traceId}?source=records&run=receiver`,
           );
           return result.status;
         },
@@ -108,7 +108,7 @@ describe.sequential("HTTP self-tracing", () => {
       )
       .toBe(200);
     const detail = await (
-      await fetch(`${apiURL}/api/otel/trace/${traceId}?source=receiver`)
+      await fetch(`${apiURL}/api/otel/trace/${traceId}?source=records&run=receiver`)
     ).json();
     expect(detail.spans).toHaveLength(1);
     expect(detail.spans[0]).toMatchObject({
@@ -137,11 +137,11 @@ describe.sequential("HTTP self-tracing", () => {
     await stop();
     await start([]);
     expect(
-      (await fetch(`${apiURL}/api/otel/trace/${finalTraceId}?source=receiver`))
+      (await fetch(`${apiURL}/api/otel/trace/${finalTraceId}?source=records&run=receiver`))
         .status,
     ).toBe(200);
     expect(
-      (await fetch(`${apiURL}/api/otel/trace/${ingestTraceId}?source=receiver`))
+      (await fetch(`${apiURL}/api/otel/trace/${ingestTraceId}?source=records&run=receiver`))
         .status,
     ).toBe(404);
     await stop();
@@ -160,7 +160,7 @@ describe.sequential("HTTP self-tracing", () => {
     await stop();
     await start([]);
     const detail = await (
-      await fetch(`${apiURL}/api/otel/trace/${deniedTraceId}?source=receiver`)
+      await fetch(`${apiURL}/api/otel/trace/${deniedTraceId}?source=records&run=receiver`)
     ).json();
     expect(detail.spans).toHaveLength(1);
     expect(detail.spans[0].attributes).toMatchObject({
@@ -181,8 +181,8 @@ describe.sequential("HTTP self-tracing", () => {
         "0.0.0.0:0",
       ],
       {
-        cwd: workDir,
-        env: { ...process.env, XDG_CONFIG_HOME: join(workDir, "config") },
+        cwd: testDir,
+        env: { ...process.env, XDG_CONFIG_HOME: join(testDir, "config"), XDG_CACHE_HOME: join(testDir, "cache") },
       },
     );
     let output = "";

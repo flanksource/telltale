@@ -7,6 +7,7 @@ import {
   duration,
   fetchForm,
   fetchSources,
+  fetchSpanRuns,
   fetchTrace,
   fetchTraces,
   readSearchValues,
@@ -35,6 +36,12 @@ function TraceSearch({
   const [request, setRequest] = useState<SearchValues | null>(() =>
     window.location.search ? value : null,
   );
+  const runs = useQuery({
+    queryKey: ["otel-span-runs"],
+    queryFn: fetchSpanRuns,
+    enabled: !traceId,
+    retry: false,
+  });
   const search = useQuery({
     queryKey: ["otel-search", request],
     queryFn: () => fetchTraces(request!),
@@ -96,6 +103,7 @@ function TraceSearch({
         <SearchForm
           form={form}
           sources={sources}
+          runs={runs.data ?? []}
           value={value}
           onChange={setValue}
           pending={search.isFetching}
@@ -106,6 +114,9 @@ function TraceSearch({
             navigate(`/otel?${searchParams(value)}`, { replace: true });
           }}
         />
+        {runs.error && (
+          <p role="alert">Could not list runs: {runs.error.message}</p>
+        )}
       </Panel>
       <div className="space-y-4 min-w-0">
         {search.isFetching && <p role="status">Searching traces…</p>}
@@ -119,8 +130,9 @@ function TraceSearch({
         )}
         {!request && (
           <p className="text-sm text-muted-foreground">
-            Choose a source and find traces. Recorded traces include SDK spans
-            and imported OpenSearch captures.
+            Choose a source and find traces. Recorded traces include SDK spans,
+            OpenSearch imports and, as the receiver run, spans telltale serve
+            --otlp received.
           </p>
         )}
         {search.data && (

@@ -5,14 +5,14 @@ import { join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 let server: ChildProcessWithoutNullStreams;
-let workDir: string;
+let testDir: string;
 let apiURL: string;
 
 beforeAll(async () => {
   await mkdir(".tmp", { recursive: true });
-  workDir = await mkdtemp(resolve(".tmp/connections-"));
+  testDir = await mkdtemp(resolve(".tmp/connections-"));
   server = spawn(resolve(".bin/telltale"), ["serve", "--port", "0"], {
-    cwd: workDir, env: { ...process.env, XDG_CONFIG_HOME: join(workDir, "config") },
+    cwd: testDir, env: { ...process.env, XDG_CONFIG_HOME: join(testDir, "config"), XDG_CACHE_HOME: join(testDir, "cache") },
   });
   apiURL = await new Promise<string>((resolveURL, reject) => {
     let output = "";
@@ -33,7 +33,7 @@ afterAll(async () => {
     server.kill("SIGTERM");
     await stopped;
   }
-  if (workDir) await rm(workDir, { recursive: true, force: true });
+  if (testDir) await rm(testDir, { recursive: true, force: true });
 });
 
 describe("connections workspace", () => {
@@ -41,7 +41,7 @@ describe("connections workspace", () => {
     const schema = await fetch(`${apiURL}/api/v1/connection`, { headers: { Accept: "application/schema+json" } });
     expect(schema.status).toBe(200);
     expect(await schema.json()).toHaveProperty("properties");
-    const body = { name: "workspace", type: "sqlite", url: join(workDir, "workspace.db") };
+    const body = { name: "workspace", type: "sqlite", url: join(testDir, "workspace.db") };
     const created = await fetch(`${apiURL}/api/v1/connection`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     expect(created.status).toBe(201);
     const connection = await created.json() as { id: string };

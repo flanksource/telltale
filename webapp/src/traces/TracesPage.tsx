@@ -73,9 +73,9 @@ function RunSummary({ run }: { run: RunTraces }) {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["trace-runs"] }),
   });
   // A host run traces the host, not a command or a pid, and is live while it is running (it has no live sessions).
-  const hostRun = !run.pid && !run.command?.length;
+  const hostRun = !run.standing && !run.pid && !run.command?.length;
   const running = !!run.live || (hostRun && run.status === "running");
-  const command = <code>{run.pid ? `pid ${run.pid}` : hostRun ? "host run" : run.command?.join(" ")}</code>;
+  const command = <code>{run.standing ? "standing store" : run.pid ? `pid ${run.pid}` : hostRun ? "host run" : run.command?.join(" ")}</code>;
   const failed = run.checkpointErrors?.length ? (
     <ul role="alert" className="text-sm text-red-700 dark:text-red-400">
       {run.checkpointErrors.map(error => <li key={error}>{error}</li>)}

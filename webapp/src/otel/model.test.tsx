@@ -10,7 +10,7 @@ const span = (id: string, parentId = ""): Span => ({
   operation: id,
   startedAt: "2026-10-29T10:00:00Z",
   durationMs: 10,
-  status: "Ok",
+  status: "ok",
 });
 
 describe("trace waterfall rows", () => {

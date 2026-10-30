@@ -101,7 +101,7 @@ export function TraceDetail({ trace }: { trace: Trace }) {
             title={`${row.operation}: ${duration(row.durationMs)}`}
           >
             <span
-              className={`absolute inset-y-1 rounded ${["error", "2", "true"].includes(row.status.toLowerCase()) ? "bg-destructive" : "bg-primary"}`}
+              className={`absolute inset-y-1 rounded ${row.status === "error" ? "bg-destructive" : "bg-primary"}`}
               style={{
                 left: `${left}%`,
                 width: `${Math.min(width, 100 - left)}%`,

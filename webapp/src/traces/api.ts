@@ -29,9 +29,9 @@ export interface CaptureResult {
   summary?: Record<string, unknown>;
 }
 
-export type RunStatus = "running" | "succeeded" | "failed" | "unfinished";
+export type RunStatus = "running" | "succeeded" | "failed" | "unfinished" | "standing";
 
-export const RUN_STATUSES: RunStatus[] = ["running", "succeeded", "failed", "unfinished"];
+export const RUN_STATUSES: RunStatus[] = ["running", "succeeded", "failed", "unfinished", "standing"];
 
 /** One run as the browser reaches it (telltale.MountedRun). */
 export interface RunTraces {
@@ -53,6 +53,8 @@ export interface RunTraces {
   unavailable?: string;
   /** The checkpoints that failed, which fail the run. */
   checkpointErrors?: string[];
+  /** A standing store served as a pseudo-run, such as the OTLP receiver: continuous, never stopped from here. */
+  standing?: boolean;
 }
 
 /** Which runs a listing returns; empty fields keep every run. */

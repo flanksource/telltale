@@ -10,14 +10,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const run = promisify(execFile);
 
-let workDir: string;
+let testDir: string;
 let upstream: Server;
 let upstreamURL: string;
 let server: ChildProcessWithoutNullStreams;
 let apiURL: string;
 
 function serve(): Promise<string> {
-  server = spawn(".bin/telltale", ["serve", "--port", "0", "--work-dir", workDir]);
+  server = spawn(".bin/telltale", ["serve", "--port", "0", "--data-dir", testDir], { env: { ...process.env, XDG_CONFIG_HOME: join(testDir, "config") } });
   return new Promise<string>((resolve, reject) => {
     let output = "";
     server.stdout.on("data", (chunk: Buffer) => {
@@ -32,12 +32,12 @@ function serve(): Promise<string> {
 }
 
 beforeAll(async () => {
-  workDir = await mkdtemp(join(tmpdir(), "telltale-traces-"));
+  testDir = await mkdtemp(join(tmpdir(), "telltale-traces-"));
   upstream = createServer((_, response) => response.end("traced"));
   upstream.listen(0, "127.0.0.1");
   await once(upstream, "listening");
   upstreamURL = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}/hello`;
-  await run(".bin/telltale", ["trace", "run", "--work-dir", workDir, "--", "curl", "-sS", upstreamURL]);
+  await run(".bin/telltale", ["trace", "run", "--data-dir", testDir, "--", "curl", "-sS", upstreamURL], { env: { ...process.env, XDG_CONFIG_HOME: join(testDir, "config") } });
   apiURL = await serve();
 });
 
@@ -48,7 +48,7 @@ afterAll(async () => {
     expect(await stopped).toEqual([0, null]);
   }
   upstream?.close();
-  await rm(workDir, { recursive: true, force: true });
+  await rm(testDir, { recursive: true, force: true });
 });
 
 interface Captured {
@@ -127,7 +127,7 @@ async function settled(runId: string): Promise<ListedRun> {
 
 describe("runs started over the API", () => {
   it("previews the embedded Java installer through its generated API", async () => {
-    const response = await fetch(`${apiURL}/api/v1/agents/install/java`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pid: 1, directory: join(workDir, "agents"), "dry-run": true }) });
+    const response = await fetch(`${apiURL}/api/v1/agents/install/java`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pid: 1, directory: join(testDir, "agents"), "dry-run": true }) });
     expect(response.status).toBe(200);
     expect(await response.text()).toContain("telltale-agent.jar");
   });
@@ -139,7 +139,7 @@ describe("runs started over the API", () => {
   });
 
   it("captures and exports a disposable JVM through a PID-only start request", async () => {
-    const classes = join(workDir, "java-classes");
+    const classes = join(testDir, "java-classes");
     await mkdir(classes);
     await run("javac", ["-d", classes, "pkg/agentinstall/testdata/Workload.java"]);
     const child = spawn("java", ["-cp", classes, "Workload"]);

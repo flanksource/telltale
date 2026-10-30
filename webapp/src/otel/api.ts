@@ -64,6 +64,12 @@ export interface SearchForm {
 }
 export const fetchSources = () => fetchJSON<Source[]>("/api/otel/sources");
 export const fetchForm = () => fetchJSON<SearchForm>("/api/otel/form");
+// fetchSpanRuns are the runs a recorded-trace search can select: command runs
+// that captured spans, then standing stores such as the OTLP receiver.
+export const fetchSpanRuns = () =>
+  fetchJSON<{ runs: { runId: string }[] }>("/api/traces?kind=spans").then(
+    ({ runs }) => runs.map((run) => run.runId),
+  );
 
 export function searchParams(value: SearchValues): URLSearchParams {
   const params = new URLSearchParams();

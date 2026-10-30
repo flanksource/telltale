@@ -12,21 +12,21 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 const run = promisify(execFile);
 const traceID = "11111111111111111111111111111111";
 let server: ChildProcessWithoutNullStreams;
-let workDir: string;
+let testDir: string;
 let apiURL: string;
 
 beforeAll(async () => {
   await mkdir(".tmp", { recursive: true });
-  workDir = await mkdtemp(resolve(".tmp/otel-api-"));
+  testDir = await mkdtemp(resolve(".tmp/otel-api-"));
   await run("go", [
     "run",
     "./internal/tracequery/testdata/seed",
-    "--work-dir",
-    workDir,
+    "--data-dir",
+    join(testDir, "cache", "telltale"),
   ]);
   server = spawn(resolve(".bin/telltale"), ["serve", "--port", "0"], {
-    cwd: workDir,
-    env: { ...process.env, XDG_CONFIG_HOME: join(workDir, "config") },
+    cwd: testDir,
+    env: { ...process.env, XDG_CONFIG_HOME: join(testDir, "config"), XDG_CACHE_HOME: join(testDir, "cache") },
   });
   apiURL = await new Promise<string>((resolveURL, reject) => {
     let output = "";
@@ -50,7 +50,7 @@ afterAll(async () => {
     server.kill("SIGTERM");
     await stopped;
   }
-  if (workDir) await rm(workDir, { recursive: true, force: true });
+  if (testDir) await rm(testDir, { recursive: true, force: true });
 });
 
 describe("OpenTelemetry search API", () => {

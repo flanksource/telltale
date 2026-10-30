@@ -10,7 +10,7 @@ let child: ChildProcessWithoutNullStreams;
 let apiURL: string;
 
 function startServer(options: { directory: string; file: string; enforce?: boolean; signal?: AbortSignal }): { process: ChildProcessWithoutNullStreams; ready: Promise<string> } {
-  const process = spawn(".bin/telltale", ["serve", "--port", "0", "--work-dir", options.directory, "--rules", options.file, ...(options.enforce ? ["--enforce-rules"] : [])], options.signal ? { signal: options.signal } : {});
+  const process = spawn(".bin/telltale", ["serve", "--port", "0", "--data-dir", options.directory, "--rules", options.file, ...(options.enforce ? ["--enforce-rules"] : [])], { env: { ...globalThis.process.env, XDG_CONFIG_HOME: join(options.directory, "config") }, ...(options.signal ? { signal: options.signal } : {}) });
   const ready = new Promise<string>((resolveServer, reject) => {
     let output = "";
     process.stdout.on("data", (chunk: Buffer) => {

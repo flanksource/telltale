@@ -110,7 +110,7 @@ const mount = "/api/traces/run-2026-10-25T10-00-00Z";
 const recording: RunTraces = {
   runId: "run-2026-10-25T10-00-00Z",
   mount,
-  dir: "/work/.telltale/traces/run-2026-10-25T10-00-00Z",
+  dir: "/cache/telltale/traces/run-2026-10-25T10-00-00Z",
   status: "succeeded",
   captures: [{ kind: "process_groups", ref: { kind: "process_groups", stream: "groups-1", toSeq: 8 } }],
 };

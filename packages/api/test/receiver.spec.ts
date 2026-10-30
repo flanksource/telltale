@@ -7,8 +7,9 @@ import { gzipSync } from "node:zlib";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const traceId = "1234567890abcdef1234567890abcdef";
+const receiverRun = "source=records&run=receiver";
 let server: ChildProcessWithoutNullStreams;
-let workDir: string;
+let testDir: string;
 let apiURL: string;
 
 async function start(enabled: boolean, host = "127.0.0.1") {
@@ -23,8 +24,8 @@ async function start(enabled: boolean, host = "127.0.0.1") {
       ...(enabled ? ["--otlp", "--otlp-grpc-listen", "127.0.0.1:0"] : []),
     ],
     {
-      cwd: workDir,
-      env: { ...process.env, XDG_CONFIG_HOME: join(workDir, "config") },
+      cwd: testDir,
+      env: { ...process.env, XDG_CONFIG_HOME: join(testDir, "config"), XDG_CACHE_HOME: join(testDir, "cache") },
     },
   );
   apiURL = await new Promise<string>((resolveURL, reject) => {
@@ -54,12 +55,12 @@ async function stop() {
 
 beforeAll(async () => {
   await mkdir(".tmp", { recursive: true });
-  workDir = await mkdtemp(resolve(".tmp/receiver-api-"));
+  testDir = await mkdtemp(resolve(".tmp/receiver-api-"));
   await start(true);
 });
 afterAll(async () => {
   await stop();
-  if (workDir) await rm(workDir, { recursive: true, force: true });
+  if (testDir) await rm(testDir, { recursive: true, force: true });
 });
 
 function traces() {
@@ -137,8 +138,8 @@ describe.sequential("OTLP receiver API", () => {
           `127.0.0.1:${address.port}`,
         ],
         {
-          cwd: workDir,
-          env: { ...process.env, XDG_CONFIG_HOME: join(workDir, "config") },
+          cwd: testDir,
+          env: { ...process.env, XDG_CONFIG_HOME: join(testDir, "config"), XDG_CACHE_HOME: join(testDir, "cache") },
         },
       );
       let output = "";
@@ -169,14 +170,25 @@ describe.sequential("OTLP receiver API", () => {
     expect(await response.json()).toEqual({ partialSuccess: {} });
     expect(
       await (await fetch(`${apiURL}/api/otel/sources`)).json(),
-    ).toContainEqual({
-      id: "receiver",
-      name: "Received traces",
-      type: "recordstore",
-    });
+    ).not.toContainEqual(expect.objectContaining({ id: "receiver" }));
+    expect(
+      (await (await fetch(`${apiURL}/api/traces?kind=spans`)).json()).runs,
+    ).toContainEqual(
+      expect.objectContaining({
+        runId: "receiver",
+        status: "running",
+        standing: true,
+      }),
+    );
+    const records = await (
+      await fetch(
+        `${apiURL}/api/traces/receiver/traces/spans/records?filter=operation%3Dcharge`,
+      )
+    ).json();
+    expect(JSON.stringify(records)).toContain(`"traceId":"${traceId}"`);
     const found = await (
       await fetch(
-        `${apiURL}/api/otel?source=receiver&operation=charge&status=error&minDuration=100ms`,
+        `${apiURL}/api/otel?source=records&run=receiver&operation=charge&status=error&minDuration=100ms`,
       )
     ).json();
     expect(found).toMatchObject({
@@ -184,7 +196,7 @@ describe.sequential("OTLP receiver API", () => {
       traces: [{ traceId, spanCount: 2, durationMs: 120, errors: 1 }],
     });
     const detail = await (
-      await fetch(`${apiURL}/api/otel/trace/${traceId}?source=receiver`)
+      await fetch(`${apiURL}/api/otel/trace/${traceId}?${receiverRun}`)
     ).json();
     expect(detail.spans).toHaveLength(2);
     expect(detail.spans[0]).toMatchObject({
@@ -227,7 +239,7 @@ describe.sequential("OTLP receiver API", () => {
     });
     expect(
       await (
-        await fetch(`${apiURL}/api/otel/trace/${traceId}?source=receiver`)
+        await fetch(`${apiURL}/api/otel/trace/${traceId}?${receiverRun}`)
       ).json(),
     ).toMatchObject({
       spans: [{ operation: "POST /orders" }, { operation: "charge" }],
@@ -251,10 +263,15 @@ describe.sequential("OTLP receiver API", () => {
     await stop();
     await start(false);
     const response = await fetch(
-      `${apiURL}/api/otel/trace/${traceId}?source=receiver`,
+      `${apiURL}/api/otel/trace/${traceId}?${receiverRun}`,
     );
     expect(response.status).toBe(200);
     expect((await response.json()).spans).toHaveLength(2);
+    expect(
+      (await (await fetch(`${apiURL}/api/traces?kind=spans`)).json()).runs,
+    ).toContainEqual(
+      expect.objectContaining({ runId: "receiver", status: "standing" }),
+    );
     expect(
       (
         await fetch(`${apiURL}/v1/traces`, {

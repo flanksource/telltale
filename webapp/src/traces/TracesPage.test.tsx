@@ -20,7 +20,7 @@ const processRefs = {
 const finished: RunTraces = {
   runId,
   mount,
-  dir: `/work/.telltale/traces/${runId}`,
+  dir: `/cache/telltale/traces/${runId}`,
   status: "succeeded",
   command: ["curl", "https://example.com"],
   exitCode: 0,
@@ -31,7 +31,7 @@ const finished: RunTraces = {
 const running: RunTraces = {
   runId: "run-2026-10-24T11-00-00Z",
   mount: "/api/traces/run-2026-10-24T11-00-00Z",
-  dir: "/work/.telltale/traces/run-2026-10-24T11-00-00Z",
+  dir: "/cache/telltale/traces/run-2026-10-24T11-00-00Z",
   status: "running",
   command: ["sh", "-c", "sleep 60"],
   captures: [],
@@ -108,6 +108,18 @@ describe("trace runs", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("stacks stop checkpoint: process 4242 has no gops address");
   });
 
+  it("names a running standing store and offers no Stop for it", async () => {
+    const receiver: RunTraces = {
+      runId: "receiver", mount: "/api/traces/receiver", dir: "/cache/telltale/otel", status: "running", standing: true,
+      captures: [{ kind: "spans", ref: { kind: "spans", stream: "received" } }],
+    };
+    serve({ runs: [receiver] });
+    renderPage();
+    expect(await screen.findByText("standing store")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "standing" })).toBeInTheDocument();
+  });
+
   it("says why a run that did not finish cannot be shown", async () => {
     serve({ runs: [{ runId: "run-crashed", mount: "/api/traces/run-crashed", dir: "/work/run-crashed", status: "unfinished", unavailable: "the run did not finish: it left no run.json" }] });
     renderPage();
@@ -147,7 +159,7 @@ describe("host runs recording process groups", () => {
   const hostRun: RunTraces = {
     runId: "run-2026-10-25T12-00-00Z",
     mount: "/api/traces/run-2026-10-25T12-00-00Z",
-    dir: "/work/.telltale/traces/run-2026-10-25T12-00-00Z",
+    dir: "/cache/telltale/traces/run-2026-10-25T12-00-00Z",
     status: "running",
     captures: [{ kind: "process_groups", ref: groupsRef }],
   };

@@ -20,14 +20,16 @@ const summary = {
   services: ["checkout", "payments"],
 };
 
-it("searches a selected source and opens a trace's span hierarchy and attributes", async () => {
+it("searches the receiver run of recorded traces and opens a trace's span hierarchy and attributes", async () => {
   const fetchMock = vi.fn((url: string) =>
     Promise.resolve(
       new Response(
         JSON.stringify(
           url.endsWith("/sources")
             ? [{ id: "records", name: "Recorded traces", type: "records" }]
-            : url.endsWith("/form")
+            : url.endsWith("/api/traces?kind=spans")
+              ? { runs: [{ runId: "run-2026-10-29T10-00-00Z" }, { runId: "receiver" }] }
+              : url.endsWith("/form")
               ? {
                   schema: {
                     type: "object",
@@ -49,7 +51,7 @@ it("searches a selected source and opens a trace's span hierarchy and attributes
                         operation: "POST /orders",
                         startedAt: summary.startedAt,
                         durationMs: 100,
-                        status: "Ok",
+                        status: "ok",
                       },
                       {
                         traceId: "trace-1",
@@ -59,7 +61,7 @@ it("searches a selected source and opens a trace's span hierarchy and attributes
                         operation: "charge",
                         startedAt: summary.startedAt,
                         durationMs: 40,
-                        status: "Error",
+                        status: "error",
                         attributes: { "http.status_code": 500 },
                         resource: { replicas: 3 },
                         otlp: {
@@ -110,11 +112,15 @@ it("searches a selected source and opens a trace's span hierarchy and attributes
   fireEvent.change(await screen.findByRole("textbox", { name: "Service" }), {
     target: { value: "checkout" },
   });
+  await screen.findByRole("option", { name: "receiver (OTLP receiver)" });
+  fireEvent.change(screen.getByRole("combobox", { name: "Run" }), {
+    target: { value: "receiver" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "Find traces" }));
   expect(await screen.findByText("POST /orders")).toBeInTheDocument();
   await waitFor(() =>
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining("service=checkout"),
+      expect.stringMatching(/^\/api\/otel\?(?=.*[?&]run=receiver(&|$))(?=.*[?&]service=checkout(&|$))/),
       undefined,
     ),
   );
