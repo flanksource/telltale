@@ -1,0 +1,154 @@
+# Every typed list a TraceDefinition holds, once each, so the specs compile
+# and schema-validate every kind. Connections are inline and credential-free:
+# each entry that names none takes the default of its type.
+apiVersion: telltale.flanksource.com/v1alpha1
+kind: TraceDefinition
+metadata:
+  name: all-kinds
+spec:
+  description: Every capture type, for the drift and schema specs
+  every: 30s
+  connections:
+    - {name: sqlserver, type: sql_server, url: "sqlserver://db.example.test:1433"}
+    - {name: loki, type: loki, url: "http://loki.example.test:3100"}
+    - {name: aws, type: aws}
+    - {name: logsearch, type: opensearch, url: "http://opensearch.example.test:9200"}
+    - {name: gcp, type: google_cloud}
+    - {name: azure, type: azure}
+    - {name: orders, type: postgres, url: "postgres://$(username):$(password)@db.example.test:5432/orders"}
+    - {name: metrics, type: prometheus, url: "http://prometheus.example.test:9090"}
+    - {name: api, type: http, url: "http://api.example.test"}
+    - {name: jaeger, type: jaeger, url: "http://jaeger.example.test:16686"}
+    - {name: otel, type: opentelemetry, url: "http://otel.example.test:9200"}
+  proxy:
+    http:
+      - mode: mitm
+        hosts: [api.example.test]
+      - listen: 127.0.0.1:18081
+        export: {proxy: PARTNER_PROXY}
+    postgres:
+      - env: ORDERS_DSN
+        maxStatements: 5000
+  instrument:
+    go:
+      pprof:
+        - profile: mutex
+    jvm:
+      flightRecorder:
+        - settings: profile
+      asyncProfiler:
+        - event: wall
+    sqlserver:
+      xevent:
+        - sessionName: telltale_all_kinds
+          minDuration: 50ms
+  collect:
+    go:
+      gops:
+        - {}
+      pprof:
+        - source: pprof
+          profile: heap
+      http:
+        - features: [http]
+      sql:
+        - connections: [self]
+      exec:
+        - executable: git
+      llm:
+        - models: "claude-*"
+      logs:
+        - minLevel: warn
+      spans:
+        - {}
+    process:
+      tree:
+        facets: true
+        environment: {prefixes: [ALL_KINDS_]}
+      nativeStacks:
+        - {}
+      resources:
+        - interval: 1s
+          facets: [ports]
+    logs:
+      kubernetes:
+        - namespace: checkout
+          podSelector: app=checkout
+      container:
+        - container: checkout
+      loki:
+        - query: '{app="checkout"}'
+      cloudwatch:
+        - query: 'fields @timestamp, @message'
+          options: {logGroups: [/ecs/checkout]}
+      opensearch:
+        - query: 'service.name:checkout'
+      gcpCloudLogging:
+        - query: 'resource.type="k8s_container"'
+      azureLogAnalytics:
+        - query: 'ContainerLog | take 10'
+    query:
+      # A windowed read binds its window onto a provider range, else onto
+      # params.from and params.to, which its query must reference; the
+      # providers without a range read once here.
+      sql:
+        - type: postgres
+          query: SELECT created_at AS time, id FROM orders WHERE created_at >= {{ .params.from }} AND created_at < {{ .params.to }}
+          every: 30s
+      prometheus:
+        - query: up
+          step: 15s
+          every: 30s
+      opensearch:
+        - index: app-events-*
+          query: 'service.name:checkout'
+      http:
+        - jsonpath: $.items
+      postgrest:
+        - jsonpath: $
+      bigquery:
+        - project: example-project
+          query: SELECT CURRENT_TIMESTAMP() AS time
+      jaeger:
+        - service: checkout
+          lookback: 1h
+      opentelemetry:
+        - index: otel-traces-*
+      profile:
+        - profile: pod-cpu-by-pod
+          params: {namespace: checkout}
+          every: 30s
+    host:
+      processGroups:
+        - groups: [claude]
+    prometheus:
+      scrape:
+        - endpoints: [http://localhost:8080/metrics]
+          interval: 15s
+    opensearch:
+      spans:
+        - index: otel-traces-*
+          from: now-15m
+    sqlserver:
+      systemHealth:
+        - minDuration: 50ms
+      planCache:
+        - poll: 30s
+      deadlockReport:
+        - {}
+    telltale:
+      http:
+        - features: [http]
+      sql:
+        - connections: [self]
+      exec:
+        - executable: git
+      llm:
+        - models: "claude-*"
+      logs:
+        - minLevel: warn
+      spans:
+        - {}
+      terminal:
+        - width: 120
+          height: 40
