@@ -6,19 +6,77 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 
 	"github.com/flanksource/clicky/entity"
 	"github.com/flanksource/commons-db/cmd/query/connections"
 	"github.com/flanksource/commons-db/cmd/query/secretcatalog"
 	"github.com/flanksource/commons-db/connection/store"
 	dbcontext "github.com/flanksource/commons-db/context"
+	"github.com/flanksource/commons-db/models"
 	"github.com/flanksource/commons-db/query"
+	"github.com/flanksource/telltale/pkg/tracing/prometheus"
 )
 
-func connectionHandler(catalog *store.Store) (http.Handler, error) {
-	provider, err := connections.NewStoreProvider(connections.StoreProviderOptions{Store: catalog, WriteLayer: store.LayerCWD})
+// managedProvider is the connection store's provider with the connections
+// telltale manages in its data dir, such as the managed Prometheus of the
+// prometheus trace kind, listed and resolved as virtual, read-only
+// connections the service refuses to edit. Writes go to the store.
+type managedProvider struct {
+	*connections.StoreProvider
+	dataDir string
+}
+
+func (p managedProvider) managed() ([]*models.Connection, error) {
+	connection, err := prometheus.ManagedConnection(context.Background(), p.dataDir)
+	if err != nil || connection == nil {
+		return nil, err
+	}
+	return []*models.Connection{connection}, nil
+}
+
+func (p managedProvider) ListConnections() ([]*models.Connection, error) {
+	stored, err := p.StoreProvider.ListConnections()
 	if err != nil {
 		return nil, err
+	}
+	managed, err := p.managed()
+	if err != nil {
+		return nil, err
+	}
+	for _, connection := range managed {
+		if index := slices.IndexFunc(stored, func(s *models.Connection) bool { return s.Name == connection.Name }); index >= 0 {
+			return nil, fmt.Errorf("connection %q is defined in %s and also managed by telltale (%s); rename the file's connection", connection.Name, stored[index].Source, connection.Source)
+		}
+	}
+	return append(stored, managed...), nil
+}
+
+func (p managedProvider) ResolveConnection(ctx dbcontext.Context, reference string) (*models.Connection, error) {
+	connection, err := p.StoreProvider.ResolveConnection(ctx, reference)
+	if err != nil || connection != nil {
+		return connection, err
+	}
+	managed, err := p.managed()
+	if err != nil {
+		return nil, err
+	}
+	for _, connection := range managed {
+		if reference == connection.ID.String() || reference == connection.Name || reference == "connection://"+connection.Name {
+			return connection, nil
+		}
+	}
+	return nil, nil
+}
+
+func connectionHandler(catalog *store.Store, dataDir string) (http.Handler, error) {
+	stored, err := connections.NewStoreProvider(connections.StoreProviderOptions{Store: catalog, WriteLayer: store.LayerCWD})
+	if err != nil {
+		return nil, err
+	}
+	var provider connections.WritableConnectionProvider = stored
+	if dataDir != "" {
+		provider = managedProvider{StoreProvider: stored, dataDir: dataDir}
 	}
 	service, err := connections.New(connections.Options{
 		Virtual:    provider,

@@ -49,6 +49,9 @@ type Host struct {
 	// ctx is what each capture is started under, answering connection
 	// references from the host's connection store.
 	ctx dbcontext.Context
+	// releases are what the run's kinds hold beyond their captures, released
+	// by Close after the captures stop.
+	releases []func(context.Context) error
 }
 
 // RunPrefix and RunTimestampLayout name a run: run-<UTC start>, filesystem
@@ -93,7 +96,9 @@ func Open(options OpenOptions) (*Host, error) {
 	if err != nil {
 		return nil, err
 	}
-	runtime, _, err := openStore(dir, dumpers)
+	var releases []func(context.Context) error
+	onClose := func(release func(context.Context) error) { releases = append(releases, release) }
+	runtime, _, err := openStore(dir, KindDeps{Dumpers: dumpers, DataDir: options.DataDir, RunID: name, OnClose: onClose})
 	if err != nil {
 		return nil, err
 	}
@@ -105,7 +110,7 @@ func Open(options OpenOptions) (*Host, error) {
 	if options.Connections != nil {
 		ctx = options.Connections.Attach(ctx)
 	}
-	return &Host{runID: name, dir: dir, runtime: runtime, dumpers: dumpers, ctx: ctx}, nil
+	return &Host{runID: name, dir: dir, runtime: runtime, dumpers: dumpers, ctx: ctx, releases: releases}, nil
 }
 
 // RegisterDumper adds a stack transport the run's stacks are dumped over,
@@ -134,13 +139,13 @@ func Reopen(dir string) (*tracing.Runtime, func() error, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return openStore(dir, dumpers)
+	return openStore(dir, KindDeps{Dumpers: dumpers})
 }
 
-// openStore opens the store in dir with every kind of the catalog, the
-// way query serves a store.
-func openStore(dir string, dumpers *stacks.Dumpers) (*tracing.Runtime, func() error, error) {
-	kinds, err := kindsWith(dumpers)
+// openStore opens the store in dir with every kind of the catalog over deps,
+// the way query serves a store.
+func openStore(dir string, deps KindDeps) (*tracing.Runtime, func() error, error) {
+	kinds, err := kindsWith(deps)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -181,14 +186,14 @@ func Kinds() (*tracing.Kinds, error) {
 	if err != nil {
 		return nil, err
 	}
-	return kindsWith(dumpers)
+	return kindsWith(KindDeps{Dumpers: dumpers})
 }
 
-// kindsWith is the catalog over dumpers: every registered kind (Registrations),
-// sharing one process sampler and the dumpers.
-func kindsWith(dumpers *stacks.Dumpers) (*tracing.Kinds, error) {
+// kindsWith is the catalog over deps: every registered kind (Registrations),
+// sharing one new process sampler, the dumpers and the run.
+func kindsWith(deps KindDeps) (*tracing.Kinds, error) {
 	kinds := tracing.NewKinds()
-	deps := KindDeps{Dumpers: dumpers, Sampler: process.NewSampler()}
+	deps.Sampler = process.NewSampler()
 	for _, registration := range Registrations() {
 		plugin := registration.New(deps)
 		seams, defaultSeam := plugin.TargetSeams()
@@ -269,10 +274,15 @@ func (h *Host) Summarize(ctx context.Context, ref tracing.TraceRef) (map[string]
 	return h.runtime.Summarize(ctx, ref)
 }
 
-// Close stops every capture still running and closes the store, which stays
-// on disk for the run's snapshot to reopen.
+// Close stops every capture still running, releases what the run's kinds
+// hold, such as the managed Prometheus, and closes the store, which stays on
+// disk for the run's snapshot to reopen.
 func (h *Host) Close(ctx context.Context) error {
-	return errors.Join(h.runtime.Sessions.StopAll(ctx), h.runtime.Results.Close())
+	errs := []error{h.runtime.Sessions.StopAll(ctx)}
+	for _, release := range h.releases {
+		errs = append(errs, release(ctx))
+	}
+	return errors.Join(append(errs, h.runtime.Results.Close())...)
 }
 
 // highSeq is the seq stream has committed through: 0 for one that never

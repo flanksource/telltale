@@ -4,12 +4,16 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing/fstest"
 
 	"github.com/flanksource/commons-db/connection/store"
+	"github.com/flanksource/commons-db/models"
+	"github.com/flanksource/deps/start/state"
 	"github.com/flanksource/telltale/internal/server"
+	"github.com/flanksource/telltale/pkg/tracing/prometheus"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/spf13/cobra"
@@ -65,5 +69,43 @@ var _ = Describe("Connection workspace API", func() {
 		Expect(json.Unmarshal(updated.Body.Bytes(), &connection)).To(Succeed())
 		Expect(request("DELETE", "/api/v1/connection/"+connection.ID, "").Code).To(Equal(204))
 		Expect(request("GET", "/api/v1/connection/"+connection.ID, "").Code).To(Equal(404))
+	})
+
+	It("lists the data dir's managed Prometheus as a read-only connection and refuses to edit it", func() {
+		dir := GinkgoT().TempDir()
+		connections, err := store.New(store.Layer{Name: store.LayerCWD, Dir: filepath.Join(dir, ".connections")})
+		Expect(err).NotTo(HaveOccurred())
+		managed := &state.State{Name: "prometheus", Runtime: "binary", Connection: models.Connection{Name: "prometheus", Type: models.ConnectionTypePrometheus, URL: "http://localhost:19090"}}
+		paths, err := prometheus.Paths(dir)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(managed.Save(paths.State)).To(Succeed())
+		handler, err := server.NewHandler(server.HandlerOptions{
+			Root: &cobra.Command{Use: "telltale"}, Connections: connections, DataDir: dir,
+			Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("ok")}},
+			Traces: http.NotFoundHandler(), Top: http.NotFoundHandler(),
+		})
+		Expect(err).NotTo(HaveOccurred())
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest("GET", "/api/v1/connection?type=prometheus", nil))
+		Expect(response.Code).To(Equal(200), response.Body.String())
+		var listed []struct {
+			ID       string `json:"id"`
+			Name     string `json:"name"`
+			Type     string `json:"type"`
+			Virtual  bool   `json:"virtual"`
+			ReadOnly bool   `json:"read_only"`
+		}
+		Expect(json.Unmarshal(response.Body.Bytes(), &listed)).To(Succeed())
+		Expect(listed).To(HaveLen(1))
+		Expect(listed[0].Name).To(Equal(prometheus.ConnectionName))
+		Expect(listed[0].Type).To(Equal(models.ConnectionTypePrometheus))
+		Expect(listed[0].Virtual && listed[0].ReadOnly).To(BeTrue())
+
+		edit := httptest.NewRequest("PUT", "/api/v1/connection/"+listed[0].ID, strings.NewReader(`{"name":"renamed","type":"prometheus","url":"http://localhost:1"}`))
+		edit.Header.Set("Content-Type", "application/json")
+		refused := httptest.NewRecorder()
+		handler.ServeHTTP(refused, edit)
+		Expect(refused.Code).To(BeNumerically(">=", 400), refused.Body.String())
+		Expect(os.ReadDir(filepath.Join(dir, ".connections"))).Error().To(MatchError(os.ErrNotExist), "nothing is written to the connection files")
 	})
 })

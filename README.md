@@ -65,6 +65,25 @@ Both also take `-- command [args...]`. A program registers its own with `telltal
 
 See [SQL Server and JVM captures](docs/sqlserver-jvm.md) for XEvents, historical and live deadlocks, local JFR, and Java agent installation over SSH or Kubernetes.
 
+### Prometheus metrics
+
+`telltale run prometheus` scrapes Prometheus metrics endpoints into a Prometheus that telltale manages, one per data dir. Run alone it needs no command and scrapes until Ctrl+C or `--duration`:
+
+```sh
+telltale run prometheus --endpoints http://localhost:8080/metrics --interval 5s --duration 1m
+telltale run prometheus --endpoints http://localhost:9100/metrics,http://localhost:9090/metrics --labels env=dev
+```
+
+The first capture downloads Prometheus 3.5.0 through deps and starts it on a free loopback port, with its state and TSDB under `<data-dir>/services/prometheus`. Each capture writes its endpoints as a file_sd file (`<data-dir>/prometheus/targets/<stream>.json`) that the `file_sd` job reads. Every endpoint is one target with its own `--interval` (at least 1s, default 15s) and `--timeout` (at most the interval, default the shorter of 10s and the interval). Its query params go along with each scrape. An endpoint must be an absolute http(s) URL without credentials or a fragment. The capture records one row per completed scrape: the endpoint, its health, duration, error and the number of samples scraped. A failed scrape is a row with its error. A Prometheus that stops answering fails the capture.
+
+The samples stay in the TSDB after the capture ends, labelled `telltale_run`, `telltale_stream` and `telltale_endpoint` plus `--labels`. The run shows the Prometheus URL and the PromQL selector of its series. `telltale serve` lists that Prometheus as the read-only `telltale-prometheus` connection, so the Query page can run PromQL against it without a connection file:
+
+```sh
+curl -sG http://localhost:<port>/api/v1/query --data-urlencode 'query={telltale_run="run-2026-10-31T10-00-00Z"}'
+```
+
+The Prometheus is telltale's sub-process. The run's captures share it, and it stops when the run ends. The next run starts it again on the same TSDB and port, so earlier runs' samples are queryable again while a capture runs. A Prometheus that another telltale process already supervises in that data dir is reused and left to that process.
+
 ### Process groups: `telltale top`
 
 `telltale top` sorts every process on the host into the tool that owns it and shows what each one uses, refreshed in place every `--every` (default 2s). A process a rule matches starts a group under the group of its nearest ancestor that has one, so a `go test` that gavel runs for a claude session shows as `cmux ▸ claude ▸ gavel ▸ go-test`. Every other process joins its nearest ancestor's group, and a process matching the same rule as that group joins it rather than starting a new one: a test binary joins its `go test`, and Chrome's helpers join Chrome. Each group shows its total (itself plus the groups under it) for processes, CPU % (rated over at least a second), RSS, disk read and write per second, network in and out per second, and sockets. It also shows where the group runs: its checkout and branch, the claude or codex session it runs under, and its cmux workspace and surface, each by name. A session is found in its anchor's environment, on a claude command line (`--session-id`, `--resume`), or, for codex, in the rollout file it holds open. Its title is the one captain gives it (the agent's own title, its slug, or its opening prompt), read from its transcript in the background and again once a minute when the transcript has changed. cmux's workspace and surface titles come from `cmux tree`.
@@ -156,6 +175,8 @@ Telltale never stores anything relative to the working directory. Trace data liv
 | `otel/spans/records.sqlite` | the OTLP receiver's spans, read as the run `receiver` |
 | `otel/receiver.lock` | the lock the writing receiver holds |
 | `monitor/events.sqlite` | the rule event journal of `serve --rules` |
+| `services/prometheus` | the managed Prometheus of the `prometheus` kind: its deps state, config, log and TSDB |
+| `prometheus/targets` | the file_sd target files of the running `prometheus` captures |
 
 Config is read from the working directory's `.telltale`, then the global config dir, `$XDG_CONFIG_HOME/telltale` or `~/.config/telltale`; the first that has a file wins. That covers `groups.yaml` and the hub tokens in `agent-tokens/`. `telltale agents token create` writes to the global config dir. `telltale serve` prints every path it uses when it starts. Data under an older `./.telltale/traces`, `./.telltale/otel` or `./.telltale/monitor` is not read or migrated; delete it once it is no longer needed.
 

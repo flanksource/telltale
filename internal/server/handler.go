@@ -57,7 +57,7 @@ func routes(options HandlerOptions, ui http.Handler) (http.Handler, error) {
 			return nil, err
 		}
 	}
-	connectionAPI, err := connectionHandler(options.Connections)
+	connectionAPI, err := connectionHandler(options.Connections, options.DataDir)
 	if err != nil {
 		return nil, err
 	}

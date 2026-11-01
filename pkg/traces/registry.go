@@ -2,6 +2,7 @@ package traces
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -14,11 +15,19 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing/target"
 )
 
-// KindDeps are what a run's kinds share: one process sampler and the stack
-// transports.
+// KindDeps are what a run's kinds share: one process sampler, the stack
+// transports, and the data dir and id of the run they record into. A catalog
+// read outside a run (Kinds, Reopen) has no data dir or run id, so a kind
+// that needs them refuses to start there.
 type KindDeps struct {
 	Dumpers *stacks.Dumpers
 	Sampler *process.Sampler
+	DataDir string
+	RunID   string
+	// OnClose registers what a kind releases when its run's host closes, after
+	// every capture stopped, such as a sub-process the kind started; nil for a
+	// store reopened only to be read.
+	OnClose func(release func(context.Context) error)
 }
 
 // Example is one invocation a kind's help shows, as the args after

@@ -28,7 +28,7 @@ var targets = []struct {
 	{target.Self, "Kinds that record telltale itself",
 		"They record telltale's own sources while the run lasts, nothing of the command."},
 	{target.Host, "Kinds that observe the whole host",
-		"They record every process on the host: run alone they need no command and run until Ctrl+C or --duration."},
+		"They record the host's processes or the services it reaches, such as metrics endpoints: run alone they need no command and run until Ctrl+C or --duration."},
 	{target.Connection, "Kinds that observe a database connection", "They observe the configured database without requiring a local process or command."},
 }
 
