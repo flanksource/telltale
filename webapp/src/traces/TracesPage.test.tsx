@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { DefinitionSummary } from "../definitions/api";
 import { parseNdjson, runFilterQuery, traceExportUrl, type RunTraces, type StartForm, type TracesStatus } from "./api";
 import { sampleFrame } from "../top/testFrames";
 import { captureWindows } from "./TracesPanel";
@@ -40,21 +41,30 @@ const running: RunTraces = {
 };
 
 const startForm: StartForm = {
-  schema: { type: "object", required: ["command"], properties: { command: { type: "string", title: "Command" } } },
+  schema: {
+    type: "object", required: ["command"],
+    properties: { command: { type: "string", title: "Command" }, pid: { type: "integer", title: "PID" }, duration: { type: "string", title: "Duration" }, every: { type: "string", title: "Every" } },
+  },
   defaults: { command: "" },
 };
+
+const definitions: DefinitionSummary[] = [
+  { name: "checkout", layer: "cwd", path: "/work/.telltale/traces/checkout.yaml", resourceVersion: "v1", description: "Scrape the checkout service", counts: { proxy: 0, instrument: 0, collect: 1 } },
+];
 
 function json(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } });
 }
 
 // serve answers the run list with status, the start form with startForm, a
-// start with started, and every store route with an empty stream.
-function serve(status: TracesStatus, started: Response = json(running, 201)) {
+// start with started, the definitions with listed, and every store route with
+// an empty stream.
+function serve(status: TracesStatus, started: Response = json(running, 201), listed: () => Response = () => json(definitions)) {
   const fetchMock = vi.fn((url: string, init?: RequestInit) => {
     if (url === "/api/traces" && init?.method === "POST") return Promise.resolve(started);
     if (url === "/api/traces" || url.startsWith("/api/traces?")) return Promise.resolve(json(status));
     if (url === "/api/traces/start") return Promise.resolve(json(startForm));
+    if (url === "/api/traces/definitions") return Promise.resolve(listed());
     if (init?.method === "DELETE") return Promise.resolve(new Response(null, { status: 202 }));
     if (url.endsWith("/traces/kinds")) return Promise.resolve(json([{ name: "http", title: "HTTP traffic", exportFormats: [{ name: "har", ext: "har", mime: "application/json" }] }]));
     if (url.includes("/seq?")) return Promise.resolve(json({ seq: 0 }));
@@ -196,6 +206,7 @@ describe("host runs recording process groups", () => {
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {
       if (url === "/api/traces" || url.startsWith("/api/traces?")) return Promise.resolve(json({ runs }));
       if (url === "/api/traces/start") return Promise.resolve(json(startForm));
+      if (url === "/api/traces/definitions") return Promise.resolve(json(definitions));
       if (init?.method === "DELETE") return Promise.resolve(new Response(null, { status: 202 }));
       if (url.endsWith("/traces/kinds")) return Promise.resolve(json([{ name: "process_groups", title: "Process groups", exportFormats: [] }]));
       if (url.includes("/seq?")) return Promise.resolve(json({ seq: 4 }));
@@ -244,6 +255,28 @@ describe("starting a run", () => {
       method: "POST", body: JSON.stringify({ command: "sleep 60" }),
     })));
     await waitFor(() => expect(window.location.search).toBe(`?run=${running.runId}`));
+  });
+
+  it("starts a saved definition with only the run's execution fields", async () => {
+    const fetchMock = serve({ runs: [running, finished] });
+    renderPage();
+    expect(await screen.findByRole("option", { name: "checkout (cwd)" })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("combobox", { name: "Definition" }), { target: { value: "checkout" } });
+    expect(await screen.findByRole("textbox", { name: /PID/ })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("textbox", { name: /Command/ }), { target: { value: "./bin/checkout" } });
+    fireEvent.change(screen.getByRole("textbox", { name: /Duration/ }), { target: { value: "20s" } });
+    fireEvent.click(screen.getByRole("button", { name: "Start run" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/traces", expect.objectContaining({
+      method: "POST", body: JSON.stringify({ definition: "checkout", command: "./bin/checkout", duration: "20s" }),
+    })));
+    await waitFor(() => expect(window.location.search).toBe(`?run=${running.runId}`));
+  });
+
+  it("shows a failed definition listing and keeps the inline start", async () => {
+    serve({ runs: [] }, json(running, 201), () => new Response("config dir unreadable", { status: 500 }));
+    renderPage();
+    expect(await screen.findByText("list trace definitions failed (500): config dir unreadable")).toHaveAttribute("role", "alert");
+    expect(screen.getByRole("textbox", { name: /Command/ })).toBeInTheDocument();
   });
 
   it("shows the errors of a refused start", async () => {

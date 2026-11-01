@@ -16,6 +16,7 @@ function Shell() {
       navSections={[{
         items: [
           { key: "overview", label: "Overview", to: "/", active: page === "overview" },
+          { key: "definitions", label: "Definitions", to: "/definitions", active: page === "definitions" },
           { key: "top", label: "Top", to: "/top", active: page === "top" || page === "process" },
           { key: "connections", label: "Connections", to: "/connections", active: page === "connections" },
           { key: "agents", label: "Agents", to: "/agents", active: page === "agents" },

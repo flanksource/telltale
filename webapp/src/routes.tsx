@@ -12,9 +12,11 @@ const ArmPage = lazy(() => import("./workspace/ArmPage"));
 const QueryPage = lazy(() => import("./workspace/QueryPage"));
 const RecordsPage = lazy(() => import("./workspace/RecordsPage"));
 const OtelPage = lazy(() => import("./otel/OtelPage"));
+const DefinitionsPage = lazy(() => import("./definitions/DefinitionsPage"));
 
 export type Route =
   | { page: "overview" }
+  | { page: "definitions"; name?: string }
   | { page: "top" }
   | { page: "process"; target: string }
   | { page: "connections" | "query"; id?: string }
@@ -34,11 +36,14 @@ export function matchRoute(pathname: string): Route {
   if (path === "/connections") return { page: "connections" };
   if (path === "/query") return { page: "query" };
   if (path === "/otel") return { page: "otel" };
+  if (path === "/definitions") return { page: "definitions" };
+  const definition = /^\/definitions\/([^/]+)$/.exec(path);
   const otel = /^\/otel\/([^/]+)$/.exec(path);
   const workspace = /^\/(connections|query)\/([^/]+)$/.exec(path);
   const arm = /^\/arm\/([^/]+)\/([^/]+)$/.exec(path);
   const records = /^\/records\/([^/]+)\/([^/]+)\/([^/]+)$/.exec(path);
   try {
+    if (definition) return { page: "definitions", name: decodeURIComponent(definition[1]!) };
     if (otel) return { page: "otel", traceId: decodeURIComponent(otel[1]!) };
     if (workspace) return { page: workspace[1] as "connections" | "query", id: decodeURIComponent(workspace[2]!) };
     if (arm) return { page: "arm", agent: decodeURIComponent(arm[1]!), probe: decodeURIComponent(arm[2]!) };
@@ -78,6 +83,7 @@ export function AppRoutes() {
   const { pathname, renderLink } = useRouter();
   const route = matchRoute(pathname);
   switch (route.page) {
+    case "definitions": return <Suspense fallback={<p role="status">Loading trace definitions…</p>}><DefinitionsPage {...(route.name ? { name: route.name } : {})} /></Suspense>;
     case "otel": return <Suspense fallback={<p role="status">Loading trace search…</p>}><OtelPage traceId={route.traceId} /></Suspense>;
     case "connections": return <Suspense fallback={<p role="status">Loading connections…</p>}><ConnectionsPage selected={route.id} /></Suspense>;
     case "agents": return <Suspense fallback={<p role="status">Loading agents…</p>}><AgentsPage /></Suspense>;

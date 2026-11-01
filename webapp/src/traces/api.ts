@@ -92,12 +92,24 @@ export interface TraceTarget {
   wait?: boolean;
 }
 
-export interface StartRequest extends Record<string, unknown> {
+/** What the run-wide process tree reads of each process (traces.TreeOptions). */
+export interface TreeOptions {
+  facets?: boolean;
+  environment?: { keys?: string[]; prefixes?: string[] };
+}
+
+/** The execution fields of a run: what a saved definition leaves to each run of it. */
+export interface RunExecution {
   pid?: number;
   duration?: string;
   every?: string;
   command?: string;
-  facets?: boolean;
+}
+
+export interface StartRequest extends RunExecution, Record<string, unknown> {
+  /** A saved trace definition to run, in place of inline traces. */
+  definition?: string;
+  tree?: TreeOptions;
   traces?: Record<string, { enabled?: boolean; target?: TraceTarget; [param: string]: unknown }>;
 }
 

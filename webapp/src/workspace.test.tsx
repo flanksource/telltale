@@ -1,10 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { RouterProvider, useMemoryRouter } from "@flanksource/clicky-ui/rpc";
 import { AppRoutes, matchRoute } from "./routes";
 
 afterEach(() => vi.unstubAllGlobals());
+
+// The pages load lazily; load them once up front so no test waits on the first import.
+beforeAll(async () => {
+  await Promise.all([import("./workspace/AgentsPage"), import("./workspace/ArmPage")]);
+}, 30000);
 
 function json(value: unknown) {
   return new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json" } });
