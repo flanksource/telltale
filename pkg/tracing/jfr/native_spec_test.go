@@ -22,9 +22,9 @@ var _ = Describe("native JVM recording", func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 		defer cancel()
 		recorder := jfr.NativeRecorder{Dir: filepath.Join(dir, "agent captures")}
-		_, err = recorder.Start(ctx, jfr.Options{PID: child.Process.Pid, Engine: jfr.EngineJFR, Settings: "missing-fixture-settings"}, "telltale-invalid-fixture")
+		_, err = recorder.Start(ctx, jfr.RecordOptions{PID: child.Process.Pid, Engine: jfr.EngineJFR, Settings: "missing-fixture-settings"}, "telltale-invalid-fixture")
 		Expect(err).To(HaveOccurred(), "jcmd must report an unavailable recording configuration")
-		recording, err := recorder.Start(ctx, jfr.Options{PID: child.Process.Pid, Engine: jfr.EngineJFR, Settings: "profile"}, "telltale-native-fixture")
+		recording, err := recorder.Start(ctx, jfr.RecordOptions{PID: child.Process.Pid, Engine: jfr.EngineJFR, Settings: "profile"}, "telltale-native-fixture")
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() {
 			stop, cancelStop := context.WithTimeout(context.Background(), 10*time.Second)

@@ -19,8 +19,10 @@ import (
 
 const Kind = "logs"
 
-type Params struct {
-	Target      target.Target     `json:"target,omitzero"`
+// Options choose the logs a capture records: those a process logs through the
+// SDK, on the self or agent seam, or, with a Source, those a container,
+// Kubernetes or a cloud backend serves, read on the host seam.
+type Options struct {
 	Levels      map[string]string `json:"levels,omitempty"`
 	MinLevel    string            `json:"minLevel,omitempty"`
 	Match       string            `json:"match,omitempty"`
@@ -31,12 +33,33 @@ type Params struct {
 	Backend     string            `json:"backend,omitempty"`
 	Connection  string            `json:"connection,omitempty"`
 	Query       string            `json:"query,omitempty"`
-	Options     map[string]any    `json:"options,omitempty"`
-	TimeField   string            `json:"timeField,omitempty"`
+	// ProviderOptions are the cloud backend's own query options.
+	ProviderOptions map[string]any `json:"options,omitempty"`
+	TimeField       string         `json:"timeField,omitempty"`
 }
 
+// Params are a capture's Options on the seam it reads them through.
+type Params struct {
+	Target target.Target `json:"target,omitzero"`
+	Options
+}
+
+// Validate refuses a source off the host seam, which alone reads one, and
+// a host capture without one.
 func (p Params) Validate() error {
-	if p.Target.Seam != target.Process {
+	switch {
+	case p.Target.Seam != target.Host && p.Source != "":
+		return fmt.Errorf("%s logs are read on the %s seam, not %s", p.Source, target.Host, p.Target.Seam)
+	case p.Target.Seam == target.Host && p.Source == "":
+		return fmt.Errorf("the %s seam reads logs from a source: container, kubernetes or cloud", target.Host)
+	}
+	return p.Options.Validate()
+}
+
+// Validate is the static check of the options: it reaches no container,
+// cluster or backend, and looks up no connection.
+func (p Options) Validate() error {
+	if p.Source == "" {
 		return nil
 	}
 	if len(p.Levels) != 0 {
@@ -61,7 +84,7 @@ func (p Params) Validate() error {
 			return fmt.Errorf("unknown cloud logs backend %q", p.Backend)
 		}
 	default:
-		return fmt.Errorf("unknown logs process source %q", p.Source)
+		return fmt.Errorf("unknown logs source %q: expected container, kubernetes or cloud", p.Source)
 	}
 	if p.MinLevel != "" && p.Source != "cloud" {
 		return fmt.Errorf("%s logs do not expose severity for minLevel", p.Source)
@@ -86,7 +109,7 @@ func (capture) Schema() recordresults.ResultType[Log] {
 	return recordresults.ResultType[Log]{Title: "Logs", TimeColumn: "firstObserved", Follow: true}
 }
 func (c capture) Prepare(ctx dbcontext.Context, p Params, out tracing.Emitter[Log]) (dbcontext.Context, func() error, error) {
-	if p.Target.Seam == target.Process {
+	if p.Target.Seam == target.Host {
 		if p.Source == "cloud" {
 			if _, err := query.GetProvider(p.Backend); err != nil {
 				return ctx, nil, err
@@ -113,16 +136,16 @@ func (c capture) Prepare(ctx dbcontext.Context, p Params, out tracing.Emitter[Lo
 	return prepared, release, nil
 }
 func (c capture) Handle(ctx dbcontext.Context, p Params, out tracing.Emitter[Log], _ tracing.Records[Log]) error {
-	if p.Target.Seam == target.Process {
+	if p.Target.Seam == target.Host {
 		if p.Source == "cloud" {
-			return followCloud(ctx, p, func(row Log) error { return out.Emit(ctx, row) })
+			return followCloud(ctx, p.Options, func(row Log) error { return out.Emit(ctx, row) })
 		}
 		if p.Source == "kubernetes" {
 			client, err := ctx.LocalKubernetes()
 			if err != nil {
 				return fmt.Errorf("kubernetes client: %w", err)
 			}
-			return followKubernetes(ctx, client.Interface, p, func(row Log) error { return out.Emit(ctx, row) })
+			return followKubernetes(ctx, client.Interface, p.Options, func(row Log) error { return out.Emit(ctx, row) })
 		}
 		followCtx, cancel := context.WithCancel(ctx)
 		defer cancel()
@@ -148,5 +171,5 @@ func (c capture) Handle(ctx dbcontext.Context, p Params, out tracing.Emitter[Log
 
 func NewKind(registry *agentclient.Registry) *tracing.Handler[Params, Log] {
 	agent := seam.AgentSeam[Params, Log]{Probe: Kind, Registry: registry, Target: func(p Params) target.Target { return p.Target }, Mutates: func(p Params) bool { return len(p.Levels) > 0 }, ArmParams: func(p Params) (json.RawMessage, error) { return json.Marshal(p) }}
-	return tracing.NewHandler[Params, Log](capture{agent}, tracing.Capabilities{Live: true}, target.Self, target.Agent, target.Process).WithSecretMasking()
+	return tracing.NewHandler[Params, Log](capture{agent}, tracing.Capabilities{Live: true}, target.Self, target.Agent, target.Host).WithSecretMasking()
 }

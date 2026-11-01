@@ -48,7 +48,7 @@ var _ = Describe("GCP Cloud Logging source", func() {
 			return &models.Connection{Name: "gcp", Type: models.ConnectionTypeGCP, URL: server.Listener.Addr().String(), Certificate: credentials, Properties: types.JSONStringMap{"project": "example"}}, nil
 		})
 		var records []Log
-		err := followCloud(ctx, Params{Backend: "gcpcloudlogging", Connection: "connection://gcp"}, func(row Log) error { records = append(records, row); return nil })
+		err := followCloud(ctx, Options{Backend: "gcpcloudlogging", Connection: "connection://gcp"}, func(row Log) error { records = append(records, row); return nil })
 		Expect(err).NotTo(HaveOccurred())
 		Expect(records).To(HaveLen(1))
 		Expect(records[0].Message).To(Equal("gcp history"))

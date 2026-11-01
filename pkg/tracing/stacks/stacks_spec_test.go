@@ -46,7 +46,7 @@ func newEnv(dumpers ...stacks.Dumper) tracingtest.Env {
 	agents.Dir = GinkgoT().TempDir()
 	return tracingtest.NewEnv(map[string]tracing.TracePlugin{
 		stacks.Kind:      stacks.NewKind(agents, registry),
-		process.TreeKind: process.NewTreeKind(process.NewSampler(), process.TreeOptions{Dumpers: registry}),
+		process.TreeKind: process.NewTreeKind(process.NewSampler(), process.TreeKindOptions{Dumpers: registry}),
 	})
 }
 

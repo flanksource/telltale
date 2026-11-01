@@ -77,7 +77,7 @@ var _ = Describe("ParseSelector", func() {
 
 var _ = Describe("target JSON", func() {
 	It("omits zero target fields", func() {
-		data, err := json.Marshal(process.Params{})
+		data, err := json.Marshal(process.SampleParams{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(data)).To(MatchJSON(`{}`))
 	})

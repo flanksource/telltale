@@ -22,7 +22,7 @@ const KindName = "jvm_jfr"
 type builtin struct{ native profiler[Params] }
 type agentKey struct{}
 
-func (b builtin) Params() Params                           { return Params{Engine: EngineJFR} }
+func (b builtin) Params() Params                           { return Params{Options: Options{Engine: EngineJFR}} }
 func (b builtin) Schema() recordresults.ResultType[Sample] { return b.native.Schema() }
 func (b builtin) AgentAvailable(probe string, t target.Target) (bool, error) {
 	return (seam.AgentSeam[Params, Sample]{}).Available(probe, t)

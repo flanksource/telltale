@@ -19,7 +19,7 @@ import (
 	_ "github.com/flanksource/commons-db/query/providers"
 )
 
-func followCloud(ctx dbcontext.Context, p Params, emit func(Log) error) error {
+func followCloud(ctx dbcontext.Context, p Options, emit func(Log) error) error {
 	if p.Backend == "azureloganalytics" {
 		resolved, err := ctx.HydrateConnectionByURL(p.Connection)
 		if err != nil {
@@ -33,7 +33,7 @@ func followCloud(ctx dbcontext.Context, p Params, emit func(Log) error) error {
 	if err != nil {
 		return err
 	}
-	options := maps.Clone(p.Options)
+	options := maps.Clone(p.ProviderOptions)
 	if options == nil {
 		options = make(map[string]any)
 	}
@@ -102,13 +102,13 @@ func followCloud(ctx dbcontext.Context, p Params, emit func(Log) error) error {
 	return err
 }
 
-func azureCloud(ctx dbcontext.Context, p Params, endpoint string, emit func(Log) error) error {
+func azureCloud(ctx dbcontext.Context, p Options, endpoint string, emit func(Log) error) error {
 	options, err := query.DecodeOptions[struct {
 		WorkspaceID string `json:"workspaceID"`
 		Start       string `json:"start"`
 		End         string `json:"end"`
 		Limit       string `json:"limit"`
-	}](p.Options)
+	}](p.ProviderOptions)
 	if err != nil {
 		return err
 	}
@@ -145,7 +145,7 @@ func azureCloud(ctx dbcontext.Context, p Params, endpoint string, emit func(Log)
 	return nil
 }
 
-func emitCloud(row query.Row, p Params, emit func(Log) error) error {
+func emitCloud(row query.Row, p Options, emit func(Log) error) error {
 	message, ok := row["message"].(string)
 	if !ok {
 		return fmt.Errorf("cloud log message is %T, expected string", row["message"])

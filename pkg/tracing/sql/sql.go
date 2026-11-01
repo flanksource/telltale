@@ -26,19 +26,25 @@ import (
 
 const reportEvery = time.Second
 
-// Params choose the statements a capture records.
-type Params struct {
+// Options choose the statements a capture records.
+type Options struct {
 	// Connections name the connections to observe, as profiles reference
 	// them, "*" for every connection, or "self" for the server's own
 	// database, which "*" does not include.
 	Connections []string `json:"connections" clicky:"required,title=Connections,desc=Connections to observe: names; * for every one; or self for telltale's own database"`
 	// MinDuration, a duration such as 100ms, records only statements that ran
 	// at least that long.
-	MinDuration string        `json:"minDuration,omitempty" clicky:"title=Minimum duration,desc=Record only statements that ran at least this long such as 100ms"`
-	Target      target.Target `json:"target,omitzero"`
+	MinDuration string `json:"minDuration,omitempty" clicky:"title=Minimum duration,desc=Record only statements that ran at least this long such as 100ms"`
 }
 
-func (p Params) Validate() error {
+// Params are a capture's Options in the process it observes.
+type Params struct {
+	Options
+	Target target.Target `json:"target,omitzero"`
+}
+
+// Validate is the static check of the statements a capture records.
+func (p Options) Validate() error {
 	if len(p.Connections) == 0 {
 		return errors.New(`connections is required: name connections, "*" for every connection, or "self" for the server's own database`)
 	}
@@ -51,7 +57,7 @@ func (p Params) Validate() error {
 	return err
 }
 
-func (p Params) minimum() (time.Duration, error) {
+func (p Options) minimum() (time.Duration, error) {
 	if p.MinDuration == "" {
 		return 0, nil
 	}

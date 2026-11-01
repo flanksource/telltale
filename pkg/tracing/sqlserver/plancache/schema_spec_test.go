@@ -13,7 +13,7 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing/tracingtest"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	. "github.com/onsi/gomega/gstruct"
+	"github.com/onsi/gomega/gstruct"
 )
 
 type sampleFixture struct {
@@ -54,7 +54,7 @@ var _ = Describe("plan cache result schema", func() {
 		Expect(env.Rows(info)).To(HaveLen(3))
 		got := env.Read("sql_plancache/by_query", info.Events.Stream, query.PageRequest{Limit: 20}, nil)
 		Expect(got).To(HaveLen(1))
-		Expect(got[0]).To(MatchKeys(IgnoreExtras, Keys{
+		Expect(got[0]).To(gstruct.MatchKeys(gstruct.IgnoreExtras, gstruct.Keys{
 			"queryHash": Equal("0xAA"), "executions": BeNumerically("==", 6), "cpuMs": BeNumerically("==", 11),
 			"elapsedMs": BeNumerically("==", 34), "logicalReads": BeNumerically("==", 15),
 			"avgElapsedMs": BeNumerically("==", 7), "plans": BeNumerically("==", 2), "sql": Equal("SELECT 1"),

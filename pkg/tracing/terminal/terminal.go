@@ -52,10 +52,10 @@ type Event struct {
 type terminal struct{}
 
 func (terminal) Params() Params {
-	return Params{
+	return Params{Options: Options{
 		Width: DefaultWidth, Height: DefaultHeight,
 		SnapshotInterval: DefaultSnapshotInterval.String(), MaxBytes: DefaultMaxBytes,
-	}
+	}}
 }
 
 func (terminal) Schema() recordresults.ResultType[Event] {

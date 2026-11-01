@@ -129,7 +129,7 @@ var _ = Describe("prometheus capture", func() {
 			return prometheus.Server{URL: fake.server.URL, Job: "file_sd", FileSDDir: dir}, nil
 		}
 		env = tracingtest.NewEnv(map[string]tracing.TracePlugin{
-			prometheus.Kind: prometheus.NewKind(prometheus.Options{RunID: "run-spec", Server: server}),
+			prometheus.Kind: prometheus.NewKind(prometheus.KindOptions{RunID: "run-spec", Server: server}),
 		})
 	})
 

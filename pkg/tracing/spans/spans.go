@@ -24,8 +24,23 @@ const Kind = "spans"
 // Params select where spans come from: the SDK in telltale itself or an
 // agent, or, on the host seam, the span documents of an OpenSearch index.
 type Params struct {
-	Target     target.Target      `json:"target,omitzero"`
+	Target target.Target `json:"target,omitzero"`
+	Options
+}
+
+// Options choose the index spans are read from on the host seam; the SDK and
+// agent seams take none.
+type Options struct {
 	OpenSearch *opensearch.Params `json:"opensearch,omitempty" clicky:"title=OpenSearch,desc=Index to read spans from on the host seam"`
+}
+
+// Validate is the static check of the index options, whichever seam reads
+// them.
+func (p Options) Validate() error {
+	if p.OpenSearch == nil {
+		return nil
+	}
+	return p.OpenSearch.Validate()
 }
 
 func (p Params) Validate() error {
@@ -38,7 +53,7 @@ func (p Params) Validate() error {
 	if p.OpenSearch == nil {
 		return errors.New("the host seam reads spans from OpenSearch: opensearch.connection is required")
 	}
-	return p.OpenSearch.Validate()
+	return p.Options.Validate()
 }
 
 // ResultType is how every store keeps spans: keyed by trace and span ID,

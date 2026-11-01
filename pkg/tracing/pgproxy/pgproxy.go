@@ -68,7 +68,7 @@ type runningKey struct{}
 type pgProxy struct{}
 
 func (pgProxy) Params() Params {
-	return Params{Connection: defaultConnection, MaxStatements: defaultMaxStatements}
+	return Params{Options: Options{Connection: defaultConnection, MaxStatements: defaultMaxStatements}}
 }
 
 func (pgProxy) Schema() recordresults.ResultType[tracesql.StatementRow] {
@@ -79,7 +79,7 @@ func (pgProxy) Schema() recordresults.ResultType[tracesql.StatementRow] {
 // that points a process at it. The release drops every connection, waits for
 // their pending statements to be stored and reports the final summary.
 func (pgProxy) Prepare(ctx dbcontext.Context, params Params, records tracing.Emitter[tracesql.StatementRow]) (dbcontext.Context, func() error, error) {
-	dsn, err := resolveDSN(params)
+	dsn, err := resolveDSN(params.Options)
 	if err != nil {
 		return ctx, nil, err
 	}

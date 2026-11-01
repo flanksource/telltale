@@ -48,16 +48,16 @@ type Server struct {
 	FileSDDir string
 }
 
-// Options are what the kind's captures share: the run they record into, and
+// KindOptions are what the kind's captures share: the run they record into, and
 // the Prometheus they scrape with, started or found running on each start.
-type Options struct {
+type KindOptions struct {
 	RunID  string
 	Server func(context.Context) (Server, error)
 }
 
-type kind struct{ options Options }
+type kind struct{ options KindOptions }
 
-func (kind) Params() Params { return Params{Interval: DefaultInterval.String()} }
+func (kind) Params() Params { return Params{Options: Options{Interval: DefaultInterval.String()}} }
 
 func (kind) Schema() recordresults.ResultType[Scrape] {
 	return recordresults.ResultType[Scrape]{
@@ -161,6 +161,6 @@ func (kind) Handle(ctx dbcontext.Context, params Params, out tracing.Emitter[Scr
 }
 
 // NewKind is the prometheus kind over options.
-func NewKind(options Options) *tracing.Handler[Params, Scrape] {
+func NewKind(options KindOptions) *tracing.Handler[Params, Scrape] {
 	return tracing.NewHandler[Params, Scrape](kind{options: options}, tracing.Capabilities{Live: true}, target.Host)
 }

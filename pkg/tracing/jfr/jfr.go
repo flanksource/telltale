@@ -25,14 +25,14 @@ const maxStackBytes = 64 << 10
 // The kind validates the options as the capture starts; a host's Validate
 // should too, so a start it cannot honour is refused before a session exists.
 type Recordable interface {
-	JFROptions() (Options, error)
+	JFROptions() (RecordOptions, error)
 }
 
 // Recorder starts recordings in the JVM a host profiles: it is the kind's
 // transport, which a host provides.
 type Recorder interface {
 	// Start begins a recording named name with options.
-	Start(ctx context.Context, options Options, name string) (Recording, error)
+	Start(ctx context.Context, options RecordOptions, name string) (Recording, error)
 }
 
 // Recording is a running recording.
@@ -56,7 +56,7 @@ type Recording interface {
 type running struct {
 	mu        sync.Mutex
 	recording Recording
-	options   Options
+	options   RecordOptions
 	watermark time.Time
 	pending   []Sample
 	report    Report

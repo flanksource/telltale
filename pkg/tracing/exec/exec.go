@@ -19,13 +19,20 @@ import (
 
 const Kind = "exec"
 
-type Params struct {
-	Target    target.Target `json:"target,omitzero"`
-	Name      string        `json:"name,omitempty" clicky:"desc=Executable name glob"`
-	TailBytes int           `json:"tailBytes" clicky:"desc=Maximum bytes of each output tail"`
+// Options choose the executions a capture records and how much output each keeps.
+type Options struct {
+	Name      string `json:"name,omitempty" clicky:"desc=Executable name glob"`
+	TailBytes int    `json:"tailBytes" clicky:"desc=Maximum bytes of each output tail"`
 }
 
-func (p Params) Validate() error {
+// Params are a capture's Options in the process its target names.
+type Params struct {
+	Target target.Target `json:"target,omitzero"`
+	Options
+}
+
+// Validate is the static check of the name glob and the tail size.
+func (p Options) Validate() error {
 	if _, err := filepath.Match(p.Name, ""); err != nil {
 		return fmt.Errorf("name glob: %w", err)
 	}
@@ -47,7 +54,7 @@ type capture struct {
 func (c capture) AgentAvailable(probe string, t target.Target) (bool, error) {
 	return c.agent.Available(probe, t)
 }
-func (capture) Params() Params { return Params{TailBytes: 4096} }
+func (capture) Params() Params { return Params{Options: Options{TailBytes: 4096}} }
 func (capture) Schema() recordresults.ResultType[ExecRecord] {
 	return recordresults.ResultType[ExecRecord]{Title: "Executions", TimeColumn: "startedAt", Follow: true}
 }

@@ -25,7 +25,7 @@ var _ = Describe("Top", func() {
 		Expect(sleeper.Start()).To(Succeed())
 		DeferCleanup(func() { _ = sleeper.Process.Kill(); _ = sleeper.Wait() })
 
-		top, err := groups.NewTop(ctx, process.NewSampler(), groups.Options{Catalog: catalog, Groups: []string{"sleeper"}})
+		top, err := groups.NewTop(ctx, process.NewSampler(), groups.TopOptions{Catalog: catalog, Groups: []string{"sleeper"}})
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(top.Close)
 
@@ -74,7 +74,7 @@ var _ = Describe("Top", func() {
 	It("shows the telltale reading the host as its own tool group", func(ctx SpecContext) {
 		catalog, err := groups.LoadCatalog()
 		Expect(err).NotTo(HaveOccurred())
-		top, err := groups.NewTop(ctx, process.NewSampler(), groups.Options{Catalog: catalog})
+		top, err := groups.NewTop(ctx, process.NewSampler(), groups.TopOptions{Catalog: catalog})
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(top.Close)
 
@@ -100,7 +100,7 @@ var _ = Describe("Top", func() {
 		DeferCleanup(func() { _ = child.Process.Kill(); _ = child.Wait() })
 		catalog, err := groups.LoadCatalog()
 		Expect(err).NotTo(HaveOccurred())
-		top, err := groups.NewTop(ctx, process.NewSampler(), groups.Options{Catalog: catalog})
+		top, err := groups.NewTop(ctx, process.NewSampler(), groups.TopOptions{Catalog: catalog})
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(top.Close)
 		_, err = top.Tick(ctx)
@@ -123,7 +123,7 @@ var _ = Describe("Top", func() {
 		catalog, err := groups.LoadCatalog()
 		Expect(err).NotTo(HaveOccurred())
 
-		_, err = groups.NewTop(ctx, process.NewSampler(), groups.Options{Catalog: catalog, Groups: []string{"nope"}})
+		_, err = groups.NewTop(ctx, process.NewSampler(), groups.TopOptions{Catalog: catalog, Groups: []string{"nope"}})
 
 		Expect(err).To(MatchError(ContainSubstring(`group "nope"`)))
 	})

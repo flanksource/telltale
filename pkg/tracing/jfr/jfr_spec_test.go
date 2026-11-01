@@ -30,12 +30,12 @@ type fakeRecorder struct {
 	dumps     [][]byte
 	startErr  error
 	stopErr   error
-	started   []jfr.Options
+	started   []jfr.RecordOptions
 	names     []string
 	recording *fakeRecording
 }
 
-func (r *fakeRecorder) Start(_ context.Context, options jfr.Options, name string) (jfr.Recording, error) {
+func (r *fakeRecorder) Start(_ context.Context, options jfr.RecordOptions, name string) (jfr.Recording, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.started, r.names = append(r.started, options), append(r.names, name)
@@ -94,8 +94,8 @@ type hostParams struct {
 	Threads bool   `json:"threads,omitempty"`
 }
 
-func (p hostParams) JFROptions() (jfr.Options, error) {
-	options := jfr.Options{Engine: jfr.Engine(p.Engine), Event: p.Event, Threads: p.Threads}
+func (p hostParams) JFROptions() (jfr.RecordOptions, error) {
+	options := jfr.RecordOptions{Engine: jfr.Engine(p.Engine), Event: p.Event, Threads: p.Threads}
 	if options.Engine == jfr.EngineJFR {
 		options.Settings = "profile"
 	}
@@ -122,8 +122,8 @@ type laxParams struct {
 	Engine string `json:"engine"`
 }
 
-func (p laxParams) JFROptions() (jfr.Options, error) {
-	return jfr.Options{Engine: jfr.Engine(p.Engine)}, nil
+func (p laxParams) JFROptions() (jfr.RecordOptions, error) {
+	return jfr.RecordOptions{Engine: jfr.Engine(p.Engine)}, nil
 }
 
 func startEnv(recorder *fakeRecorder) tracingtest.Env {
@@ -158,7 +158,7 @@ var _ = Describe("jfr trace kind", func() {
 			{Name: "jfr.options", Label: "Profiling", Value: "jfr settings=profile"},
 			{Name: "jfr.target", Label: "Target", Value: "oipa"},
 		}))
-		Expect(recorder.started).To(Equal([]jfr.Options{{Engine: jfr.EngineJFR, Settings: "profile"}}))
+		Expect(recorder.started).To(Equal([]jfr.RecordOptions{{Engine: jfr.EngineJFR, Settings: "profile"}}))
 		Expect(recorder.names).To(HaveLen(1))
 		Expect(recorder.names[0]).ToNot(BeEmpty())
 

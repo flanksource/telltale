@@ -106,11 +106,11 @@ type hostParams struct {
 	Database string `json:"database" clicky:"title=Database"`
 }
 
-func (p hostParams) XEventOptions() (xevent.Options, error) {
+func (p hostParams) XEventOptions() (xevent.SessionOptions, error) {
 	if p.Database == "" {
-		return xevent.Options{}, errors.New("database is required")
+		return xevent.SessionOptions{}, errors.New("database is required")
 	}
-	return xevent.Options{
+	return xevent.SessionOptions{
 		Connection: "oipa",
 		Create:     xetrace.CreateOptions{Name: "host_capture", Databases: []string{p.Database}},
 		Drain:      xetrace.DrainOptions{Interval: time.Hour},

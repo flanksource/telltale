@@ -14,7 +14,13 @@ import (
 )
 
 type Params struct {
-	Target        target.Target      `json:"target,omitzero"`
+	Target target.Target `json:"target,omitzero"`
+	Options
+}
+
+// Options are the connection whose plan cache a capture samples, the
+// databases and statements it keeps, and how often and how much it reads.
+type Options struct {
 	Connection    string             `json:"connection" clicky:"required,title=Connection,desc=SQL Server connection reference"`
 	Databases     clicky.MultiFilter `json:"databases,omitempty" clicky:"title=Databases,desc=Database patterns with * wildcards and ! exclusions; empty selects the connected database"`
 	Poll          string             `json:"poll,omitempty" clicky:"title=Poll,desc=Poll interval such as 30s"`
@@ -23,7 +29,7 @@ type Params struct {
 	Text          clicky.MultiFilter `json:"text,omitempty" clicky:"title=Statement text,desc=SQL text patterns with * wildcards and ! exclusions; bare values match substrings"`
 }
 
-func (p Params) pollInterval() (time.Duration, error) {
+func (p Options) pollInterval() (time.Duration, error) {
 	if p.Poll == "" {
 		return 30 * time.Second, nil
 	}
@@ -34,7 +40,8 @@ func (p Params) pollInterval() (time.Duration, error) {
 	return d, nil
 }
 
-func (p Params) Validate() error {
+// Validate is the static check of the options: it opens no connection.
+func (p Options) Validate() error {
 	if strings.TrimSpace(p.Connection) == "" {
 		return fmt.Errorf("connection is required")
 	}
@@ -56,7 +63,7 @@ func (p Params) Validate() error {
 type handler struct{}
 type captureKey struct{}
 
-func (handler) Params() Params { return Params{Poll: "30s", Top: 200} }
+func (handler) Params() Params { return Params{Options: Options{Poll: "30s", Top: 200}} }
 
 func (handler) Prepare(ctx dbcontext.Context, p Params, out tracing.Emitter[Sample]) (dbcontext.Context, func() error, error) {
 	if err := p.Validate(); err != nil {

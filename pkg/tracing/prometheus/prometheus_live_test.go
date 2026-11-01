@@ -52,7 +52,7 @@ var _ = Describe("prometheus trace kind (live)", func() {
 				To(Equal(state.StatusStopped), "the last release stops the Prometheus this process supervises")
 		})
 		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{
-			prometheus.Kind: prometheus.NewKind(prometheus.Options{RunID: "run-live", Server: managed.Server}),
+			prometheus.Kind: prometheus.NewKind(prometheus.KindOptions{RunID: "run-live", Server: managed.Server}),
 		})
 		session := env.Start(prometheus.Kind, fmt.Sprintf(`{"endpoints": [%q], "interval": "1s", "labels": {"env": "dev"}}`, endpoint))
 		tracingtest.Running(session)

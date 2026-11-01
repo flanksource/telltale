@@ -15,11 +15,11 @@ import (
 
 type NativeRecorder struct{ Dir string }
 type nativeRecording struct {
-	options         Options
+	options         RecordOptions
 	name, dir, file string
 }
 
-func (n NativeRecorder) Start(ctx context.Context, o Options, name string) (Recording, error) {
+func (n NativeRecorder) Start(ctx context.Context, o RecordOptions, name string) (Recording, error) {
 	if o.PID <= 0 {
 		return nil, fmt.Errorf("JFR process capture requires a JVM pid")
 	}

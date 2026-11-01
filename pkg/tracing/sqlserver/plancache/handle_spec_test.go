@@ -68,7 +68,7 @@ func scriptedSnapshots(p Params, snapshots ...cacheSnapshot) (*capture, *int) {
 
 var _ = Describe("plan cache capture", func() {
 	DescribeTable("rejects invalid snapshot metadata without advancing the watermark", func(invalid cacheSnapshot) {
-		c, _ := scriptedSnapshots(Params{Top: 50},
+		c, _ := scriptedSnapshots(Params{Options: Options{Top: 50}},
 			cacheSnapshot{ServerTime: planCreated, Handles: []string{"0x01"}, Plans: []CachedPlan{testPlan()}}, invalid)
 		out := &recordingEmitter{}
 		Expect(c.poll(context.Background(), out)).To(Succeed())
@@ -81,7 +81,7 @@ var _ = Describe("plan cache capture", func() {
 		Entry("empty cache handle", cacheSnapshot{ServerTime: planCreated.Add(time.Second), Handles: []string{""}}),
 	)
 	It("includes plans created between the membership and active-statistics reads", func() {
-		c, _ := scriptedSnapshots(Params{Top: 50},
+		c, _ := scriptedSnapshots(Params{Options: Options{Top: 50}},
 			cacheSnapshot{ServerTime: planCreated},
 			cacheSnapshot{ServerTime: planCreated.Add(time.Second), Plans: []CachedPlan{testPlan()}},
 		)
@@ -95,7 +95,7 @@ var _ = Describe("plan cache capture", func() {
 		base, active := testPlan(), testPlan()
 		active.ExecutionCount += 2
 		active.TotalCPU += 5 * time.Millisecond
-		c, _ := scriptedSnapshots(Params{Top: 50},
+		c, _ := scriptedSnapshots(Params{Options: Options{Top: 50}},
 			cacheSnapshot{ServerTime: planCreated, Handles: []string{base.PlanHandle}, Plans: []CachedPlan{base}},
 			cacheSnapshot{ServerTime: planCreated.Add(time.Second), Handles: []string{base.PlanHandle}},
 			cacheSnapshot{ServerTime: planCreated.Add(2 * time.Second), Handles: []string{base.PlanHandle}, Plans: []CachedPlan{active}},
@@ -117,7 +117,7 @@ var _ = Describe("plan cache capture", func() {
 		base, recompiled := testPlan(), testPlan()
 		recompiled.CreationTime = planCreated.Add(time.Second)
 		recompiled.ExecutionCount = 1
-		c, _ := scriptedSnapshots(Params{Top: 50},
+		c, _ := scriptedSnapshots(Params{Options: Options{Top: 50}},
 			cacheSnapshot{ServerTime: planCreated, Handles: []string{base.PlanHandle}, Plans: []CachedPlan{base}},
 			cacheSnapshot{ServerTime: planCreated.Add(time.Second), Handles: []string{base.PlanHandle}},
 			cacheSnapshot{ServerTime: planCreated.Add(2 * time.Second), Handles: []string{base.PlanHandle}, Plans: []CachedPlan{recompiled}},
@@ -133,7 +133,7 @@ var _ = Describe("plan cache capture", func() {
 	It("accepts the runtime stop reason and forces a final checkpoint reading", func() {
 		base, cur := testPlan(), testPlan()
 		cur.ExecutionCount++
-		c, calls := scriptedCapture(Params{Top: 50}, []CachedPlan{base}, []CachedPlan{cur})
+		c, calls := scriptedCapture(Params{Options: Options{Top: 50}}, []CachedPlan{base}, []CachedPlan{cur})
 		out := &recordingEmitter{}
 		Expect(c.poll(context.Background(), out)).To(Succeed())
 		ctx := dbcontext.NewContext(tracing.WithCheckpointParams(context.Background(), []byte(`{"reason":"stop"}`))).WithValue(captureKey{}, c)
@@ -148,7 +148,7 @@ var _ = Describe("plan cache capture", func() {
 		cur.ExecutionCount += 2
 		cur.TotalCPU += 8 * time.Millisecond
 		cur.TotalElapsed += 12 * time.Millisecond
-		p := Params{Connection: "connection://example", Poll: "1h", Top: 200}
+		p := Params{Options: Options{Connection: "connection://example", Poll: "1h", Top: 200}}
 		c, calls := scriptedCapture(p, []CachedPlan{base}, []CachedPlan{cur}, []CachedPlan{cur})
 		out := &recordingEmitter{}
 		Expect(c.poll(context.Background(), out)).To(Succeed())
@@ -198,7 +198,7 @@ var _ = Describe("plan cache capture", func() {
 		curOld.TotalCPU += time.Millisecond
 		curNew.ExecutionCount += 3
 		curNew.TotalCPU += 10 * time.Millisecond
-		p := Params{Top: 1, MinExecutions: 2}
+		p := Params{Options: Options{Top: 1, MinExecutions: 2}}
 		c, _ := scriptedCapture(p, []CachedPlan{oldBusy, newBusy}, []CachedPlan{curOld, curNew}, []CachedPlan{curOld, curNew})
 		out := &recordingEmitter{}
 		for range 3 {
@@ -216,7 +216,7 @@ var _ = Describe("plan cache capture", func() {
 		curFirst.TotalCPU += time.Millisecond
 		curSecond.ExecutionCount++
 		curSecond.TotalCPU += 2 * time.Millisecond
-		c, _ := scriptedCapture(Params{Top: 1}, []CachedPlan{first, second}, []CachedPlan{curFirst, curSecond}, []CachedPlan{curFirst, curSecond})
+		c, _ := scriptedCapture(Params{Options: Options{Top: 1}}, []CachedPlan{first, second}, []CachedPlan{curFirst, curSecond}, []CachedPlan{curFirst, curSecond})
 		out := &recordingEmitter{}
 		for range 3 {
 			Expect(c.poll(context.Background(), out)).To(Succeed())
@@ -230,20 +230,20 @@ var _ = Describe("plan cache capture", func() {
 		Expect(c.poll(context.Background(), &recordingEmitter{})).To(MatchError(failure))
 		base, invalid := testPlan(), testPlan()
 		invalid.TotalCPU--
-		c, _ = scriptedCapture(Params{Top: 1}, []CachedPlan{base}, []CachedPlan{invalid})
+		c, _ = scriptedCapture(Params{Options: Options{Top: 1}}, []CachedPlan{base}, []CachedPlan{invalid})
 		Expect(c.poll(context.Background(), &recordingEmitter{})).To(Succeed())
 		Expect(c.poll(context.Background(), &recordingEmitter{})).To(HaveOccurred())
-		c, _ = scriptedCapture(Params{Top: 1}, nil, []CachedPlan{base})
+		c, _ = scriptedCapture(Params{Options: Options{Top: 1}}, nil, []CachedPlan{base})
 		Expect(c.poll(context.Background(), &recordingEmitter{})).To(Succeed())
 		Expect(c.poll(context.Background(), &recordingEmitter{err: failure})).To(MatchError(failure))
 	})
 	DescribeTable("refuses invalid parameters", func(p Params) { Expect(p.Validate()).To(HaveOccurred()) },
 		Entry("no connection", Params{}),
-		Entry("negative poll", Params{Connection: "example", Poll: "-1s"}),
-		Entry("zero poll", Params{Connection: "example", Poll: "0s"}),
-		Entry("bad poll", Params{Connection: "example", Poll: "later"}),
-		Entry("negative top", Params{Connection: "example", Top: -1}),
-		Entry("negative floor", Params{Connection: "example", MinExecutions: -1}),
-		Entry("empty exclusion", Params{Connection: "example", Text: []string{"!"}}),
+		Entry("negative poll", Params{Options: Options{Connection: "example", Poll: "-1s"}}),
+		Entry("zero poll", Params{Options: Options{Connection: "example", Poll: "0s"}}),
+		Entry("bad poll", Params{Options: Options{Connection: "example", Poll: "later"}}),
+		Entry("negative top", Params{Options: Options{Connection: "example", Top: -1}}),
+		Entry("negative floor", Params{Options: Options{Connection: "example", MinExecutions: -1}}),
+		Entry("empty exclusion", Params{Options: Options{Connection: "example", Text: []string{"!"}}}),
 	)
 })

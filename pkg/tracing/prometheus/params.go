@@ -31,17 +31,24 @@ const (
 
 var labelName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
-// Params choose the endpoints a capture scrapes, how often, and the labels
+// Options choose the endpoints a capture scrapes, how often, and the labels
 // their samples are stored with.
-type Params struct {
+type Options struct {
 	Endpoints []string          `json:"endpoints" clicky:"title=Endpoints,desc=Prometheus metrics URLs to scrape such as http://localhost:8080/metrics"`
 	Interval  string            `json:"interval,omitempty" clicky:"title=Interval,desc=How often each endpoint is scraped such as 15s (at least 1s)"`
 	Timeout   string            `json:"timeout,omitempty" clicky:"title=Timeout,desc=How long one scrape may take such as 5s (at most the interval; default the shorter of 10s and the interval)"`
 	Labels    map[string]string `json:"labels,omitempty" clicky:"title=Labels,desc=Extra labels every scraped sample is stored with such as env=dev"`
-	Target    target.Target     `json:"target,omitzero"`
 }
 
-func (p Params) Validate() error {
+// Params are a capture's Options on the host it scrapes from.
+type Params struct {
+	Options
+	Target target.Target `json:"target,omitzero"`
+}
+
+// Validate is the static check of what a scrape could not run: it reads no
+// environment and reaches no endpoint.
+func (p Options) Validate() error {
 	var errs []error
 	if len(p.Endpoints) == 0 {
 		errs = append(errs, errors.New("at least one endpoint is required"))
@@ -71,7 +78,7 @@ func (p Params) Validate() error {
 }
 
 // timing is the scrape interval and timeout the params ask for.
-func (p Params) timing() (interval, timeout time.Duration, err error) {
+func (p Options) timing() (interval, timeout time.Duration, err error) {
 	interval = DefaultInterval
 	if p.Interval != "" {
 		if interval, err = parseMillis("interval", p.Interval); err != nil {

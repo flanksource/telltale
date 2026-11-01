@@ -88,7 +88,7 @@ var _ = Describe("SQL deadlocks (live)", func() {
 		Expect(follow.Rows[0].Victims).To(Equal(1))
 		Expect(follow.Rows[0].Participants).To(Equal(2))
 		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{"sql_deadlock": Kind()})
-		params, err := json.Marshal(Params{Connection: "connection://live", From: follow.Result.From.Format(time.RFC3339Nano), To: follow.Result.To.Format(time.RFC3339Nano)})
+		params, err := json.Marshal(Params{Options: Options{Connection: "connection://live", From: follow.Result.From.Format(time.RFC3339Nano), To: follow.Result.To.Format(time.RFC3339Nano)}})
 		Expect(err).NotTo(HaveOccurred())
 		managed, err := env.Runtime.Start(ctx, tracing.StartRequest{Kind: "sql_deadlock", Params: params})
 		Expect(err).NotTo(HaveOccurred())

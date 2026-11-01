@@ -38,8 +38,8 @@ const (
 // asyncProfilerEvents are the events async-profiler profiles, one at a time.
 var asyncProfilerEvents = []string{decode.EventCPU, decode.EventWall, decode.EventAlloc, decode.EventLock}
 
-// Options are what a capture records and how it reads the recording back.
-type Options struct {
+// RecordOptions are what a capture records and how it reads the recording back.
+type RecordOptions struct {
 	PID           int
 	AsyncProfiler string
 	Engine        Engine
@@ -63,7 +63,7 @@ type Options struct {
 }
 
 // Validate refuses options a recording could not honour.
-func (o Options) Validate() error {
+func (o RecordOptions) Validate() error {
 	var errs []error
 	switch o.Engine {
 	case EngineJFR:
@@ -99,7 +99,7 @@ func (o Options) Validate() error {
 }
 
 // String is what the recording profiles, as its session shows it.
-func (o Options) String() string {
+func (o RecordOptions) String() string {
 	parts := []string{string(o.Engine)}
 	if o.Settings != "" {
 		parts = append(parts, "settings="+o.Settings)

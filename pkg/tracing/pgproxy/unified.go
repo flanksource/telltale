@@ -1,6 +1,7 @@
 package pgproxy
 
 import (
+	"fmt"
 	"iter"
 
 	dbcontext "github.com/flanksource/commons-db/context"
@@ -18,11 +19,14 @@ type UnifiedParams struct {
 }
 
 func (p UnifiedParams) sqlParams() tracesql.Params {
-	return tracesql.Params{Connections: p.Connections, MinDuration: p.MinDuration, Target: p.Target}
+	return tracesql.Params{Options: tracesql.Options{Connections: p.Connections, MinDuration: p.MinDuration}, Target: p.Target}
 }
 func (p UnifiedParams) Validate() error {
 	if p.Target.Seam == target.Proxy {
-		return p.Params.Validate()
+		return p.Options.Validate()
+	}
+	if p.Listen != "" || len(p.Export) > 0 {
+		return fmt.Errorf("listen and export configure the proxy: they apply only to the %s seam, not %s", target.Proxy, p.Target.Seam)
 	}
 	return p.sqlParams().Validate()
 }

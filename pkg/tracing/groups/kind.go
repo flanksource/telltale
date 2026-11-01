@@ -22,8 +22,8 @@ const Kind = "process_groups"
 // process.
 const DefaultInterval = 2 * time.Second
 
-// Params choose what a process_groups capture reads and how often.
-type Params struct {
+// Options choose what a process_groups capture reads and how often.
+type Options struct {
 	// Interval, a duration such as 2s, is how often the groups are read.
 	Interval string `json:"interval,omitempty" clicky:"title=Interval,desc=How often the groups are read such as 2s (at least 1s)"`
 	All      bool   `json:"all,omitempty" clicky:"title=All processes,desc=Also record the processes no tool's group holds by program"`
@@ -31,16 +31,23 @@ type Params struct {
 	Groups []string `json:"groups,omitempty" clicky:"title=Groups,desc=Record only these groups and those under them such as claude or vitest"`
 	Net    bool     `json:"net,omitempty" clicky:"title=Network bytes,desc=Read each process's network bytes with nettop (darwin; costs over a core)"`
 	// Catalog is a groups.yaml applied over the built-in rules.
-	Catalog string             `json:"catalog,omitempty" clicky:"title=Catalog,desc=A groups.yaml whose rules are applied over the built-in ones"`
-	Target  tracetarget.Target `json:"target,omitzero"`
+	Catalog string `json:"catalog,omitempty" clicky:"title=Catalog,desc=A groups.yaml whose rules are applied over the built-in ones"`
 }
 
-func (p Params) Validate() error {
+// Params are a capture's Options on the host.
+type Params struct {
+	Options
+	Target tracetarget.Target `json:"target,omitzero"`
+}
+
+// Validate is the static check of the interval; the catalog file is read
+// only as the capture starts (TopOptions).
+func (p Options) Validate() error {
 	_, err := p.interval()
 	return err
 }
 
-func (p Params) interval() (time.Duration, error) {
+func (p Options) interval() (time.Duration, error) {
 	if p.Interval == "" {
 		return DefaultInterval, nil
 	}
@@ -54,11 +61,11 @@ func (p Params) interval() (time.Duration, error) {
 	return interval, nil
 }
 
-// Options are the Top options the params ask for, with the catalog loaded.
-func (p Params) Options() (Options, error) {
+// TopOptions are the Top options the options ask for, with the catalog loaded.
+func (p Options) TopOptions() (TopOptions, error) {
 	interval, err := p.interval()
 	if err != nil {
-		return Options{}, err
+		return TopOptions{}, err
 	}
 	var files []string
 	if p.Catalog != "" {
@@ -66,9 +73,9 @@ func (p Params) Options() (Options, error) {
 	}
 	catalog, err := LoadCatalog(files...)
 	if err != nil {
-		return Options{}, err
+		return TopOptions{}, err
 	}
-	return Options{Catalog: catalog, All: p.All, Groups: p.Groups, Net: p.Net, Interval: interval}, nil
+	return TopOptions{Catalog: catalog, All: p.All, Groups: p.Groups, Net: p.Net, Interval: interval}, nil
 }
 
 type kind struct {
@@ -90,7 +97,7 @@ type topKey struct{}
 // Prepare starts the capture's Top, refusing a catalog or group it cannot
 // read, and nettop where there is none, before the session starts.
 func (k kind) Prepare(ctx dbcontext.Context, params Params, _ tracing.Emitter[GroupSample]) (dbcontext.Context, func() error, error) {
-	options, err := params.Options()
+	options, err := params.TopOptions()
 	if err != nil {
 		return ctx, nil, err
 	}

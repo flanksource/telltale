@@ -19,7 +19,7 @@ var _ = Describe("Kubernetes log source", func() {
 	It("follows the requested container of matching pods", func() {
 		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "api-1", Namespace: "orders", Labels: map[string]string{"app": "api"}}, Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "app"}}}}
 		client := fake.NewSimpleClientset(pod)
-		err := followKubernetes(context.Background(), client, Params{Namespace: "orders", PodSelector: "app=api", Container: "app"}, func(Log) error { return nil })
+		err := followKubernetes(context.Background(), client, Options{Namespace: "orders", PodSelector: "app=api", Container: "app"}, func(Log) error { return nil })
 		Expect(err).NotTo(HaveOccurred())
 		actions := client.Actions()
 		Expect(actions).To(HaveLen(2))
@@ -39,7 +39,7 @@ var _ = Describe("Kubernetes log source", func() {
 		client, err := kubernetes.NewForConfig(&rest.Config{Host: server.URL})
 		Expect(err).NotTo(HaveOccurred())
 		var records []Log
-		err = followKubernetes(context.Background(), client, Params{Namespace: "orders", PodSelector: "app=api", Container: "app"}, func(row Log) error { records = append(records, row); return nil })
+		err = followKubernetes(context.Background(), client, Options{Namespace: "orders", PodSelector: "app=api", Container: "app"}, func(row Log) error { records = append(records, row); return nil })
 		Expect(err).NotTo(HaveOccurred())
 		Expect(records).To(HaveLen(1))
 		Expect(records[0].Message).To(Equal("hello kubernetes"))

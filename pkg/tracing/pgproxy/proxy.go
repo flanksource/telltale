@@ -7,11 +7,13 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/flanksource/commons-db/connection"
+	"github.com/flanksource/telltale/pkg/tracing"
 )
 
 // Postgres startup codes that arrive in place of a StartupMessage. The proxy
@@ -47,13 +49,14 @@ type proxy struct {
 	closed bool
 }
 
-// startProxy listens on a loopback port and serves until Close. The upstream
-// must accept unencrypted connections: the proxy answers a client's SSLRequest
-// with a refusal and dials the upstream in the clear.
+// startProxy listens on the address its options name, by default a loopback
+// port, and serves until Close. The upstream must accept unencrypted
+// connections: the proxy answers a client's SSLRequest with a refusal and
+// dials the upstream in the clear.
 func startProxy(params Params, dsn *url.URL, emit func(connection.Statement)) (*proxy, error) {
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := tracing.Listen("sql proxy", params.listenAddress())
 	if err != nil {
-		return nil, fmt.Errorf("sql proxy listen: %w", err)
+		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	p := &proxy{params: params, upstream: upstreamAddr(dsn), dsn: dsn, listener: listener, emit: emit, ctx: ctx, cancel: cancel}
@@ -79,6 +82,15 @@ func (p *proxy) childEnv() (map[string]string, error) {
 	query.Set("sslmode", "disable")
 	rewritten.RawQuery = query.Encode()
 
+	if len(p.params.Export) > 0 {
+		env := map[string]string{}
+		for _, name := range append(slices.Clone(p.params.Export), p.params.Env) {
+			if name != "" {
+				env[name] = rewritten.String()
+			}
+		}
+		return env, nil
+	}
 	host, port, err := net.SplitHostPort(p.Addr())
 	if err != nil {
 		return nil, fmt.Errorf("sql proxy listener address %q: %w", p.Addr(), err)

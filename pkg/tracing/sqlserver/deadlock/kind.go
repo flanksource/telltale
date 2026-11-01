@@ -24,15 +24,21 @@ import (
 type Window struct{ From, To time.Time }
 
 type Params struct {
-	Target     target.Target `json:"target,omitzero"`
-	Connection string        `json:"connection" clicky:"required,title=Connection"`
-	Databases  []string      `json:"databases,omitempty" clicky:"title=Databases,desc=Participant database patterns; empty selects the connected database"`
-	From       string        `json:"from,omitempty" clicky:"title=From,desc=Historical window start in RFC3339; empty follows from now"`
-	To         string        `json:"to,omitempty" clicky:"title=To,desc=Historical window end in RFC3339; empty uses server time"`
-	Poll       string        `json:"poll,omitempty" clicky:"title=Poll,desc=Follow poll interval"`
+	Target target.Target `json:"target,omitzero"`
+	Options
 }
 
-func (p Params) window() (Window, error) {
+// Options are the connection whose system_health deadlock reports a capture
+// reads, the databases they involve, and the window or follow pacing.
+type Options struct {
+	Connection string   `json:"connection" clicky:"required,title=Connection"`
+	Databases  []string `json:"databases,omitempty" clicky:"title=Databases,desc=Participant database patterns; empty selects the connected database"`
+	From       string   `json:"from,omitempty" clicky:"title=From,desc=Historical window start in RFC3339; empty follows from now"`
+	To         string   `json:"to,omitempty" clicky:"title=To,desc=Historical window end in RFC3339; empty uses server time"`
+	Poll       string   `json:"poll,omitempty" clicky:"title=Poll,desc=Follow poll interval"`
+}
+
+func (p Options) window() (Window, error) {
 	var w Window
 	var err error
 	if p.From != "" {
@@ -56,7 +62,8 @@ func (p Params) window() (Window, error) {
 	return w, nil
 }
 
-func (p Params) Validate() error {
+// Validate is the static check of the options: it opens no connection.
+func (p Options) Validate() error {
 	if strings.TrimSpace(p.Connection) == "" {
 		return fmt.Errorf("connection is required")
 	}
@@ -83,7 +90,7 @@ type capture struct {
 type captureKey struct{}
 type handler struct{}
 
-func (handler) Params() Params { return Params{Poll: "30s"} }
+func (handler) Params() Params { return Params{Options: Options{Poll: "30s"}} }
 func (handler) Schema() recordresults.ResultType[history.Row] {
 	return recordresults.ResultType[history.Row]{Title: "SQL Server deadlocks", TimeColumn: "timestamp", Follow: true, SearchColumns: []string{"statements", "signature"}}
 }

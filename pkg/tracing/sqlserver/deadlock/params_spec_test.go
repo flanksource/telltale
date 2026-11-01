@@ -6,10 +6,10 @@ import (
 )
 
 var _ = Describe("deadlock window params", func() {
-	DescribeTable("refuses invalid input", func(p Params) { Expect(p.Validate()).To(HaveOccurred()) },
-		Entry("missing connection", Params{}),
-		Entry("end without start", Params{Connection: "connection://example", To: "2026-10-28T12:00:00Z"}),
-		Entry("reversed window", Params{Connection: "connection://example", From: "2026-10-28T12:00:00Z", To: "2026-10-28T11:00:00Z"}),
-		Entry("negative polling", Params{Connection: "connection://example", Poll: "-1s"}),
+	DescribeTable("refuses invalid input", func(p Options) { Expect(p.Validate()).To(HaveOccurred()) },
+		Entry("missing connection", Options{}),
+		Entry("end without start", Options{Connection: "connection://example", To: "2026-10-28T12:00:00Z"}),
+		Entry("reversed window", Options{Connection: "connection://example", From: "2026-10-28T12:00:00Z", To: "2026-10-28T11:00:00Z"}),
+		Entry("negative polling", Options{Connection: "connection://example", Poll: "-1s"}),
 	)
 })

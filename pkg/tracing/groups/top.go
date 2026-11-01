@@ -75,8 +75,8 @@ func (p ProcessSample) holds(query string) bool {
 		strings.Contains(strconv.Itoa(p.PID), query)
 }
 
-// Options choose what a Top reads and shows.
-type Options struct {
+// TopOptions choose what a Top reads and shows.
+type TopOptions struct {
 	Catalog Catalog
 	// All shows, and reads the disk and descriptors of, the processes in no
 	// tool's group too.
@@ -92,7 +92,7 @@ type Options struct {
 type Top struct {
 	mu        sync.Mutex
 	sampler   *process.Sampler
-	options   Options
+	options   TopOptions
 	rates     *Rates
 	contexts  *contexts
 	launchd   launchd
@@ -107,7 +107,7 @@ type Top struct {
 
 // NewTop is a Top over sampler, refusing a group no rule names; with Net it
 // starts nettop, which Close stops.
-func NewTop(ctx context.Context, sampler *process.Sampler, options Options) (*Top, error) {
+func NewTop(ctx context.Context, sampler *process.Sampler, options TopOptions) (*Top, error) {
 	for _, name := range options.Groups {
 		if _, ok := options.Catalog.Rule(name); !ok {
 			return nil, fmt.Errorf("group %q is no rule of the catalog", name)

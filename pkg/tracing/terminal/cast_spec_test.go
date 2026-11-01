@@ -11,7 +11,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	. "github.com/onsi/gomega/gstruct"
+	"github.com/onsi/gomega/gstruct"
 )
 
 func rowsOf(events ...Event) iter.Seq[Event] { return slices.Values(events) }
@@ -112,7 +112,7 @@ var _ = Describe("cast summary", func() {
 	It("summarizes the capture as gavel's cast CEL root does, without a path", func() {
 		summary, err := terminal{}.Summarize(sampleRows())
 		Expect(err).ToNot(HaveOccurred())
-		Expect(summary).To(MatchAllKeys(Keys{
+		Expect(summary).To(gstruct.MatchAllKeys(gstruct.Keys{
 			"events": Equal(3), "duration_ms": Equal(int64(1500)), "exit_code": Equal(3),
 			"width": Equal(80), "height": Equal(24), "final": Equal("hi\nhi\nbye"),
 			// A count rather than the timeline: a screen is kilobytes and a run
@@ -128,7 +128,7 @@ var _ = Describe("cast summary", func() {
 	It("holds every key on an empty window", func() {
 		summary, err := terminal{}.Summarize(rowsOf())
 		Expect(err).ToNot(HaveOccurred())
-		Expect(summary).To(MatchAllKeys(Keys{
+		Expect(summary).To(gstruct.MatchAllKeys(gstruct.Keys{
 			"events": Equal(0), "duration_ms": Equal(int64(0)), "exit_code": Equal(NoExitCode),
 			"width": Equal(0), "height": Equal(0), "final": Equal(""), "snapshots": Equal(0),
 			"duplicates": BeEmpty(), "has_duplicates": BeFalse(), "truncated": BeFalse(),
