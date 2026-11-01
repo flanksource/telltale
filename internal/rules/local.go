@@ -16,7 +16,7 @@ func PreviewFile(ctx context.Context, path string) ([]Preview, error) {
 	if err != nil {
 		return nil, err
 	}
-	options, err := (groups.Params{Catalog: catalog, Interval: groups.DefaultInterval.String()}).Options()
+	options, err := (groups.Options{Catalog: catalog, Interval: groups.DefaultInterval.String()}).TopOptions()
 	if err != nil {
 		return nil, err
 	}

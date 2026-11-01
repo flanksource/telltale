@@ -83,7 +83,7 @@ var _ = Describe("run records route", func() {
 		host, err := traces.Open(traces.OpenOptions{DataDir: dir, RunID: "run-http"})
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() { Expect(host.Close(context.Background())).To(Succeed()) })
-		capture, err = host.Start(fixtureKind, json.RawMessage(`{}`))
+		capture, err = host.Start(traces.StartOptions{Kind: fixtureKind, Params: json.RawMessage(`{}`)})
 		Expect(err).NotTo(HaveOccurred())
 		data, err := json.Marshal(telltale.RunInfo{RunID: host.RunID(), Dir: host.Dir(), Status: telltale.StatusRunning, StartedAt: time.Now(), Captures: []telltale.CaptureResult{{Kind: fixtureKind, Ref: capture.Ref(0, 0)}}})
 		Expect(err).NotTo(HaveOccurred())

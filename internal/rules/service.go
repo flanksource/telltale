@@ -64,7 +64,7 @@ func Open(dataDir, path string, enforce bool) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	options, err := (groups.Params{Catalog: catalogPath, Interval: groups.DefaultInterval.String()}).Options()
+	options, err := (groups.Options{Catalog: catalogPath, Interval: groups.DefaultInterval.String()}).TopOptions()
 	if err != nil {
 		return nil, err
 	}

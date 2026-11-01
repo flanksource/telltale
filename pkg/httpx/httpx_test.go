@@ -32,7 +32,7 @@ var _ = Describe("an observable client", func() {
 		}
 
 		get(httpx.Shared, "/before")
-		capture, err := host.Start("http", nil)
+		capture, err := host.Start(traces.StartOptions{Kind: "http"})
 		Expect(err).ToNot(HaveOccurred())
 		get(httpx.Client(5*time.Second), "/observed")
 		get(http.DefaultClient, "/untapped")
