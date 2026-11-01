@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -76,6 +77,27 @@ var _ = Describe("running a command under trace", func() {
 		Expect(result.Captures[0].Summary).To(HaveKeyWithValue("count", BeNumerically("==", 1)))
 	})
 
+	It("points the command at two proxies, each on its own fixed port and under its own variables", func() {
+		first, second := freeAddress(), freeAddress()
+		result, output := run([]string{"sh", "-c", `printf '%s %s %s' "$HTTP_PROXY" "$PARTNER_PROXY" "$PARTNER_NO_PROXY"`},
+			telltale.TraceSpec{Kind: httpproxy.Kind, Params: json.RawMessage(`{"target":{"seam":"proxy"},"listen":"` + first + `"}`)},
+			telltale.TraceSpec{Kind: httpproxy.Kind, Params: json.RawMessage(`{"target":{"seam":"proxy"},"listen":"` + second + `","export":{"proxy":"PARTNER_PROXY","noProxy":"PARTNER_NO_PROXY"}}`)},
+		)
+		Expect(result.ExitCode).To(Equal(0), output)
+		Expect(output).To(Equal("http://" + first + " http://" + second + " " + second))
+		Expect(result.Captures).To(HaveLen(2))
+	})
+
+	It("refuses two proxies that export the same variable", func() {
+		_, err := telltale.Start(context.Background(), telltale.StartOptions{
+			DataDir: GinkgoT().TempDir(), Command: []string{"true"}, Traces: []telltale.TraceSpec{
+				{Kind: httpproxy.Kind, Params: json.RawMessage(`{"target":{"seam":"proxy"}}`)},
+				{Kind: httpproxy.Kind, Params: json.RawMessage(`{"target":{"seam":"proxy"},"export":{"proxy":"HTTP_PROXY"}}`)},
+			},
+		})
+		Expect(err).To(MatchError(ContainSubstring("both export HTTP_PROXY")))
+	})
+
 	It("refuses a kind the catalog does not serve before running anything", func() {
 		_, err := telltale.Start(context.Background(), telltale.StartOptions{
 			DataDir: GinkgoT().TempDir(), Command: []string{"true"}, Traces: []telltale.TraceSpec{{Kind: "nosuchkind"}},
@@ -83,6 +105,14 @@ var _ = Describe("running a command under trace", func() {
 		Expect(err).To(MatchError(ContainSubstring(`unknown trace kind "nosuchkind"`)))
 	})
 })
+
+// freeAddress is a loopback host:port nothing listens on, for a proxy to bind.
+func freeAddress() string {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	Expect(err).ToNot(HaveOccurred())
+	defer func() { Expect(listener.Close()).To(Succeed()) }()
+	return listener.Addr().String()
+}
 
 // sleeper is a running process, reaped once it exits, for a run to attach to.
 func sleeper(seconds string) *exec.Cmd {

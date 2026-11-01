@@ -236,7 +236,7 @@ func (r *Run) start() error {
 func (r *Run) arm() (map[string]string, error) {
 	env := map[string]string{}
 	for _, spec := range r.specs {
-		capture, err := r.host.Start(spec.Kind, spec.Params)
+		capture, err := r.host.Start(traces.StartOptions{Kind: spec.Kind, Params: spec.Params})
 		if err != nil {
 			return nil, err
 		}
@@ -282,7 +282,7 @@ func (r *Run) startCommand() error {
 
 func (r *Run) startProcessTrace(rootPID int) error {
 	var err error
-	if r.process, err = r.host.StartProcessTrace(traces.ProcessTraceOptions{RootPID: rootPID, Facets: r.options.Facets}); err != nil {
+	if r.process, err = r.host.StartProcessTrace(traces.ProcessTraceOptions{RootPID: rootPID, Tree: r.options.Tree}); err != nil {
 		return fmt.Errorf("process trace: %w", err)
 	}
 	return nil
@@ -386,7 +386,7 @@ func (r *Run) close() error {
 	var errs []error
 	if r.process != nil {
 		if r.options.TraceRoot == TraceRootSelf && r.cmd != nil {
-			errs = append(errs, r.process.CheckpointStacks(ctx, stacks.CheckpointParams{PID: os.Getpid(), Transport: stacks.TransportInProcess, Reason: "final"}))
+			errs = append(errs, r.process.CheckpointStacks(ctx, stacks.CheckpointParams{PID: os.Getpid(), CheckpointOptions: stacks.CheckpointOptions{Transport: stacks.TransportInProcess}, Reason: "final"}))
 		}
 		errs = append(errs, r.process.CheckpointTree(ctx), r.process.Stop(ctx))
 	}

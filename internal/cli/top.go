@@ -100,7 +100,7 @@ func (f topFlags) run(cmd *cobra.Command) error {
 	open := func(toggles topui.Toggles) (*groups.Top, error) {
 		params := f.params
 		params.All, params.Net = toggles.All, toggles.Net
-		options, err := params.Options()
+		options, err := params.TopOptions()
 		if err != nil {
 			return nil, err
 		}

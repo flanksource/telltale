@@ -23,9 +23,9 @@ type Preset struct {
 	Name, Summary, Description string
 	Examples                   []traces.Example
 	Traces                     []TraceSpec
-	// Facets reads every process's facets and environment into the run's
-	// process tree.
-	Facets bool
+	// Tree is what the run's process tree reads of each process, under what
+	// the run itself asks for.
+	Tree traces.TreeOptions
 	// Every is how often the checkpointed captures are read, unless the run
 	// asks for another interval.
 	Every time.Duration
@@ -43,7 +43,10 @@ func (p Preset) Start(ctx context.Context, options StartOptions) (*Run, error) {
 		}
 	}
 	options.Traces = slices.Clone(p.Traces)
-	options.Facets = options.Facets || p.Facets
+	options.Tree.Facets = options.Tree.Facets || p.Tree.Facets
+	if options.Tree.Environment == nil {
+		options.Tree.Environment = p.Tree.Environment
+	}
 	if options.Every == 0 {
 		options.Every = p.Every
 	}
@@ -113,7 +116,7 @@ func Presets() []Preset {
 const gopsCheckpointEvery = 30 * time.Second
 
 func init() {
-	gopsStacks, err := json.Marshal(stacks.CheckpointParams{Transport: stacks.TransportGops, Reason: "interval"})
+	gopsStacks, err := json.Marshal(stacks.CheckpointParams{CheckpointOptions: stacks.CheckpointOptions{Transport: stacks.TransportGops}, Reason: "interval"})
 	if err != nil {
 		panic(err)
 	}
@@ -122,7 +125,7 @@ func init() {
 		Description: "Records the tree under a running process, or under a command, as it changes: every process as it starts and exits, " +
 			"with its CPU, memory and disk IO each second, its open files, sockets, ports and connections, and its environment. " +
 			"It runs until Ctrl+C, --duration, or the process exits.",
-		Facets: true,
+		Tree: traces.TreeOptions{Facets: true},
 		Examples: []traces.Example{
 			{Args: "1234 --duration 30s", Says: "follow process 1234's tree for 30 seconds"},
 			{Args: "-- make build", Says: "follow the build's tree until it exits"},

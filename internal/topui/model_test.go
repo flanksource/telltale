@@ -95,7 +95,7 @@ var _ = Describe("Model over a live Top", func() {
 	It("draws the host's groups, rating CPU from the second read", func(ctx SpecContext) {
 		catalog, err := groups.LoadCatalog()
 		Expect(err).NotTo(HaveOccurred())
-		top, err := groups.NewTop(ctx, process.NewSampler(), groups.Options{Catalog: catalog, All: true})
+		top, err := groups.NewTop(ctx, process.NewSampler(), groups.TopOptions{Catalog: catalog, All: true})
 		Expect(err).NotTo(HaveOccurred())
 		m := New(ctx, Options{Source: Live{Top: top}, Every: time.Second, Order: groups.Order{By: groups.SortCPU}, Title: "live"})
 		DeferCleanup(m.Close)

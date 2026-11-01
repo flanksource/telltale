@@ -34,7 +34,7 @@ func newTraceRunCommand() *cobra.Command {
 		},
 	}
 	run.Flags().StringArrayVar(&specs, "trace", []string{`http:{"target":{"seam":"proxy"}}`}, `Capture to arm, as kind or kind:{json params}, e.g. http:{"target":{"seam":"proxy"},"mode":"mitm"}`)
-	run.Flags().BoolVar(&options.Facets, "facets", false, "Read every process's facets and environment into the process tree")
+	run.Flags().BoolVar(&options.Tree.Facets, "facets", false, "Read every process's facets and environment into the process tree")
 	bindDataDir(run.Flags(), &options.DataDir)
 	run.Flags().DurationVar(&options.Duration, "duration", 0, "Stop the command after this long, e.g. 30s")
 	run.Flags().DurationVar(&options.Every, "every", 0, "Read the checkpointed captures this often, e.g. 10s")

@@ -133,7 +133,7 @@ var _ = Describe("schema-driven run arguments", func() {
 
 	It("uses checkpoint schema choices and retains the registered payload", func() {
 		set := pflag.NewFlagSet("goprof", pflag.ContinueOnError)
-		checkpoint := bindProfileCheckpoint(set, goprof.CheckpointParams{Source: goprof.SourceGops, Profile: "heap", Reason: "interval"})
+		checkpoint := bindProfileCheckpoint(set, goprof.CheckpointParams{CheckpointOptions: goprof.CheckpointOptions{Source: goprof.SourceGops, Profile: "heap"}, Reason: "interval"})
 		Expect(flags.AllowedValues(set.Lookup("profile"))).To(Equal(goprof.Profiles))
 		Expect(flags.AllowedValues(set.Lookup("source"))).To(Equal([]string{goprof.SourcePProf, goprof.SourceGops, goprof.SourceFile}))
 		Expect(set.Parse([]string{"--profile", "cpu", "--seconds", "1"})).To(Succeed())
@@ -144,7 +144,7 @@ var _ = Describe("schema-driven run arguments", func() {
 
 	DescribeTable("refuses invalid checkpoint overrides", func(args []string, refusal string) {
 		set := pflag.NewFlagSet("goprof", pflag.ContinueOnError)
-		checkpoint := bindProfileCheckpoint(set, goprof.CheckpointParams{Source: goprof.SourceGops, Profile: "heap"})
+		checkpoint := bindProfileCheckpoint(set, goprof.CheckpointParams{CheckpointOptions: goprof.CheckpointOptions{Source: goprof.SourceGops, Profile: "heap"}})
 		Expect(set.Parse(args)).To(Succeed())
 		_, err := checkpoint.params()
 		Expect(err).To(MatchError(ContainSubstring(refusal)))

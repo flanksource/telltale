@@ -39,7 +39,7 @@ type StartRequest struct {
 	Duration string                     `json:"duration,omitempty"`
 	Every    string                     `json:"every,omitempty"`
 	Command  string                     `json:"command"`
-	Facets   bool                       `json:"facets,omitempty"`
+	Tree     traces.TreeOptions         `json:"tree,omitzero"`
 	Traces   map[string]json.RawMessage `json:"traces,omitempty"`
 }
 
@@ -105,7 +105,7 @@ func (r StartRequest) Options(dataDir string) (StartOptions, error) {
 	if len(fields) > 0 {
 		return StartOptions{}, &ValidationError{Fields: fields}
 	}
-	options := StartOptions{DataDir: dataDir, PID: r.PID, Traces: specs, Facets: r.Facets, TraceRoot: TraceRootCommand}
+	options := StartOptions{DataDir: dataDir, PID: r.PID, Traces: specs, Tree: r.Tree, TraceRoot: TraceRootCommand}
 	if strings.TrimSpace(r.Command) != "" {
 		options.Command = []string{"sh", "-c", r.Command}
 	}
@@ -211,15 +211,20 @@ func StartSchema() (*rpc.OpenAPISchema, map[string]any, error) {
 				Description: "Run with sh -c in the server's working directory",
 				Extensions:  map[string]any{"x-clicky-order": 0},
 			},
-			"facets": {
-				Type: "boolean", Title: "Process facets",
-				Description: "Read every process's open files, sockets and environment into the process tree",
-				Extensions:  map[string]any{"x-clicky-order": 1},
-			},
+			"tree":   withOrder(treeSchema(), 1),
 			"traces": withOrder(captures, 2),
 		},
 	}
-	return schema, map[string]any{"command": "", "facets": false, "traces": captureDefaults}, nil
+	return schema, map[string]any{"command": "", "tree": map[string]any{"facets": false}, "traces": captureDefaults}, nil
+}
+
+// treeSchema is the run-wide process tree's options, reflected from
+// traces.TreeOptions as a kind's params are.
+func treeSchema() *rpc.OpenAPISchema {
+	schema := rpc.SchemaForStruct(traces.TreeOptions{})
+	schema.Title = "Process tree"
+	schema.Description = "What the run's process tree reads of each process"
+	return schema
 }
 
 // captureSchema is one armable kind's object: its enabled switch and, while

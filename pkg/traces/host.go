@@ -257,16 +257,25 @@ func (h *Host) Kinds() *tracing.Kinds { return h.runtime.Kinds }
 // traceserve for the test UI.
 func (h *Host) Runtime() *tracing.Runtime { return h.runtime }
 
-// Start starts a capture of kind with params into a new stream of the store.
-func (h *Host) Start(kind string, params json.RawMessage) (*Capture, error) {
-	if err := Validate(h.runtime.Kinds, kind, params); err != nil {
+// StartOptions are one capture a Host starts: its kind, its params, and the
+// labels its session carries, such as the definition entry it was armed for.
+type StartOptions struct {
+	Kind   string
+	Params json.RawMessage
+	Labels map[string]string
+}
+
+// Start starts a capture of options.Kind with its params into a new stream of
+// the store, its session labelled with options.Labels.
+func (h *Host) Start(options StartOptions) (*Capture, error) {
+	if err := Validate(h.runtime.Kinds, options.Kind, options.Params); err != nil {
 		return nil, err
 	}
-	managed, err := h.runtime.Start(h.ctx, tracing.StartRequest{Kind: kind, Params: params})
+	managed, err := h.runtime.Start(h.ctx, tracing.StartRequest{Kind: options.Kind, Params: options.Params, Labels: options.Labels})
 	if err != nil {
-		return nil, fmt.Errorf("start %s trace: %w", kind, err)
+		return nil, fmt.Errorf("start %s trace: %w", options.Kind, err)
 	}
-	return &Capture{host: h, kind: kind, managed: managed}, nil
+	return &Capture{host: h, kind: options.Kind, managed: managed}, nil
 }
 
 // Summarize is the kind's summary of ref's window; it always has `count`.

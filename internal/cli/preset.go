@@ -26,7 +26,7 @@ func newPresetCommand(preset telltale.Preset) *cobra.Command {
 		},
 	}
 	flags.bind(cmd)
-	cmd.Flags().BoolVar(&flags.options.Facets, "facets", false, "Read every process's facets and environment into the process tree")
+	cmd.Flags().BoolVar(&flags.options.Tree.Facets, "facets", false, "Read every process's facets and environment into the process tree")
 	setHelp(cmd, func(cmd *cobra.Command) api.Text { return presetHelp(cmd, preset).Text })
 	return cmd
 }

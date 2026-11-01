@@ -1,0 +1,80 @@
+{
+  "type": "object",
+  "properties": {
+    "environment": {
+      "type": "object",
+      "title": "Environment",
+      "description": "Environment variables read onto each process",
+      "properties": {
+        "keys": {
+          "type": "array",
+          "title": "Keys",
+          "description": "Environment variables to read onto each process",
+          "items": {
+            "type": "string"
+          }
+        },
+        "prefixes": {
+          "type": "array",
+          "title": "Prefixes",
+          "description": "Prefixes of the environment variables to read onto each process",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "nullable": true
+    },
+    "interval": {
+      "type": "string",
+      "title": "Interval",
+      "description": "How often the tree is sampled such as 1s (at least 250ms)"
+    },
+    "target": {
+      "properties": {
+        "agent": {
+          "type": "string",
+          "title": "Agent",
+          "description": "Agent ID to observe"
+        },
+        "allowMutation": {
+          "type": "boolean",
+          "title": "Allow mutation",
+          "description": "Allow probes to change runtime settings"
+        },
+        "pid": {
+          "type": "integer",
+          "title": "PID",
+          "format": "int32",
+          "description": "Process to observe"
+        },
+        "seam": {
+          "type": "string",
+          "title": "Seam",
+          "description": "How the capture is armed (supported seams: [process])",
+          "enum": [
+            "process"
+          ],
+          "default": "process"
+        },
+        "selector": {
+          "type": "object",
+          "title": "Selector",
+          "description": "Agent resource attributes to match",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "wait": {
+          "type": "boolean",
+          "title": "Wait for agents",
+          "description": "Wait for a matching agent to connect"
+        }
+      },
+      "type": "object",
+      "x-telltale-seams": [
+        "process"
+      ]
+    }
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "type": "object",
+  "properties": {
+    "endpoints": {
+      "type": "array",
+      "title": "Endpoints",
+      "description": "Prometheus metrics URLs to scrape such as http://localhost:8080/metrics",
+      "items": {
+        "type": "string"
+      }
+    },
+    "interval": {
+      "type": "string",
+      "title": "Interval",
+      "description": "How often each endpoint is scraped such as 15s (at least 1s)",
+      "default": "15s"
+    },
+    "labels": {
+      "type": "object",
+      "title": "Labels",
+      "description": "Extra labels every scraped sample is stored with such as env=dev",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "target": {
+      "properties": {
+        "agent": {
+          "type": "string",
+          "title": "Agent",
+          "description": "Agent ID to observe"
+        },
+        "allowMutation": {
+          "type": "boolean",
+          "title": "Allow mutation",
+          "description": "Allow probes to change runtime settings"
+        },
+        "pid": {
+          "type": "integer",
+          "title": "PID",
+          "format": "int32",
+          "description": "Process to observe"
+        },
+        "seam": {
+          "type": "string",
+          "title": "Seam",
+          "description": "How the capture is armed (supported seams: [host])",
+          "enum": [
+            "host"
+          ],
+          "default": "host"
+        },
+        "selector": {
+          "type": "object",
+          "title": "Selector",
+          "description": "Agent resource attributes to match",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "wait": {
+          "type": "boolean",
+          "title": "Wait for agents",
+          "description": "Wait for a matching agent to connect"
+        }
+      },
+      "type": "object",
+      "x-telltale-seams": [
+        "host"
+      ]
+    },
+    "timeout": {
+      "type": "string",
+      "title": "Timeout",
+      "description": "How long one scrape may take such as 5s (at most the interval; default the shorter of 10s and the interval)"
+    }
+  }
+}

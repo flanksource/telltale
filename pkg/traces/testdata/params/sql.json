@@ -1,0 +1,99 @@
+{
+  "type": "object",
+  "properties": {
+    "connection": {
+      "type": "string",
+      "title": "Connection label",
+      "description": "Label the statements are recorded under",
+      "default": "proxy"
+    },
+    "connections": {
+      "type": "array",
+      "title": "Connections",
+      "description": "Connections to observe",
+      "default": [
+        "self"
+      ],
+      "items": {
+        "type": "string"
+      }
+    },
+    "dsn": {
+      "type": "string",
+      "title": "Upstream DSN",
+      "description": "The postgres:// URL to proxy with $VAR references expanded; empty reads GAVEL_DB_DSN then DATABASE_URL"
+    },
+    "env": {
+      "type": "string",
+      "title": "DSN variable",
+      "description": "Variable the command reads its DSN from; the upstream is read from it and the proxied DSN exported under it"
+    },
+    "maxStatements": {
+      "type": "integer",
+      "title": "Maximum statements",
+      "format": "int32",
+      "description": "Most statements one capture stores before it is marked truncated",
+      "default": 20000
+    },
+    "minDuration": {
+      "type": "string",
+      "title": "Minimum duration",
+      "description": "Record statements that ran at least this long"
+    },
+    "params": {
+      "type": "boolean",
+      "title": "Capture bind values",
+      "description": "Keep bind parameter values which carry row data and may hold secrets"
+    },
+    "target": {
+      "properties": {
+        "agent": {
+          "type": "string",
+          "title": "Agent",
+          "description": "Agent ID to observe"
+        },
+        "allowMutation": {
+          "type": "boolean",
+          "title": "Allow mutation",
+          "description": "Allow probes to change runtime settings"
+        },
+        "pid": {
+          "type": "integer",
+          "title": "PID",
+          "format": "int32",
+          "description": "Process to observe"
+        },
+        "seam": {
+          "type": "string",
+          "title": "Seam",
+          "description": "How the capture is armed (supported seams: [self agent proxy])",
+          "enum": [
+            "self",
+            "agent",
+            "proxy"
+          ],
+          "default": "self"
+        },
+        "selector": {
+          "type": "object",
+          "title": "Selector",
+          "description": "Agent resource attributes to match",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "wait": {
+          "type": "boolean",
+          "title": "Wait for agents",
+          "description": "Wait for a matching agent to connect"
+        }
+      },
+      "type": "object",
+      "x-telltale-seams": [
+        "self",
+        "agent",
+        "proxy"
+      ]
+    }
+  }
+}

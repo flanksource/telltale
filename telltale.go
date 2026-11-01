@@ -79,8 +79,9 @@ type StartOptions struct {
 	Every time.Duration
 	// Traces are the captures armed around the command.
 	Traces []TraceSpec
-	// Facets reads every process's facets and environment into the tree.
-	Facets    bool
+	// Tree is what the run-wide process tree reads of each process: its
+	// facets and environment.
+	Tree      traces.TreeOptions
 	TraceRoot TraceRoot
 	Stdin     io.Reader
 	// Stdout and Stderr take the command's output; when both are nil it is

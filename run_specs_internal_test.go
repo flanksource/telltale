@@ -47,6 +47,29 @@ var _ = Describe("run target resolution", func() {
 		_, err = aimedSpecs(StartOptions{PID: 123, Traces: []TraceSpec{{Kind: "http"}}})
 		Expect(err).To(MatchError(ContainSubstring("no seam available for pid")))
 	})
+	It("aims a host run's kubernetes and cloud logs at the host, with neither a command nor a pid", func() {
+		specs := []TraceSpec{
+			{Kind: "logs", Params: json.RawMessage(`{"target":{"seam":"host"},"source":"kubernetes","namespace":"checkout","podSelector":"app=checkout"}`)},
+			{Kind: "logs", Params: json.RawMessage(`{"target":{"seam":"host"},"source":"cloud","backend":"loki","connection":"connection://loki","query":"{app=\"checkout\"}"}`)},
+		}
+		result, err := aimedSpecs(StartOptions{Traces: specs})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(result).To(HaveLen(len(specs)))
+		for _, armed := range result {
+			Expect(armed.target).To(Equal(target.Host))
+		}
+		kinds, err := traces.Kinds()
+		Expect(err).NotTo(HaveOccurred())
+		for _, spec := range specs {
+			Expect(traces.Validate(kinds, spec.Kind, spec.Params)).To(Succeed(), "validated statically, with no cluster or backend")
+		}
+	})
+	It("refuses a logs source off the host seam", func() {
+		kinds, err := traces.Kinds()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(traces.Validate(kinds, "logs", json.RawMessage(`{"source":"kubernetes","namespace":"checkout","podSelector":"app=checkout"}`))).
+			To(MatchError(ContainSubstring("kubernetes logs are read on the host seam, not self")))
+	})
 	It("keeps an explicitly selected self seam independent of the run PID", func() {
 		registration := traces.Registration{Name: "example", Seams: []target.Seam{target.Self, target.Process}, DefaultSeam: target.Self}
 		result, err := resolveRunTarget(registration, target.Target{Seam: target.Self}, 123)

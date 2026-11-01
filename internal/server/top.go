@@ -184,7 +184,7 @@ func (h *TopHandler) live(choice topChoice) (*liveTop, error) {
 	if err != nil {
 		return nil, err
 	}
-	options, err := groups.Params{All: choice.all, Net: choice.net, Catalog: catalog, Interval: h.every.String()}.Options()
+	options, err := groups.Options{All: choice.all, Net: choice.net, Catalog: catalog, Interval: h.every.String()}.TopOptions()
 	if err != nil {
 		return nil, err
 	}

@@ -24,7 +24,7 @@ func init() {
 			if deps.OnClose != nil {
 				deps.OnClose(managed.Release)
 			}
-			return prometheus.NewKind(prometheus.Options{RunID: deps.RunID, Server: managed.Server})
+			return prometheus.NewKind(prometheus.KindOptions{RunID: deps.RunID, Server: managed.Server})
 		},
 	})
 }

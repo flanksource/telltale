@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 
 	"github.com/flanksource/telltale"
+	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/tracing/httpproxy"
 	"github.com/flanksource/telltale/pkg/tracing/pgproxy"
 	"github.com/flanksource/telltale/pkg/tracing/target"
@@ -12,7 +13,7 @@ import (
 )
 
 var _ = Describe("the start form", func() {
-	It("describes the command, facets and each armable kind's params behind its enabled switch", func() {
+	It("describes the command, the process tree and each armable kind's params behind its enabled switch", func() {
 		schema, defaults, err := telltale.StartSchema()
 		Expect(err).ToNot(HaveOccurred())
 		data, err := json.Marshal(schema)
@@ -23,7 +24,7 @@ var _ = Describe("the start form", func() {
 		Expect(form).NotTo(HaveKey("required"))
 		properties := form["properties"].(map[string]any)
 		Expect(properties).To(HaveKeyWithValue("command", HaveKeyWithValue("format", "textarea")))
-		Expect(properties).To(HaveKeyWithValue("facets", HaveKeyWithValue("type", "boolean")))
+		Expect(properties).To(HaveKeyWithValue("tree", HaveKeyWithValue("properties", And(HaveKeyWithValue("facets", HaveKeyWithValue("type", "boolean")), HaveKey("environment")))))
 		Expect(properties).To(HaveKeyWithValue("pid", HaveKeyWithValue("type", "integer")))
 		captures := properties["traces"].(map[string]any)["properties"].(map[string]any)
 		Expect(captures[pgproxy.Kind]).To(HaveKeyWithValue("title", "SQL"))
@@ -51,7 +52,7 @@ var _ = Describe("the start form", func() {
 var _ = Describe("a start request", func() {
 	It("runs its command with sh -c in the server's working directory, recording into the data dir, arming the enabled kinds with their params", func() {
 		options, err := telltale.StartRequest{
-			Command: "curl -sS example.com", Facets: true,
+			Command: "curl -sS example.com", Tree: traces.TreeOptions{Facets: true},
 			Traces: map[string]json.RawMessage{
 				httpproxy.Kind: json.RawMessage(`{"enabled":true,"mode":"mitm","target":{"seam":"proxy"}}`),
 				pgproxy.Kind:   json.RawMessage(`{"enabled":false,"connection":""}`),
@@ -59,7 +60,7 @@ var _ = Describe("a start request", func() {
 		}.Options("/cache/telltale")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(options).To(Equal(telltale.StartOptions{
-			DataDir: "/cache/telltale", Command: []string{"sh", "-c", "curl -sS example.com"}, Facets: true,
+			DataDir: "/cache/telltale", Command: []string{"sh", "-c", "curl -sS example.com"}, Tree: traces.TreeOptions{Facets: true},
 			TraceRoot: telltale.TraceRootCommand,
 			Traces:    []telltale.TraceSpec{{Kind: httpproxy.Kind, Params: json.RawMessage(`{"mode":"mitm","target":{"seam":"proxy"}}`)}},
 		}))

@@ -36,7 +36,7 @@ func parsed(schema *rpc.OpenAPISchema, args ...string) (string, error) {
 var _ = Describe("a kind's params as flags", func() {
 	It("builds a CPU checkpoint from profile flags", func() {
 		flags := pflag.NewFlagSet("goprof", pflag.ContinueOnError)
-		checkpoint := bindProfileCheckpoint(flags, goprof.CheckpointParams{Source: goprof.SourceGops, Profile: "heap"})
+		checkpoint := bindProfileCheckpoint(flags, goprof.CheckpointParams{CheckpointOptions: goprof.CheckpointOptions{Source: goprof.SourceGops, Profile: "heap"}})
 		Expect(flags.Parse([]string{"--profile", "cpu", "--seconds", "1"})).To(Succeed())
 		data, err := checkpoint.params()
 		Expect(err).NotTo(HaveOccurred())

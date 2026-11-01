@@ -1,0 +1,388 @@
+{
+  "type": "object",
+  "properties": {
+    "opensearch": {
+      "type": "object",
+      "title": "OpenSearch",
+      "description": "Index to read spans from on the host seam",
+      "properties": {
+        "connection": {
+          "type": "string",
+          "title": "Connection"
+        },
+        "dateField": {
+          "type": "string",
+          "title": "Date field"
+        },
+        "followIndex": {
+          "type": "boolean",
+          "title": "Follow index"
+        },
+        "format": {
+          "type": "string",
+          "title": "Format"
+        },
+        "from": {
+          "type": "string",
+          "title": "From"
+        },
+        "index": {
+          "type": "string",
+          "title": "Index"
+        },
+        "lag": {
+          "type": "string",
+          "title": "Lag"
+        },
+        "poll": {
+          "type": "string",
+          "title": "Poll"
+        },
+        "search": {
+          "type": "object",
+          "title": "Structured search",
+          "format": "json",
+          "properties": {
+            "aggregations": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "format": "byte"
+              }
+            },
+            "fields": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "from": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            },
+            "query": {
+              "type": "object",
+              "properties": {
+                "analyzer": {
+                  "type": "string"
+                },
+                "boost": {
+                  "type": "number",
+                  "format": "double",
+                  "nullable": true
+                },
+                "caseInsensitive": {
+                  "type": "boolean",
+                  "nullable": true
+                },
+                "conditions": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "description": "Recursive reference to esdsl.Condition"
+                  }
+                },
+                "escape": {
+                  "type": "boolean",
+                  "nullable": true
+                },
+                "field": {
+                  "type": "string"
+                },
+                "fields": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "format": {
+                  "type": "string"
+                },
+                "fuzziness": {
+                  "type": "string"
+                },
+                "gt": {
+                  "type": "object",
+                  "properties": {
+                    "Literal": {
+                      "type": "object",
+                      "description": "Dynamic response value"
+                    },
+                    "Param": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "Param"
+                  ],
+                  "nullable": true
+                },
+                "gte": {
+                  "type": "object",
+                  "properties": {
+                    "Literal": {
+                      "type": "object",
+                      "description": "Dynamic response value"
+                    },
+                    "Param": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "Param"
+                  ],
+                  "nullable": true
+                },
+                "lt": {
+                  "type": "object",
+                  "properties": {
+                    "Literal": {
+                      "type": "object",
+                      "description": "Dynamic response value"
+                    },
+                    "Param": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "Param"
+                  ],
+                  "nullable": true
+                },
+                "lte": {
+                  "type": "object",
+                  "properties": {
+                    "Literal": {
+                      "type": "object",
+                      "description": "Dynamic response value"
+                    },
+                    "Param": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "Param"
+                  ],
+                  "nullable": true
+                },
+                "matchOperator": {
+                  "type": "string"
+                },
+                "minimumShouldMatch": {
+                  "type": "string"
+                },
+                "multiMatchType": {
+                  "type": "string"
+                },
+                "occur": {
+                  "type": "string"
+                },
+                "op": {
+                  "type": "string"
+                },
+                "optional": {
+                  "type": "boolean"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "scoreMode": {
+                  "type": "string"
+                },
+                "slop": {
+                  "type": "integer",
+                  "format": "int32",
+                  "nullable": true
+                },
+                "timeZone": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "object",
+                  "properties": {
+                    "Literal": {
+                      "type": "object",
+                      "description": "Dynamic response value"
+                    },
+                    "Param": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "Param"
+                  ],
+                  "nullable": true
+                },
+                "values": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "Literal": {
+                        "type": "object",
+                        "description": "Dynamic response value"
+                      },
+                      "Param": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "Param"
+                    ]
+                  }
+                },
+                "when": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "op"
+              ],
+              "nullable": true
+            },
+            "size": {
+              "type": "integer",
+              "format": "int32",
+              "nullable": true
+            },
+            "sort": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "field": {
+                    "type": "string"
+                  },
+                  "missing": {
+                    "type": "string"
+                  },
+                  "mode": {
+                    "type": "string"
+                  },
+                  "order": {
+                    "type": "string"
+                  },
+                  "unmappedType": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "field"
+                ]
+              }
+            },
+            "source": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "nullable": true
+                },
+                "excludes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "includes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "nullable": true
+            },
+            "storedFields": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "timeField": {
+              "type": "string"
+            },
+            "timeFieldFormat": {
+              "type": "string"
+            },
+            "trackTotalHits": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "nullable": true
+                },
+                "threshold": {
+                  "type": "integer",
+                  "format": "int32",
+                  "nullable": true
+                }
+              },
+              "nullable": true
+            }
+          },
+          "nullable": true
+        },
+        "to": {
+          "type": "string",
+          "title": "To"
+        }
+      },
+      "required": [
+        "connection"
+      ],
+      "nullable": true
+    },
+    "target": {
+      "properties": {
+        "agent": {
+          "type": "string",
+          "title": "Agent",
+          "description": "Agent ID to observe"
+        },
+        "allowMutation": {
+          "type": "boolean",
+          "title": "Allow mutation",
+          "description": "Allow probes to change runtime settings"
+        },
+        "pid": {
+          "type": "integer",
+          "title": "PID",
+          "format": "int32",
+          "description": "Process to observe"
+        },
+        "seam": {
+          "type": "string",
+          "title": "Seam",
+          "description": "How the capture is armed (supported seams: [self agent host])",
+          "enum": [
+            "self",
+            "agent",
+            "host"
+          ],
+          "default": "self"
+        },
+        "selector": {
+          "type": "object",
+          "title": "Selector",
+          "description": "Agent resource attributes to match",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "wait": {
+          "type": "boolean",
+          "title": "Wait for agents",
+          "description": "Wait for a matching agent to connect"
+        }
+      },
+      "type": "object",
+      "x-telltale-seams": [
+        "self",
+        "agent",
+        "host"
+      ]
+    }
+  }
+}

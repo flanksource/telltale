@@ -58,9 +58,20 @@ var _ = Describe("trace host", func() {
 		Expect(first.Dir()).To(Equal(filepath.Join(dataDir, "traces", first.RunID())))
 	})
 
+	It("labels a capture's session with the labels it is started with", func() {
+		host := openHost(GinkgoT().TempDir())
+		labels := map[string]string{"telltale_entry": "checkout-proxy-http-1", "telltale_definition": "checkout"}
+		capture, err := host.Start(traces.StartOptions{Kind: "http", Params: json.RawMessage(`{"target":{"seam":"proxy"}}`), Labels: labels})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(host.Runtime().Sessions.List()).To(ContainElement(And(
+			HaveField("Events.Stream", capture.Stream()), HaveField("Labels", HaveKeyWithValue("telltale_entry", "checkout-proxy-http-1")),
+			HaveField("Labels", HaveKeyWithValue("telltale_definition", "checkout")),
+		)))
+	})
+
 	It("windows a running capture by its marks, and summarizes each window apart", func() {
 		host := openHost(GinkgoT().TempDir())
-		capture, err := host.Start("http", json.RawMessage(`{"target":{"seam":"proxy"}}`))
+		capture, err := host.Start(traces.StartOptions{Kind: "http", Params: json.RawMessage(`{"target":{"seam":"proxy"}}`)})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(capture.Exports()).To(HaveKey("HTTPS_PROXY"))
 
@@ -87,7 +98,7 @@ var _ = Describe("trace host", func() {
 		dataDir := GinkgoT().TempDir()
 		host, err := traces.Open(traces.OpenOptions{DataDir: dataDir, RunID: traces.RunID(time.Now())})
 		Expect(err).ToNot(HaveOccurred())
-		capture, err := host.Start("http", json.RawMessage(`{"target":{"seam":"proxy"}}`))
+		capture, err := host.Start(traces.StartOptions{Kind: "http", Params: json.RawMessage(`{"target":{"seam":"proxy"}}`)})
 		Expect(err).ToNot(HaveOccurred())
 		getThrough(capture, server.URL+"/kept")
 		end, err := capture.Stop(context.Background())
@@ -108,13 +119,13 @@ var _ = Describe("trace host", func() {
 
 	It("refuses an unknown kind by naming the registered ones", func() {
 		host := openHost(GinkgoT().TempDir())
-		_, err := host.Start("smtp", nil)
+		_, err := host.Start(traces.StartOptions{Kind: "smtp"})
 		Expect(err).To(MatchError(And(ContainSubstring(`unknown trace kind "smtp"`), ContainSubstring("http"), ContainSubstring("sql"))))
 	})
 
 	It("refuses params the kind refuses before starting anything", func() {
 		host := openHost(GinkgoT().TempDir())
-		_, err := host.Start("http", json.RawMessage(`{"target":{"seam":"proxy"},"mode": "sniff"}`))
+		_, err := host.Start(traces.StartOptions{Kind: "http", Params: json.RawMessage(`{"target":{"seam":"proxy"},"mode": "sniff"}`)})
 		Expect(err).To(MatchError(ContainSubstring("trace http params")))
 	})
 })

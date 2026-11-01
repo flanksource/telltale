@@ -29,7 +29,7 @@ func init() {
 				{Args: "--pid 1234 --duration 30s", Says: "follow process 1234's tree for 30 seconds"},
 			},
 			New: func(deps KindDeps) tracing.TracePlugin {
-				return process.NewTreeKind(deps.Sampler, process.TreeOptions{Dumpers: deps.Dumpers})
+				return process.NewTreeKind(deps.Sampler, process.TreeKindOptions{Dumpers: deps.Dumpers})
 			},
 		},
 		{
@@ -69,7 +69,7 @@ func init() {
 		},
 		{
 			Name: goprof.Kind, Title: "Go profiles", Seams: []target.Seam{target.Process, target.Agent, target.Self}, DefaultSeam: target.Process,
-			Checkpoint: goprof.CheckpointParams{Source: goprof.SourceGops, Profile: "heap", Reason: "interval"},
+			Checkpoint: goprof.CheckpointParams{CheckpointOptions: goprof.CheckpointOptions{Source: goprof.SourceGops, Profile: "heap"}, Reason: "interval"},
 			Summary:    "Read the heap profile of a Go process over its gops agent at each checkpoint",
 			Description: "Reads a pprof profile of a Go process that runs a gops agent (github.com/google/gops/agent) at each checkpoint: " +
 				"every --every, and as an attached run stops. The agent is found from the port file it writes. " +

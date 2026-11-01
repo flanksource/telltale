@@ -195,7 +195,7 @@ func presetHelp(cmd *cobra.Command, preset telltale.Preset) helpText {
 		}
 		h = h.term(spec.Kind, registration.Summary, width)
 	}
-	if preset.Facets {
+	if preset.Tree.Facets {
 		h = h.paragraph("Every process's open files, sockets, ports, connections and environment.")
 	}
 	if preset.Every > 0 {
