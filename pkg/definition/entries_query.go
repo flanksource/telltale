@@ -211,6 +211,36 @@ func (q *OpenTelemetryQuery) connection(Located) connectionSlot {
 	return connectionSlot{field: &q.Connection, connType: models.ConnectionTypeOpenTelemetry}
 }
 
+// CloudWatchMetricsQuery reads CloudWatch metrics over the window, one point per Step.
+type CloudWatchMetricsQuery struct {
+	Named
+	Read
+	Language    string                       `json:"language,omitempty" clicky:"title=Language,desc=metrics (the listed metrics) metrics-insights (the query) or sql (metric SQL)"`
+	Region      string                       `json:"region,omitempty" clicky:"title=Region"`
+	Endpoint    string                       `json:"endpoint,omitempty" clicky:"title=Endpoint,desc=A CloudWatch endpoint in place of the region's"`
+	Namespace   string                       `json:"namespace,omitempty" clicky:"title=Namespace,desc=Such as AWS/EC2"`
+	Statistic   string                       `json:"statistic,omitempty" clicky:"title=Statistic,desc=Each metric's default; Average when empty"`
+	Unit        string                       `json:"unit,omitempty" clicky:"title=Unit"`
+	Step        string                       `json:"step" clicky:"required,title=Step,desc=The CloudWatch period such as 60s"`
+	Metrics     []providers.CloudWatchMetric `json:"metrics,omitempty" clicky:"title=Metrics"`
+	Dimensions  map[string]string            `json:"dimensions,omitempty" clicky:"title=Dimensions"`
+	Concurrency int                          `json:"concurrency,omitempty" clicky:"title=Concurrency,desc=Parallel GetMetricData batches 1..32; 4 when empty"`
+	Window
+}
+
+func (q *CloudWatchMetricsQuery) options(at Located) (any, any, error) {
+	provider := q.provider(at)
+	provider.CloudWatchMetrics = &providers.CloudWatchMetricsOptions{
+		Language: q.Language, Region: q.Region, Endpoint: q.Endpoint, Namespace: q.Namespace, Statistic: q.Statistic, Unit: q.Unit,
+		Range: &providers.PrometheusRange{Step: q.Step}, Metrics: q.Metrics, Dimensions: q.Dimensions, Concurrency: q.Concurrency,
+	}
+	return q.params(provider, ""), nil, nil
+}
+
+func (q *CloudWatchMetricsQuery) connection(Located) connectionSlot {
+	return connectionSlot{field: &q.Connection, connType: models.ConnectionTypeAWS}
+}
+
 // ProfileQuery reads a saved commons-db query profile by name.
 type ProfileQuery struct {
 	Named

@@ -114,6 +114,12 @@ spec:
           lookback: 1h
       opentelemetry:
         - index: otel-traces-*
+      cloudwatchMetrics:
+        - region: eu-west-1
+          step: 60s
+          every: 1m
+          metrics:
+            - {name: CPUUtilization, namespace: AWS/EC2, dimensions: {InstanceId: i-0123456789abcdef0}}
       profile:
         - profile: pod-cpu-by-pod
           params: {namespace: checkout}

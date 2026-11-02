@@ -1072,6 +1072,117 @@ spec:
                         title: BigQuery
                         type: array
                         x-kubernetes-list-type: atomic
+                      cloudwatchMetrics:
+                        items:
+                          properties:
+                            concurrency:
+                              description: Parallel GetMetricData batches 1..32; 4
+                                when empty
+                              format: int32
+                              title: Concurrency
+                              type: integer
+                            connection:
+                              description: Empty takes the definition's default connection
+                                of the provider's type
+                              title: Connection
+                              type: string
+                            dimensions:
+                              additionalProperties:
+                                type: string
+                              title: Dimensions
+                              type: object
+                            endpoint:
+                              description: A CloudWatch endpoint in place of the region's
+                              title: Endpoint
+                              type: string
+                            every:
+                              description: Re-read the rows written since the last
+                                read at this interval such as 30s
+                              title: Every
+                              type: string
+                            from:
+                              description: Start of the window; a time or date math
+                                such as now-1h
+                              title: From
+                              type: string
+                            language:
+                              description: metrics (the listed metrics) metrics-insights
+                                (the query) or sql (metric SQL)
+                              title: Language
+                              type: string
+                            limit:
+                              description: Most rows one read keeps; 0 keeps all
+                              format: int32
+                              title: Limit
+                              type: integer
+                            metrics:
+                              items:
+                                properties:
+                                  dimensions:
+                                    additionalProperties:
+                                      type: string
+                                    type: object
+                                  name:
+                                    type: string
+                                  namespace:
+                                    type: string
+                                  statistic:
+                                    type: string
+                                  unit:
+                                    type: string
+                                required:
+                                - name
+                                - namespace
+                                type: object
+                              title: Metrics
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            name:
+                              description: Names the capture's session; empty takes
+                                <definition>-<section>-<group>-<type>-<n>
+                              title: Name
+                              type: string
+                            namespace:
+                              description: Such as AWS/EC2
+                              title: Namespace
+                              type: string
+                            params:
+                              description: The query's params by name
+                              title: Params
+                              type: object
+                              x-kubernetes-preserve-unknown-fields: true
+                            query:
+                              title: Query
+                              type: string
+                            region:
+                              title: Region
+                              type: string
+                            statistic:
+                              description: Each metric's default; Average when empty
+                              title: Statistic
+                              type: string
+                            step:
+                              description: The CloudWatch period such as 60s
+                              title: Step
+                              type: string
+                            to:
+                              description: End of the window; empty is now
+                              title: To
+                              type: string
+                            unit:
+                              title: Unit
+                              type: string
+                            untilStopped:
+                              description: Read once when the run stops over the whole
+                                run
+                              title: Until stopped
+                              type: boolean
+                          required:
+                          - step
+                          type: object
+                        title: CloudWatch metrics
+                        type: array
+                        x-kubernetes-list-type: atomic
                       http:
                         items:
                           properties:

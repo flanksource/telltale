@@ -95,7 +95,9 @@ type CollectQuery struct {
 	BigQuery      []BigQueryQuery      `json:"bigquery,omitempty" clicky:"title=BigQuery" telltale:"kind=query,provider=bigquery"`
 	Jaeger        []JaegerQuery        `json:"jaeger,omitempty" clicky:"title=Jaeger" telltale:"kind=query,provider=jaeger"`
 	OpenTelemetry []OpenTelemetryQuery `json:"opentelemetry,omitempty" clicky:"title=OpenTelemetry" telltale:"kind=query,provider=opentelemetry"`
-	Profile       []ProfileQuery       `json:"profile,omitempty" clicky:"title=Saved profile" telltale:"kind=query"`
+	// CloudWatchMetrics is named cloudwatchMetrics, apart from collect.logs.cloudwatch, which reads CloudWatch Logs.
+	CloudWatchMetrics []CloudWatchMetricsQuery `json:"cloudwatchMetrics,omitempty" clicky:"title=CloudWatch metrics" telltale:"kind=query,provider=cloudwatchmetrics"`
+	Profile           []ProfileQuery           `json:"profile,omitempty" clicky:"title=Saved profile" telltale:"kind=query"`
 }
 
 type CollectHost struct {
