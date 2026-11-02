@@ -123,7 +123,11 @@ function GroupRowView({ group, depth, trend, link, expanded, onToggle, cores }: 
         <td className="px-2 py-1">
           {trend.length < 2
             ? <span className="text-muted-foreground">–</span>
-            : <Sparkline values={trend} label={`CPU trend, latest ${trend.at(-1)!.toFixed(1)}%, peak ${Math.max(...trend).toFixed(1)}%`} className="text-blue-600 dark:text-blue-400" />}
+            : <span role="img" aria-label={`CPU trend, latest ${trend.at(-1)!.toFixed(1)}%, peak ${Math.max(...trend).toFixed(1)}%`}>
+                <span aria-hidden="true">
+                  <Sparkline values={trend} width={64} height={16} color="currentColor" className="text-blue-600 dark:text-blue-400" />
+                </span>
+              </span>}
         </td>
       )}
       {COLUMNS.map(column => (
