@@ -39,7 +39,7 @@ jobs:
         with:
           tools: |
             task
-            actionlint
+            rhysd/actionlint
       - run: make setup
       - run: make build
       - run: task java:test
