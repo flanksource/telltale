@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/flanksource/clicky/task"
-	cctx "github.com/flanksource/commons/context"
 	"github.com/flanksource/telltale"
+	"github.com/flanksource/telltale/internal/lifetime"
 	"github.com/flanksource/telltale/internal/otelreceiver"
 	"github.com/flanksource/telltale/internal/rules"
 	"github.com/flanksource/telltale/pkg/datadir"
@@ -170,18 +170,16 @@ type httpOptions struct {
 func serve(ctx context.Context, options httpOptions) error {
 	task.SetNoRender(true)
 	httpServer := &http.Server{Handler: options.handler, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: time.Minute}
-	done := make(chan struct{})
-	run := task.StartTask("HTTP server", func(_ cctx.Context, _ *task.Task) (bool, error) {
-		defer close(done)
+	run := lifetime.Start("HTTP server", func() error {
 		err := httpServer.Serve(options.listener)
 		if errors.Is(err, http.ErrServerClosed) {
-			err = nil
+			return nil
 		}
-		return true, err
+		return err
 	})
 	select {
 	case <-ctx.Done():
-	case <-done:
+	case <-run.Done():
 	}
 	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
@@ -189,6 +187,5 @@ func serve(ctx context.Context, options httpOptions) error {
 	if shutdownErr != nil {
 		shutdownErr = errors.Join(shutdownErr, httpServer.Close())
 	}
-	_, serveErr := run.GetResult()
-	return errors.Join(shutdownErr, serveErr)
+	return errors.Join(shutdownErr, run.Wait())
 }

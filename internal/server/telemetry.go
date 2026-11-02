@@ -8,8 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/flanksource/clicky/task"
-	cctx "github.com/flanksource/commons/context"
+	"github.com/flanksource/telltale/internal/lifetime"
 	"github.com/flanksource/telltale/internal/otelreceiver"
 	"github.com/flanksource/telltale/internal/selftrace"
 	"github.com/flanksource/telltale/pkg/agentclient"
@@ -22,7 +21,7 @@ type telemetry struct {
 	receiver *otelreceiver.Receiver
 	listener net.Listener
 	server   *grpc.Server
-	run      task.TypedTask[bool]
+	run      *lifetime.Service
 	tracer   *selftrace.Tracer
 }
 
@@ -79,13 +78,13 @@ func (t *telemetry) start(cancel context.CancelCauseFunc) {
 	if t.server == nil {
 		return
 	}
-	t.run = task.StartTask("OTLP gRPC server", func(_ cctx.Context, _ *task.Task) (bool, error) {
+	t.run = lifetime.Start("OTLP gRPC server", func() error {
 		err := t.server.Serve(t.listener)
 		if err != nil && !errors.Is(err, grpc.ErrServerStopped) {
 			cancel(fmt.Errorf("OTLP gRPC server: %w", err))
-			return false, err
+			return err
 		}
-		return true, nil
+		return nil
 	})
 }
 
@@ -102,24 +101,20 @@ func (t *telemetry) close() error {
 		err = errors.Join(err, t.receiver.Stop(ctx))
 	}
 	if t.server != nil {
-		done := make(chan struct{})
-		stop := task.StartTask("Drain OTLP gRPC", func(_ cctx.Context, _ *task.Task) (bool, error) {
-			defer close(done)
+		stop := lifetime.Start("Drain OTLP gRPC", func() error {
 			t.server.GracefulStop()
-			return true, nil
+			return nil
 		})
 		select {
-		case <-done:
+		case <-stop.Done():
 		case <-ctx.Done():
 			t.server.Stop()
 			err = errors.Join(err, ctx.Err())
 		}
-		_, stopErr := stop.GetResult()
-		err = errors.Join(err, stopErr)
+		err = errors.Join(err, stop.Wait())
 	}
-	if t.run.Task != nil {
-		_, serveErr := t.run.GetResult()
-		err = errors.Join(err, serveErr)
+	if t.run != nil {
+		err = errors.Join(err, t.run.Wait())
 	}
 	if t.listener != nil {
 		if closeErr := t.listener.Close(); !errors.Is(closeErr, net.ErrClosed) {

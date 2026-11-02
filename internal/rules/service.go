@@ -9,8 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/flanksource/clicky/task"
-	cctx "github.com/flanksource/commons/context"
+	"github.com/flanksource/telltale/internal/lifetime"
 	"github.com/flanksource/telltale/pkg/tracing/groups"
 	"github.com/flanksource/telltale/pkg/tracing/process"
 )
@@ -50,8 +49,8 @@ type Service struct {
 	activeCancel context.CancelFunc
 	activeID     string
 	wake         chan struct{}
-	sampleTask   task.TypedTask[bool]
-	dispatchTask task.TypedTask[bool]
+	sampleTask   *lifetime.Service
+	dispatchTask *lifetime.Service
 	unlock       func() error
 }
 
@@ -119,8 +118,8 @@ func NewService(options ServiceOptions) (*Service, error) {
 func (s *Service) Start(parent context.Context) {
 	ctx, cancel := context.WithCancel(parent)
 	s.cancel = cancel
-	s.sampleTask = task.StartTask("Monitor resource rules", func(_ cctx.Context, _ *task.Task) (bool, error) { return true, s.sample(ctx) }, task.WithContext(ctx), task.WithCancellationDrain())
-	s.dispatchTask = task.StartTask("Enforce resource rules", func(_ cctx.Context, _ *task.Task) (bool, error) { return true, s.dispatch(ctx) }, task.WithContext(ctx), task.WithCancellationDrain())
+	s.sampleTask = lifetime.Start("Monitor resource rules", func() error { return s.sample(ctx) })
+	s.dispatchTask = lifetime.Start("Enforce resource rules", func() error { return s.dispatch(ctx) })
 }
 func (s *Service) sample(ctx context.Context) error {
 	ticker := time.NewTicker(s.options.Every)
@@ -295,8 +294,8 @@ func (s *Service) Close() error {
 	var err error
 	if s.cancel != nil {
 		s.cancel()
-		_, sampleErr := s.sampleTask.GetResult()
-		_, dispatchErr := s.dispatchTask.GetResult()
+		sampleErr := s.sampleTask.Wait()
+		dispatchErr := s.dispatchTask.Wait()
 		if errors.Is(sampleErr, context.Canceled) {
 			sampleErr = nil
 		}
