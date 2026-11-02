@@ -23,10 +23,10 @@ require (
 	github.com/flanksource/deps/start v0.0.0-20261028154603-ac4c84178264
 	github.com/flanksource/gomplate/v3 v3.24.90
 	github.com/flanksource/sqlglot-go v1.1.1
-	github.com/flanksource/telltale/sdk v0.0.0
-	github.com/flanksource/telltale/sdk/captain v0.0.0
-	github.com/flanksource/telltale/sdk/clicky v0.0.0
-	github.com/flanksource/telltale/sdk/commonsdb v0.0.0
+	github.com/flanksource/telltale/sdk v0.0.2
+	github.com/flanksource/telltale/sdk/captain v0.0.2
+	github.com/flanksource/telltale/sdk/clicky v0.0.2
+	github.com/flanksource/telltale/sdk/commonsdb v0.0.2
 	github.com/google/cel-go v0.31.0
 	github.com/google/gops v0.3.29
 	github.com/google/pprof v0.0.0-20260507013755-92041b743c96
@@ -432,17 +432,3 @@ require (
 )
 
 replace github.com/glebarez/sqlite => github.com/clarkmcc/gorm-sqlite v0.0.0-20240426202654-00ed082c0311
-
-replace github.com/flanksource/telltale/sdk/auto => ./sdk/auto
-
-replace github.com/flanksource/telltale/sdk/captain => ./sdk/captain
-
-replace github.com/flanksource/telltale/sdk/clicky => ./sdk/clicky
-
-replace github.com/flanksource/telltale/sdk/commonsdb => ./sdk/commonsdb
-
-replace github.com/flanksource/telltale/sdk/commonslog => ./sdk/commonslog
-
-replace github.com/flanksource/telltale/sdk/otel => ./sdk/otel
-
-replace github.com/flanksource/telltale/sdk => ./sdk

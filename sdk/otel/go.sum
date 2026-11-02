@@ -34,6 +34,8 @@ github.com/flanksource/clicky v1.21.82 h1:YwCVk2WAZoY/tLMLmK8Hm5CA7rXZgsVS5514Lb
 github.com/flanksource/clicky v1.21.82/go.mod h1:rLCgem+/vIDDC4r74hHq8WDDmzv8sGF8BIrqraDSzOY=
 github.com/flanksource/commons v1.63.0 h1:gI5DecATKbay5Q1o1hYRxQUSnbC+yWP7BmdHQjrpvTY=
 github.com/flanksource/commons v1.63.0/go.mod h1:RlVSQ+Jq96jKaJWf3WnwVO4DmDTdzkm3sremzJuYuVw=
+github.com/flanksource/telltale/sdk v0.0.2 h1:ob0cKca4muwrltzj3J1Xf3ux9+JNiSwJvsbewnt3r+Y=
+github.com/flanksource/telltale/sdk v0.0.2/go.mod h1:5KDrlpDADGZlJuiAbs2LLWGZzWLldys2bSh6fsA1Vs8=
 github.com/gkampitakis/ciinfo v0.3.2 h1:JcuOPk8ZU7nZQjdUhctuhQofk7BGHuIy0c9Ez8BNhXs=
 github.com/gkampitakis/ciinfo v0.3.2/go.mod h1:1NIwaOcFChN4fa/B0hEBdAb6npDlFL8Bwx4dfRLRqAo=
 github.com/gkampitakis/go-diff v1.3.2 h1:Qyn0J9XJSDTgnsgHRdz9Zp24RaJeKMUHg2+PDZZdC4M=
