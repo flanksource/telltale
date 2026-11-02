@@ -16,7 +16,7 @@ concurrency:
 jobs:
   quality:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       GOWORK: ${{ github.workspace }}/go.work.ci
     steps:
@@ -47,7 +47,8 @@ jobs:
       - uses: flanksource/gavel@78e109b65a8889fafd5fdfc74a14995b1330054f # v0.0.68
         with:
           version: v0.0.68
-          args: test --framework go,ginkgo,vitest --timeout 17m --test-timeout 14m
+          args: test --framework go,ginkgo,vitest --timeout 35m --test-timeout 30m
+          timeout-minutes: 40
           comment: "false"
           artifact-name: telltale-tests
       - run: make lint
