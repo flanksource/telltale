@@ -14,15 +14,16 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  quality:
+  # build compiles the frontend, the Java agent and the binary once; the test
+  # and lint jobs download what Go embeds (webapp/dist, the agent jar) and the
+  # binary the API specs spawn instead of each building them.
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
     env:
       GOWORK: ${{ github.workspace }}/go.work.ci
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -39,18 +40,110 @@ jobs:
         with:
           tools: |
             task
-            rhysd/actionlint
       - run: make setup
       - run: make build
-      - run: task java:test
       - run: .bin/telltale --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+          path: |
+            .bin/telltale
+            webapp/dist
+            pkg/agentinstall/java/assets
+
+  # test runs the suites in parallel shards. --ignore pkg keeps the root
+  # module's own packages; the SDK modules are their own roots, so that shard
+  # runs them too. Together the shards hold every Go package once.
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOWORK: ${{ github.workspace }}/go.work.ci
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: root
+            args: test --framework go,ginkgo --ignore pkg
+          - shard: tracing
+            args: test --framework go,ginkgo ./pkg/tracing
+            java: true
+          - shard: pkg
+            args: test --framework go,ginkgo --ignore pkg/tracing ./pkg
+    name: test (${{ matrix.shard }})
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - if: matrix.java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/download-artifact@v4
+        with:
+          name: build
+      - run: chmod +x .bin/telltale
       - uses: flanksource/gavel@78e109b65a8889fafd5fdfc74a14995b1330054f # v0.0.68
         with:
           version: v0.0.68
-          args: test --framework go,ginkgo,vitest --timeout 35m --test-timeout 30m
-          timeout-minutes: 40
+          args: ${{ matrix.args }} --timeout 15m --test-timeout 10m
+          timeout-minutes: 18
           comment: "false"
-          artifact-name: telltale-tests
+          artifact-name: telltale-tests-${{ matrix.shard }}
+
+  # Run directly: gavel takes each SDK module as another root and fails a
+  # --framework vitest run on the first, which has none.
+  test-web:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: build
+      - run: chmod +x .bin/telltale
+      - run: pnpm exec vitest run
+
+  lint:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOWORK: ${{ github.workspace }}/go.work.ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: flanksource/deps@v1.0.49
+        with:
+          tools: |
+            task
+            rhysd/actionlint
+      - run: make setup
+      - uses: actions/download-artifact@v4
+        with:
+          name: build
       - run: make lint
 
   java-compatibility:
@@ -67,7 +160,7 @@ jobs:
       - run: ./sdk/java/gradlew -p sdk/java test shadowJar
 
   release:
-    needs: [quality, java-compatibility]
+    needs: [build, test, test-web, lint, java-compatibility]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write

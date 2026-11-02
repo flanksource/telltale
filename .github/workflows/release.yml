@@ -18,7 +18,7 @@ concurrency:
 jobs:
   tag:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     env:
       GOWORK: ${{ github.workspace }}/go.work.ci
       SOURCE_SHA: ${{ inputs.source }}
@@ -52,13 +52,6 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.tag }}
         run: make build
-      - uses: flanksource/gavel@78e109b65a8889fafd5fdfc74a14995b1330054f # v0.0.68
-        with:
-          version: v0.0.68
-          args: test --framework go,ginkgo,vitest --timeout 35m --test-timeout 30m
-          timeout-minutes: 40
-          comment: "false"
-          artifact-name: telltale-release-tests
       - name: Prepare detached release revision
         env:
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
