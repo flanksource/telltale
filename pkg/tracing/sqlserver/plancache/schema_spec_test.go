@@ -7,7 +7,6 @@ import (
 	"github.com/flanksource/commons-db/query"
 	_ "github.com/flanksource/commons-db/query/providers/sqlite"
 	"github.com/flanksource/commons-db/recordstore"
-	"github.com/flanksource/commons-db/recordstore/recordresults"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/target"
 	"github.com/flanksource/telltale/pkg/tracing/tracingtest"
@@ -61,6 +60,5 @@ var _ = Describe("plan cache result schema", func() {
 		}))
 		_, err := env.Runtime.Summarize(context.Background(), tracing.TraceRef{Kind: "sql_plancache", Stream: info.Events.Stream})
 		Expect(err).NotTo(HaveOccurred())
-		var _ recordresults.ResultType[Sample] = schema
 	})
 })

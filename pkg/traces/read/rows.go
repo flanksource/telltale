@@ -40,7 +40,7 @@ func (r Ref) profile(ctx context.Context, name string) (dbcontext.Context, query
 	if r.Runtime == nil {
 		return dbcontext.Context{}, query.Profile{}, fmt.Errorf("read %s: missing runtime", r.Kind)
 	}
-	if err := r.TraceRef.Validate(); err != nil {
+	if err := r.Validate(); err != nil {
 		return dbcontext.Context{}, query.Profile{}, err
 	}
 	meta, err := r.Runtime.Results.Backend.Meta(ctx, r.Stream)

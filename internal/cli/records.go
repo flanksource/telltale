@@ -77,7 +77,7 @@ func newRecordsCommand() *cobra.Command {
 				}
 				return printRecords(cmd, stats)
 			}
-			if clicky.Flags.FormatOptions.ResolveFormat() == "ndjson" {
+			if clicky.Flags.ResolveFormat() == "ndjson" {
 				print := recordPrinter(cmd)
 				for row, err := range rows {
 					if err != nil {

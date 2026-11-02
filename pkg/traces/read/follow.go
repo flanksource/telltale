@@ -25,8 +25,7 @@ func Follow(ctx context.Context, ref Ref, q Query, fn func(query.Row) error) err
 	if err != nil {
 		return err
 	}
-	params, err := q.params(ref, p)
-	if err != nil {
+	if _, err := q.params(ref, p); err != nil {
 		return err
 	}
 	through := ref.ToSeq
@@ -73,15 +72,15 @@ func Follow(ctx context.Context, ref Ref, q Query, fn func(query.Row) error) err
 		defer cancel()
 		// The notification stream carries every seq; filtering stays in deliver.
 		window := Query{AfterSeq: q.AfterSeq, ToSeq: q.ToSeq}
-		params, err = window.params(ref, p)
-		if err != nil {
-			return err
+		params, paramsErr := window.params(ref, p)
+		if paramsErr != nil {
+			return paramsErr
 		}
 		p = query.Follow(p)
 		p.Trace.Buffer = nil
-		session, err := query.ExecuteStream(followCtx, ref.Runtime.Sessions, p, params)
-		if err != nil {
-			return err
+		session, startErr := query.ExecuteStream(followCtx, ref.Runtime.Sessions, p, params)
+		if startErr != nil {
+			return startErr
 		}
 		defer func() { cancel(); <-session.Done() }()
 		replay, live, unsubscribe := session.Subscribe()
