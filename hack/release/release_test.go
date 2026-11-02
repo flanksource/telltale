@@ -65,7 +65,19 @@ var _ = Describe("release-only assets", func() {
 		rootSum, err := os.ReadFile("../../go.sum")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(os.WriteFile(filepath.Join(directory, "go.sum"), rootSum, 0644)).To(Succeed())
-		Expect(os.WriteFile(filepath.Join(directory, "go.mod"), []byte("module github.com/flanksource/telltale\n\ngo 1.27.1\n\nrequire (\n github.com/flanksource/telltale/sdk v0.0.0\n github.com/flanksource/telltale/sdk/adapter v0.0.0\n golang.org/x/mod v0.37.0\n)\n"), 0644)).To(Succeed())
+		// modsum runs on the root go.sum, so it must require the x/mod that file holds sums for.
+		rootMod, err := os.ReadFile("../../go.mod")
+		Expect(err).NotTo(HaveOccurred())
+		rootFile, err := modfile.Parse("go.mod", rootMod, nil)
+		Expect(err).NotTo(HaveOccurred())
+		modVersion := ""
+		for _, require := range rootFile.Require {
+			if require.Mod.Path == "golang.org/x/mod" {
+				modVersion = require.Mod.Version
+			}
+		}
+		Expect(modVersion).NotTo(BeEmpty(), "go.mod requires golang.org/x/mod")
+		Expect(os.WriteFile(filepath.Join(directory, "go.mod"), []byte("module github.com/flanksource/telltale\n\ngo 1.27.1\n\nrequire (\n github.com/flanksource/telltale/sdk v0.0.0\n github.com/flanksource/telltale/sdk/adapter v0.0.0\n golang.org/x/mod "+modVersion+"\n)\n"), 0644)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(directory, "sdk/go.mod"), []byte("module github.com/flanksource/telltale/sdk\n\ngo 1.27.1\n"), 0644)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(directory, "sdk/core.go"), []byte("package sdk\n"), 0644)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(directory, "sdk/adapter/go.mod"), []byte("module github.com/flanksource/telltale/sdk/adapter\n\ngo 1.27.1\n\nrequire github.com/flanksource/telltale/sdk v0.0.0\n"), 0644)).To(Succeed())
