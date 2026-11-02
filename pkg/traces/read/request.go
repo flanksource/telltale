@@ -19,12 +19,13 @@ func (a Aggregate) Enabled() bool { return len(a.Columns) > 0 || a.GroupBy != ""
 
 // ParseRequest accepts HTTP parameter names and their Cobra flag spellings.
 // Presence of limit matters: an explicit zero retains the default page size.
-func ParseRequest(values url.Values) (scope Scope, q Query, aggregate Aggregate, err error) {
+// The host names dataDir; a request never chooses the directory it reads.
+func ParseRequest(dataDir string, values url.Values) (scope Scope, q Query, aggregate Aggregate, err error) {
 	values, err = requestValues(values)
 	if err != nil {
 		return
 	}
-	scope = Scope{DataDir: values.Get("dataDir"), Run: values.Get("run"), Runs: requestList(values["runs"])}
+	scope = Scope{DataDir: dataDir, Run: values.Get("run"), Runs: requestList(values["runs"])}
 	q = Query{Filters: values["filter"], Search: values.Get("q"), Where: values.Get("where"), Cursor: values.Get("cursor")}
 	aggregate = Aggregate{Columns: requestList(values["stats"]), GroupBy: values.Get("groupBy"), View: values.Get("view")}
 	if err = parseRequestTimes(values, &scope, &q); err != nil {
@@ -63,7 +64,7 @@ func ParseRequest(values url.Values) (scope Scope, q Query, aggregate Aggregate,
 }
 
 func requestValues(values url.Values) (url.Values, error) {
-	aliases := map[string]string{"data-dir": "dataDir", "after-seq": "afterSeq", "to-seq": "toSeq", "query": "q", "group-by": "groupBy"}
+	aliases := map[string]string{"after-seq": "afterSeq", "to-seq": "toSeq", "query": "q", "group-by": "groupBy"}
 	normalized := url.Values{}
 	for key, entries := range values {
 		if alias, ok := aliases[key]; ok {

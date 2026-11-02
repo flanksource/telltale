@@ -26,12 +26,12 @@ func Handler(dataDir string) http.Handler {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		scope, q, aggregate, err := read.ParseRequest(values)
+		scope, q, aggregate, err := read.ParseRequest(dataDir, values)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		scope.DataDir, scope.Run = dataDir, r.PathValue("run")
+		scope.Run = r.PathValue("run")
 		selected, err := selectRun(r.PathValue("kind"), scope)
 		if err != nil {
 			status := http.StatusBadRequest

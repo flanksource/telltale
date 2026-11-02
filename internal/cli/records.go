@@ -38,7 +38,7 @@ func newRecordsCommand() *cobra.Command {
   telltale records spans --run receiver --follow
   telltale records sql --view repeats`,
 		RunE: func(cmd *cobra.Command, args []string) (err error) {
-			scope, q, aggregate, err := read.ParseRequest(recordValues(cmd))
+			scope, q, aggregate, err := read.ParseRequest(scope.DataDir, recordValues(cmd))
 			if err != nil {
 				return err
 			}
@@ -124,6 +124,9 @@ func newRecordsCommand() *cobra.Command {
 func recordValues(cmd *cobra.Command) url.Values {
 	values := url.Values{}
 	cmd.Flags().Visit(func(flag *pflag.Flag) {
+		if flag.Name == dataDirFlag {
+			return
+		}
 		if slice, ok := flag.Value.(pflag.SliceValue); ok {
 			values[flag.Name] = slice.GetSlice()
 		} else {

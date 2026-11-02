@@ -85,6 +85,8 @@ var _ = Describe("listing runs", func() {
 		Expect(err).To(MatchError(os.ErrNotExist))
 		_, err = telltale.Get(telltale.GetOptions{DataDir: dataDir, RunID: "../escape"})
 		Expect(err).To(MatchError(ContainSubstring("is not a run id")))
+		_, err = telltale.Get(telltale.GetOptions{DataDir: dataDir, RunID: "run..escape"})
+		Expect(err).To(MatchError(ContainSubstring("is not a run id")))
 	})
 
 	It("finds nothing in a data dir that never traced a run", func() {

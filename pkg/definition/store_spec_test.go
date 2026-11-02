@@ -100,6 +100,7 @@ var _ = Describe("the definition store", func() {
 		Expect(os.MkdirAll(nested, 0o755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(nested, "checkout.yaml"), []byte("kind: TraceDefinition\n"), 0o644)).To(Succeed())
 		Expect(defs.Delete(datadir.ConfigCWD, "nested/checkout", "")).To(MatchError(ContainSubstring("must be a plain file name")))
+		Expect(defs.Delete(datadir.ConfigCWD, "check..out", "")).To(MatchError(ContainSubstring("must be a plain file name")))
 		Expect(filepath.Join(nested, "checkout.yaml")).To(BeAnExistingFile())
 	})
 
