@@ -105,8 +105,18 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      GOWORK: ${{ github.workspace }}/go.work.ci
     steps:
       - uses: actions/checkout@v4
+      # The API specs go run seed programs and drive a JVM.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -144,6 +154,14 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: build
+      # make lint runs gavel lint; the action leaves gavel on the PATH.
+      - name: Install gavel
+        uses: flanksource/gavel@78e109b65a8889fafd5fdfc74a14995b1330054f # v0.0.68
+        with:
+          version: v0.0.68
+          args: version
+          comment: "false"
+          artifact-name: telltale-gavel-version
       - run: make lint
 
   java-compatibility:
