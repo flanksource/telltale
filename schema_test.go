@@ -106,6 +106,18 @@ var _ = Describe("a start request", func() {
 		}))
 	})
 
+	It("still judges the rest of a capture it refused for naming no connection", func() {
+		_, err := telltale.StartRequest{Traces: map[string]json.RawMessage{
+			"sql_deadlock": json.RawMessage(`{"enabled":true,"from":"2026-10-28T12:00:00Z","to":"2026-10-28T11:00:00Z"}`),
+		}}.Options(base, definitions)
+		var invalid *telltale.ValidationError
+		Expect(err).To(BeAssignableToTypeOf(invalid))
+		Expect(err.(*telltale.ValidationError).Fields).To(ConsistOf(
+			HaveField("InstancePath", "/traces/sql_deadlock/connection"),
+			And(HaveField("InstancePath", "/traces/sql_deadlock"), HaveField("Message", Not(ContainSubstring("connection")))),
+		))
+	})
+
 	It("names each field it refuses by its JSON pointer", func() {
 		_, err := telltale.StartRequest{
 			Command: " ",

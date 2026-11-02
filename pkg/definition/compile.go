@@ -49,16 +49,31 @@ func compile(def *TraceDefinition, options Options) ([]telltale.TraceSpec, *Vali
 	}
 	specs := make([]telltale.TraceSpec, 0, len(resolved.Entries))
 	for _, at := range resolved.Entries {
-		if refusals.refuses(at.Pointer() + "/connection") {
-			// The kind's own check would only repeat that it has no connection.
-			continue
-		}
-		spec, err := compileEntry(kinds, at, def.Name)
+		spec, err := compileRefusedConnection(kinds, at, def.Name, refusals.refuses(at.Pointer()+"/connection"))
 		refusals.add(at.Pointer(), err)
 		specs = append(specs, spec)
 	}
 	checkProxies(resolved.Entries, refusals)
 	return specs, refusals
+}
+
+// connectionStandIn stands in for the connection of an entry already refused
+// for naming none, so the kind judges the rest of the entry.
+const connectionStandIn = "connection://telltale-validation"
+
+// compileRefusedConnection is compileEntry, judged with a stand-in
+// connection when the entry's own was refused: the kind would only repeat
+// that it has none, and would hide what else the entry gets wrong.
+func compileRefusedConnection(kinds *tracing.Kinds, at Located, definition string, refused bool) (telltale.TraceSpec, error) {
+	entry, ok := at.Entry.(connectionEntry)
+	if !refused || !ok {
+		return compileEntry(kinds, at, definition)
+	}
+	slot := entry.connection(at)
+	original := *slot.field
+	*slot.field = connectionStandIn
+	defer func() { *slot.field = original }()
+	return compileEntry(kinds, at, definition)
 }
 
 // compileEntry is at's capture: its kind's params, checked as the kind
