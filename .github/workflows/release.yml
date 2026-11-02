@@ -78,6 +78,8 @@ jobs:
           make binary
           go mod verify
           .bin/telltale --version
+          # Compile what the API specs go run up front: cold, it outlasts their deadlines.
+          go build ./internal/tracequery/testdata/seed ./pkg/tracing/seam/testdata/hubchild
           pnpm exec vitest run --project api
       - name: Push root version tag
         env:

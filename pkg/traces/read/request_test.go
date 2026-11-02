@@ -10,25 +10,26 @@ import (
 )
 
 var _ = Describe("record request mapping", func() {
-	It("maps HTTP names and repeated filters into the same scope and query as CLI names", func() {
+	const dataDir = "work"
+	It("maps HTTP names and repeated filters into the same scope and query as CLI names, keeping the host's data dir over a requested one", func() {
 		values := url.Values{
-			"dataDir": {"work"}, "run": {"run-one"}, "from": {"2026-10-28T10:00:00Z"}, "until": {"2026-10-28T11:00:00Z"},
+			"dataDir": {"elsewhere"}, "run": {"run-one"}, "from": {"2026-10-28T10:00:00Z"}, "until": {"2026-10-28T11:00:00Z"},
 			"afterSeq": {"2"}, "toSeq": {"8"}, "filter": {"pid=123", "cpuPercent=>=10"}, "where": {"row.pid == 123"},
 			"q": {"worker"}, "limit": {"3"}, "cursor": {"next"},
 		}
-		scope, q, aggregate, err := read.ParseRequest(values)
+		scope, q, aggregate, err := read.ParseRequest(dataDir, values)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(scope).To(Equal(read.Scope{DataDir: "work", Run: "run-one"}))
+		Expect(scope).To(Equal(read.Scope{DataDir: dataDir, Run: "run-one"}))
 		Expect(q).To(Equal(read.Query{
 			From: time.Date(2026, 10, 28, 10, 0, 0, 0, time.UTC), Until: time.Date(2026, 10, 28, 11, 0, 0, 0, time.UTC),
 			AfterSeq: 2, ToSeq: 8, Filters: []string{"pid=123", "cpuPercent=>=10"}, Where: "row.pid == 123", Search: "worker", Limit: 3, Cursor: "next",
 		}))
 		Expect(aggregate).To(Equal(read.Aggregate{}))
-		for cli, http := range map[string]string{"data-dir": "dataDir", "after-seq": "afterSeq", "to-seq": "toSeq", "query": "q"} {
+		for cli, http := range map[string]string{"after-seq": "afterSeq", "to-seq": "toSeq", "query": "q"} {
 			values[cli] = values[http]
 			delete(values, http)
 		}
-		cliScope, cliQuery, cliAggregate, err := read.ParseRequest(values)
+		cliScope, cliQuery, cliAggregate, err := read.ParseRequest(dataDir, values)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(cliScope).To(Equal(scope))
 		Expect(cliQuery).To(Equal(q))
@@ -36,27 +37,27 @@ var _ = Describe("record request mapping", func() {
 	})
 	It("reads all rows for aggregates unless limit is explicitly provided", func() {
 		values := url.Values{"stats": {"cpuPercent,rssBytes"}, "group-by": {"pid"}}
-		_, q, aggregate, err := read.ParseRequest(values)
+		_, q, aggregate, err := read.ParseRequest(dataDir, values)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(q.All).To(BeTrue())
 		Expect(aggregate).To(Equal(read.Aggregate{Columns: []string{"cpuPercent", "rssBytes"}, GroupBy: "pid"}))
 		values.Set("limit", "0")
-		_, q, _, err = read.ParseRequest(values)
+		_, q, _, err = read.ParseRequest(dataDir, values)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(q.All).To(BeFalse())
 	})
 	It("uses since for run selection and lets from override only the row window", func() {
 		before := time.Now().Add(-2 * time.Hour)
-		scope, q, _, err := read.ParseRequest(url.Values{"since": {"2h"}})
+		scope, q, _, err := read.ParseRequest("", url.Values{"since": {"2h"}})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(scope.Since).To(BeTemporally(">=", before))
 		Expect(scope.Since).To(Equal(q.From))
-		scope, q, _, err = read.ParseRequest(url.Values{"since": {"2026-10-27T00:00:00Z"}, "from": {"2026-10-28T00:00:00Z"}})
+		scope, q, _, err = read.ParseRequest("", url.Values{"since": {"2026-10-27T00:00:00Z"}, "from": {"2026-10-28T00:00:00Z"}})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(q.From.Sub(scope.Since)).To(Equal(24 * time.Hour))
 	})
 	DescribeTable("refuses invalid request combinations", func(values url.Values, message string) {
-		_, _, _, err := read.ParseRequest(values)
+		_, _, _, err := read.ParseRequest(dataDir, values)
 		Expect(err).To(MatchError(ContainSubstring(message)))
 	},
 		Entry("two selectors", url.Values{"run": {"one"}, "runs": {"two"}}, "--run and --runs"),

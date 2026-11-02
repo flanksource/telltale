@@ -101,7 +101,7 @@ type GetOptions struct {
 // Get describes the run options name, live or stored; a store that is gone
 // (pruned, or never recorded) is os.ErrNotExist.
 func Get(options GetOptions) (RunInfo, error) {
-	if options.RunID == "" || options.RunID == "." || options.RunID == ".." || strings.ContainsAny(options.RunID, `/\`) {
+	if options.RunID == "" || options.RunID == "." || strings.Contains(options.RunID, "..") || strings.ContainsAny(options.RunID, `/\`) {
 		return RunInfo{}, fmt.Errorf("get run: %q is not a run id", options.RunID)
 	}
 	if _, ok := standingStore(options.RunID); ok {

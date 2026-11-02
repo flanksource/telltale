@@ -111,7 +111,7 @@ func validName(name string) error {
 	if name == "" {
 		return fmt.Errorf("a name is required")
 	}
-	if name != filepath.Base(name) || strings.HasPrefix(name, ".") || strings.ContainsAny(name, `\ `) {
+	if strings.Contains(name, "..") || name != filepath.Base(name) || strings.HasPrefix(name, ".") || strings.ContainsAny(name, `\ `) {
 		return fmt.Errorf("%q must be a plain file name that does not start with a dot", name)
 	}
 	return nil
