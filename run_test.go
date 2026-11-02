@@ -278,6 +278,20 @@ var _ = Describe("a run of a command with checkpointed captures", func() {
 		Expect(result.CheckpointErrors).To(BeEmpty())
 		Expect(result.Captures).To(ConsistOf(HaveField("Summary", HaveKeyWithValue("count", BeNumerically(">", 0)))))
 	})
+
+	It("does not fail a read that races the command's exit", func() {
+		const reads = 10 * time.Millisecond
+		for range 5 {
+			run, err := telltale.Start(context.Background(), telltale.StartOptions{
+				DataDir: GinkgoT().TempDir(), Command: []string{"sleep", "0.3"}, Every: reads, TraceRoot: telltale.TraceRootCommand,
+				Traces: []telltale.TraceSpec{{Kind: stacks.Kind}},
+			})
+			Expect(err).ToNot(HaveOccurred())
+			result, err := run.Wait()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result.CheckpointErrors).To(BeEmpty())
+		}
+	})
 })
 
 var _ = Describe("a run traced from its command", func() {

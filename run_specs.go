@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/flanksource/telltale/pkg/traces"
+	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/seam"
 	"github.com/flanksource/telltale/pkg/tracing/target"
 )
@@ -166,17 +167,37 @@ func (r *Run) checkpoint(ctx context.Context, reason string) {
 			continue
 		}
 		params, err := withValue(spec.checkpoint, "reason", reason)
-		if err == nil && spec.target == target.Process && r.cmd != nil && !names(params, "pid", "key") {
+		ofCommand := err == nil && spec.target == target.Process && r.cmd != nil && !names(params, "pid", "key")
+		if ofCommand {
 			params, err = withValue(params, "pid", r.cmd.Process.Pid)
 		}
 		if err == nil {
 			err = capture.Checkpoint(ctx, params)
+		}
+		// The command leaves its tree only by exiting: a read that found it gone
+		// raced the exit that ends the run, and is no failure once the command exits.
+		if ofCommand && errors.Is(err, tracing.ErrCheckpointParams) && r.exitsWithin(commandExitGrace) {
+			continue
 		}
 		if err != nil {
 			r.checkpoints.mu.Lock()
 			r.checkpoints.errors = append(r.checkpoints.errors, fmt.Sprintf("%s %s checkpoint: %v", spec.Kind, reason, err))
 			r.checkpoints.mu.Unlock()
 		}
+	}
+}
+
+// commandExitGrace bounds how long a checkpoint that found the command gone
+// waits for the run to see the command exit.
+const commandExitGrace = time.Second
+
+// exitsWithin reports whether the command has exited, or exits within grace.
+func (r *Run) exitsWithin(grace time.Duration) bool {
+	select {
+	case <-r.exited:
+		return true
+	case <-time.After(grace):
+		return false
 	}
 }
 
