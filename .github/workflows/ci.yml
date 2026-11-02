@@ -132,6 +132,9 @@ jobs:
         with:
           name: build
       - run: chmod +x .bin/telltale
+      # Compile what the specs go run up front: cold, it outlasts their deadlines.
+      - name: Warm the Go build cache for the spec helpers
+        run: go build ./internal/tracequery/testdata/seed ./pkg/tracing/seam/testdata/hubchild
       - run: pnpm exec vitest run
 
   lint:
