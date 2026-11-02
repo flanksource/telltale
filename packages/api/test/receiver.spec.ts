@@ -188,7 +188,7 @@ describe.sequential("OTLP receiver API", () => {
     expect(JSON.stringify(records)).toContain(`"traceId":"${traceId}"`);
     const found = await (
       await fetch(
-        `${apiURL}/api/otel?source=records&run=receiver&operation=charge&status=error&minDuration=100ms`,
+        `${apiURL}/api/otel?source=records&run=receiver&operations=${encodeURIComponent(JSON.stringify({ "POST /orders": "include" }))}&statuses=${encodeURIComponent(JSON.stringify({ error: "include" }))}&minDuration=100ms`,
       )
     ).json();
     expect(found).toMatchObject({

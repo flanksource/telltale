@@ -78,7 +78,7 @@ describe.sequential("HTTP self-tracing", () => {
     await start(["--otlp", "--otlp-grpc-listen", "127.0.0.1:0"]);
     await fetch(`${apiURL}/health`);
     const search = await (
-      await fetch(`${apiURL}/api/otel?source=records&run=receiver&service=telltale`)
+      await fetch(`${apiURL}/api/otel?source=records&run=receiver&services=${encodeURIComponent(JSON.stringify({ telltale: "include" }))}`)
     ).json();
     expect(search).toMatchObject({ total: 0 });
     await stop();
@@ -87,7 +87,7 @@ describe.sequential("HTTP self-tracing", () => {
   it("automatically enables its receiver, exports locally and exposes request metadata", async () => {
     await start(["--self-trace", "--otlp-grpc-listen", "127.0.0.1:0"]);
     const response = await fetch(
-      `${apiURL}/api/otel/trace/example-missing?source=records&run=receiver&tags=${encodeURIComponent(JSON.stringify({ password: "private-query-value" }))}`,
+      `${apiURL}/api/otel/trace/example-missing?source=records&run=receiver&attributes=${encodeURIComponent(JSON.stringify({ "password=private-query-value": "include" }))}`,
       {
         headers: {
           traceparent: `00-${traceId}-1234567890abcdef-01`,
