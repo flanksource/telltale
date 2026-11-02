@@ -32,7 +32,8 @@ var _ = Describe("OriginOf", func() {
 		3432:  {Label: "com.acme.HealthMonitor", Domain: groups.DomainUser},
 	}
 	brew := []string{"/opt/homebrew"}
-	uids := map[string]int{"acme": 501, "root": 0, "_corespeechd": 262}
+	// acme is a login user on every OS: user uids start at 500 on darwin and 1000 elsewhere.
+	uids := map[string]int{"acme": 1001, "root": 0, "_corespeechd": 262}
 	process := func(pid, ppid int, user, command string) clickyprocess.Process {
 		return clickyprocess.Process{PID: pid, PPID: ppid, UID: uids[user], User: user, Command: command}
 	}

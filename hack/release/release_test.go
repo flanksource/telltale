@@ -173,6 +173,13 @@ var _ = Describe("release-only assets", func() {
 
 	It("requires workspace replacements to resolve unpublished placeholder versions", func() {
 		workspace := filepath.Join(directory, "go.work.ci")
+		// Fetch the published graph first, so the offline lookups below fail
+		// only for want of the replacements, never for an uncached module.
+		warm := exec.Command("go", "list", "-m", "all")
+		warm.Dir = directory
+		warm.Env = append(os.Environ(), "GOWORK="+workspace)
+		output, err := warm.CombinedOutput()
+		Expect(err).NotTo(HaveOccurred(), string(output))
 		original, err := os.ReadFile(workspace)
 		Expect(err).NotTo(HaveOccurred())
 		without := strings.Split(string(original), "\nreplace ")[0] + "\n"
@@ -180,7 +187,7 @@ var _ = Describe("release-only assets", func() {
 		cmd := exec.Command("go", "list", "-m", "all")
 		cmd.Dir = directory
 		cmd.Env = append(os.Environ(), "GOWORK="+workspace, "GOPROXY=off", "GOSUMDB=off")
-		output, err := cmd.CombinedOutput()
+		output, err = cmd.CombinedOutput()
 		Expect(err).To(HaveOccurred())
 		Expect(string(output)).To(ContainSubstring("github.com/flanksource/telltale/sdk@v0.0.0"))
 		Expect(os.WriteFile(workspace, original, 0644)).To(Succeed())
