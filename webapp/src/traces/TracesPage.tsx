@@ -82,9 +82,10 @@ function RunSummary({ run }: { run: RunTraces }) {
   const hostRun = !run.standing && !run.pid && !run.command?.length;
   const running = !!run.live || (hostRun && run.status === "running");
   const command = <code>{run.standing ? "standing store" : run.pid ? `pid ${run.pid}` : hostRun ? "host run" : run.command?.join(" ")}</code>;
-  const failed = run.checkpointErrors?.length ? (
+  const errors = [...(run.error ? [run.error] : []), ...(run.checkpointErrors ?? [])];
+  const failed = errors.length ? (
     <ul role="alert" className="text-sm text-red-700 dark:text-red-400">
-      {run.checkpointErrors.map(error => <li key={error}>{error}</li>)}
+      {errors.map(error => <li key={error}>{error}</li>)}
     </ul>
   ) : null;
   if (!running) {

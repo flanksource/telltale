@@ -53,6 +53,8 @@ export interface RunTraces {
   unavailable?: string;
   /** The checkpoints that failed, which fail the run. */
   checkpointErrors?: string[];
+  /** Why a failed run could not end cleanly, such as a capture that failed to stop. */
+  error?: string;
   /** A standing store served as a pseudo-run, such as the OTLP receiver: continuous, never stopped from here. */
   standing?: boolean;
 }

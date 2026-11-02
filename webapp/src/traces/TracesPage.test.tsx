@@ -118,6 +118,13 @@ describe("trace runs", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("stacks stop checkpoint: process 4242 has no gops address");
   });
 
+  it("says why a run could not end cleanly", async () => {
+    const error = "stop query trace: read provider prometheus: connection not found";
+    serve({ runs: [{ ...finished, status: "failed", error }] });
+    renderPage();
+    expect(await screen.findByRole("alert")).toHaveTextContent(error);
+  });
+
   it("names a running standing store and offers no Stop for it", async () => {
     const receiver: RunTraces = {
       runId: "receiver", mount: "/api/traces/receiver", dir: "/cache/telltale/otel", status: "running", standing: true,
