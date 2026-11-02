@@ -95,6 +95,14 @@ var _ = Describe("the definition store", func() {
 		Expect(err).To(MatchError(os.ErrNotExist))
 	})
 
+	It("refuses to delete a name that is no plain file name, before reading the layer", func() {
+		nested := filepath.Join(cwd, definition.Dir, "nested")
+		Expect(os.MkdirAll(nested, 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(nested, "checkout.yaml"), []byte("kind: TraceDefinition\n"), 0o644)).To(Succeed())
+		Expect(defs.Delete(datadir.ConfigCWD, "nested/checkout", "")).To(MatchError(ContainSubstring("must be a plain file name")))
+		Expect(filepath.Join(nested, "checkout.yaml")).To(BeAnExistingFile())
+	})
+
 	It("reports a file whose metadata.name is not its file name, and refuses to get it", func() {
 		Expect(os.MkdirAll(filepath.Join(cwd, definition.Dir), 0o755)).To(Succeed())
 		data, err := definition.Encode(scrape("other", "http://a:8080/metrics"))

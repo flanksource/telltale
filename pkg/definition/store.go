@@ -208,6 +208,9 @@ func (s *Store) Put(layer string, def *TraceDefinition, resourceVersion string, 
 // longer has with an ErrConflict; one the layer does not have is
 // os.ErrNotExist.
 func (s *Store) Delete(layer, name, resourceVersion string) error {
+	if err := validName(name); err != nil {
+		return fmt.Errorf("delete trace definition: %w", err)
+	}
 	if _, err := s.writable(layer); err != nil {
 		return err
 	}
