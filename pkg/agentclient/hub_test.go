@@ -15,7 +15,8 @@ import (
 
 	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/credentials/apitoken"
-	"github.com/flanksource/telltale/sdk"
+	"github.com/flanksource/telltale/pkg/datadir"
+	telltale "github.com/flanksource/telltale/sdk"
 	"github.com/flanksource/telltale/sdk/protocol"
 	"github.com/gorilla/websocket"
 	. "github.com/onsi/ginkgo/v2"
@@ -34,7 +35,7 @@ func (p *revertProbe) Arm(context.Context, json.RawMessage, telltale.Sink) (func
 
 var _ = Describe("agent hub", func() {
 	It("refuses a remote agent that claims a numeric local identity", func() {
-		store := agentclient.NewTokenStore(GinkgoT().TempDir())
+		store := agentclient.NewTokenStore([]datadir.ConfigDir{{Name: datadir.ConfigGlobal, Dir: GinkgoT().TempDir()}})
 		token, err := store.Mint("spoof", apitoken.ScopeAgent)
 		Expect(err).NotTo(HaveOccurred())
 		registry := agentclient.NewRegistry()
@@ -62,12 +63,12 @@ var _ = Describe("agent hub", func() {
 	})
 	It("rejects an otherwise valid token with the wrong scope", func() {
 		dir := GinkgoT().TempDir()
-		store := agentclient.NewTokenStore(dir)
+		store := agentclient.NewTokenStore([]datadir.ConfigDir{{Name: datadir.ConfigGlobal, Dir: dir}})
 		existing, err := store.Mint("agent", apitoken.ScopeAgent)
 		Expect(err).NotTo(HaveOccurred())
 		data, err := json.Marshal(apitoken.Record{ID: existing.ID, SecretHash: existing.Hash, Name: "agent", Scope: apitoken.ScopeGit})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(os.WriteFile(filepath.Join(dir, ".telltale", "agent-tokens", existing.ID+".json"), data, 0600)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(dir, "agent-tokens", existing.ID+".json"), data, 0600)).To(Succeed())
 		req := httptest.NewRequest(http.MethodGet, "/api/agents/connect", nil)
 		req.Header.Set("Authorization", "Bearer "+existing.Secret.Value())
 		response := httptest.NewRecorder()
@@ -77,7 +78,7 @@ var _ = Describe("agent hub", func() {
 	})
 	It("distinguishes missing and wrong credentials from corrupt token storage", func() {
 		dir := GinkgoT().TempDir()
-		store := agentclient.NewTokenStore(dir)
+		store := agentclient.NewTokenStore([]datadir.ConfigDir{{Name: datadir.ConfigGlobal, Dir: dir}})
 		token, err := store.Mint("test", "agent")
 		Expect(err).NotTo(HaveOccurred())
 		hub := agentclient.NewHub(agentclient.NewRegistry(), store)
@@ -92,7 +93,7 @@ var _ = Describe("agent hub", func() {
 			Expect(w.Body.String()).To(MatchJSON(`{"error":"unauthorized"}`))
 		}
 		for _, data := range []string{"{", `{"ID":"` + token.ID + `","Scope":"agent","SecretHash":"broken"}`} {
-			Expect(os.WriteFile(filepath.Join(dir, ".telltale", "agent-tokens", token.ID+".json"), []byte(data), 0600)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(dir, "agent-tokens", token.ID+".json"), []byte(data), 0600)).To(Succeed())
 			req := httptest.NewRequest(http.MethodGet, "/api/agents/connect", nil)
 			req.Header.Set("Authorization", "Bearer "+token.Secret.Value())
 			w := httptest.NewRecorder()
@@ -100,7 +101,7 @@ var _ = Describe("agent hub", func() {
 			Expect(w.Code).To(Equal(http.StatusInternalServerError))
 			Expect(w.Body.String()).To(MatchJSON(`{"error":"token verification failed"}`))
 		}
-		path := filepath.Join(dir, ".telltale", "agent-tokens", token.ID+".json")
+		path := filepath.Join(dir, "agent-tokens", token.ID+".json")
 		Expect(os.Remove(path)).To(Succeed())
 		Expect(os.Mkdir(path, 0700)).To(Succeed())
 		req := httptest.NewRequest(http.MethodGet, "/api/agents/connect", nil)
@@ -110,7 +111,7 @@ var _ = Describe("agent hub", func() {
 		Expect(w.Code).To(Equal(http.StatusInternalServerError))
 	})
 	It("rejects unauthenticated requests and registers a dial-out agent", func() {
-		store := agentclient.NewTokenStore(GinkgoT().TempDir())
+		store := agentclient.NewTokenStore([]datadir.ConfigDir{{Name: datadir.ConfigGlobal, Dir: GinkgoT().TempDir()}})
 		token, err := store.Mint("test-agent", "agent")
 		Expect(err).NotTo(HaveOccurred())
 		registry := agentclient.NewRegistry()
@@ -132,7 +133,7 @@ var _ = Describe("agent hub", func() {
 		Expect(registry.Match(nil)[0].Hello.AgentID).To(HavePrefix("hub/"))
 	})
 	It("matches multiple agents, arms a late joiner and reconnects after a disconnect", func() {
-		store := agentclient.NewTokenStore(GinkgoT().TempDir())
+		store := agentclient.NewTokenStore([]datadir.ConfigDir{{Name: datadir.ConfigGlobal, Dir: GinkgoT().TempDir()}})
 		token, err := store.Mint("fleet", "agent")
 		Expect(err).NotTo(HaveOccurred())
 		registry := agentclient.NewRegistry()
@@ -167,7 +168,7 @@ var _ = Describe("agent hub", func() {
 	It("reverts a mutating probe when the hub connection closes", func() {
 		probe := &revertProbe{}
 		telltale.RegisterProbe(probe)
-		store := agentclient.NewTokenStore(GinkgoT().TempDir())
+		store := agentclient.NewTokenStore([]datadir.ConfigDir{{Name: datadir.ConfigGlobal, Dir: GinkgoT().TempDir()}})
 		token, err := store.Mint("mutating-agent", "agent")
 		Expect(err).NotTo(HaveOccurred())
 		registry := agentclient.NewRegistry()

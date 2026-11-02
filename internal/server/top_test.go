@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/flanksource/telltale/internal/server"
 	"github.com/flanksource/telltale/pkg/tracing/groups"
@@ -20,7 +21,7 @@ var _ = Describe("the live process groups", func() {
 	var top *server.TopHandler
 
 	BeforeEach(func() {
-		top = server.NewTopHandler(GinkgoT().TempDir())
+		top = server.NewTopHandler()
 		DeferCleanup(top.Close)
 	})
 
@@ -58,6 +59,20 @@ var _ = Describe("the live process groups", func() {
 		Expect(len(byPID.Processes)).To(BeNumerically(">", 1), "pid 1's subtree is every process")
 	})
 
+	It("serves the processes whose name, command or pid holds a search text", func() {
+		var byText, byDigits server.TopProcesses
+		self := filepath.Base(os.Args[0])
+		response := get(http.MethodGet, server.TopProcessesPath+"?all=true&q="+url.QueryEscape(strings.ToUpper(self)))
+		Expect(response.Code).To(Equal(http.StatusOK), response.Body.String())
+		Expect(json.Unmarshal(response.Body.Bytes(), &byText)).To(Succeed())
+		Expect(byText.Processes).To(ContainElement(HaveField("PID", os.Getpid())))
+
+		response = get(http.MethodGet, server.TopProcessesPath+"?all=true&q="+strconv.Itoa(os.Getpid()))
+		Expect(response.Code).To(Equal(http.StatusOK), response.Body.String())
+		Expect(json.Unmarshal(response.Body.Bytes(), &byDigits)).To(Succeed())
+		Expect(byDigits.Processes).To(ContainElement(HaveField("PID", os.Getpid())))
+	})
+
 	It("serves a listed process's facets, its open files among them", func() {
 		response := get(http.MethodGet, server.TopFacetsPath+"?all=true&pid="+strconv.Itoa(os.Getpid()))
 
@@ -79,6 +94,7 @@ var _ = Describe("the live process groups", func() {
 		Entry("a write", http.MethodPost, server.TopMount, http.StatusMethodNotAllowed, "method not allowed"),
 		Entry("processes of neither a program nor a process", http.MethodGet, server.TopProcessesPath, http.StatusBadRequest, "one of them"),
 		Entry("processes of both", http.MethodGet, server.TopProcessesPath+"?name=go&pid=1", http.StatusBadRequest, "one of them"),
+		Entry("processes of a program and a search", http.MethodGet, server.TopProcessesPath+"?name=go&q=go", http.StatusBadRequest, "one of them"),
 		Entry("a pid that is no process id", http.MethodGet, server.TopProcessesPath+"?pid=x", http.StatusBadRequest, `pid="x"`),
 		Entry("facets of no process", http.MethodGet, server.TopFacetsPath, http.StatusBadRequest, `pid=""`),
 		Entry("facets of a process the latest frame did not list", http.MethodGet, server.TopFacetsPath+"?pid=4194304", http.StatusNotFound, "not listed"),

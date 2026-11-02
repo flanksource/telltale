@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/flanksource/telltale/internal/cli"
@@ -12,6 +13,12 @@ import (
 )
 
 func TestCLI(t *testing.T) { RegisterFailHandler(Fail); RunSpecs(t, "CLI") }
+
+// Every spec keeps its trace data and config in temp dirs, never the user's.
+var _ = BeforeEach(func() {
+	GinkgoT().Setenv("XDG_CACHE_HOME", GinkgoT().TempDir())
+	GinkgoT().Setenv("XDG_CONFIG_HOME", GinkgoT().TempDir())
+})
 
 // captureStdout is what run printed to os.Stdout, where clicky prints results.
 func captureStdout(run func()) string {
@@ -31,6 +38,14 @@ func captureStdout(run func()) string {
 }
 
 var _ = Describe("command boundaries", func() {
+	It("selects an available Vite port by default", func() {
+		serve, _, err := cli.NewRoot("dev").Find([]string{"serve"})
+		Expect(err).NotTo(HaveOccurred())
+		port, err := serve.Flags().GetInt("ui-port")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(port).To(BeZero())
+	})
+
 	It("rejects an invalid top grouping before sampling processes", func() {
 		root := cli.NewRoot("dev")
 		root.SetArgs([]string{"top", "--group-by", "invalid", "--once"})
@@ -47,14 +62,25 @@ var _ = Describe("command boundaries", func() {
 		},
 		Entry("negative port", []string{"serve", "--port", "-1"}, "port must"),
 		Entry("oversized port", []string{"serve", "--port", "65536"}, "port must"),
-		Entry("invalid Vite port", []string{"serve", "--dev", "--ui-port", "0"}, "ui-port must"),
+		Entry("negative Vite port", []string{"serve", "--dev", "--ui-port", "-1"}, "ui-port must"),
+		Entry("oversized Vite port", []string{"serve", "--dev", "--ui-port", "65536"}, "ui-port must"),
 		Entry("missing source checkout", []string{"serve", "--dev", "--port", "0", "--web-dir", "missing"}, "source checkout"),
 	)
 	It("prints in the format its flags ask for", func() {
 		root := cli.NewRoot("dev")
-		root.SetArgs([]string{"trace", "list", "--work-dir", GinkgoT().TempDir(), "--json"})
+		root.SetArgs([]string{"trace", "list", "--data-dir", GinkgoT().TempDir(), "--json"})
 		output := captureStdout(func() { Expect(root.Execute()).To(Succeed()) })
 		Expect(output).To(MatchJSON(`[]`))
+	})
+
+	It("reads trace data from the XDG cache dir when --data-dir is not given", func() {
+		cache := GinkgoT().TempDir()
+		GinkgoT().Setenv("XDG_CACHE_HOME", cache)
+		Expect(os.MkdirAll(filepath.Join(cache, "telltale", "traces", "run-crashed"), 0o755)).To(Succeed())
+		root := cli.NewRoot("dev")
+		root.SetArgs([]string{"trace", "list", "--json"})
+		output := captureStdout(func() { Expect(root.Execute()).To(Succeed()) })
+		Expect(output).To(MatchJSON(`[{"runId":"run-crashed","dir":"` + filepath.Join(cache, "telltale", "traces", "run-crashed") + `","status":"unfinished","unavailable":"the run did not finish: it left no run.json"}]`))
 	})
 
 	It("reports a supplied version without Git metadata", func() {

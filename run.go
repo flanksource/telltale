@@ -47,8 +47,8 @@ type Run struct {
 	// flight, so the captures can be stopped.
 	checkpointed chan struct{}
 	done         chan struct{}
-	result   *Result
-	err      error
+	result       *Result
+	err          error
 }
 
 // Start arms options.Traces, starts options.Command or attaches to
@@ -63,7 +63,9 @@ func Start(ctx context.Context, options StartOptions) (*Run, error) {
 		return nil, err
 	}
 	startedAt := time.Now()
-	host, err := traces.Open(traces.OpenOptions{WorkDir: options.WorkDir, RunID: traces.RunID(startedAt), Connections: options.Connections})
+	host, err := traces.Open(traces.OpenOptions{
+		DataDir: options.DataDir, RunID: traces.RunID(startedAt), Connections: options.Connections, RunConnections: options.RunConnections,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -73,6 +75,13 @@ func Start(ctx context.Context, options StartOptions) (*Run, error) {
 	}
 	if run.key, err = registryKey(host.Dir()); err == nil {
 		err = run.start()
+	}
+	if err == nil {
+		err = writeRunningManifest(run.Info())
+		if err != nil && run.cmd != nil && run.cmd.Process != nil {
+			err = errors.Join(err, run.signal(syscall.SIGKILL))
+			_ = run.cmd.Wait()
+		}
 	}
 	if err != nil {
 		return nil, errors.Join(err, run.close())
@@ -123,10 +132,10 @@ func (r *Run) Wait() (*Result, error) {
 func (r *Run) Info() RunInfo {
 	select {
 	case <-r.done:
-		if r.err != nil {
+		if r.result == nil {
 			return RunInfo{
 				RunID: r.ID(), Dir: r.Dir(), Status: StatusUnfinished, Command: r.options.Command, PID: r.options.PID,
-				StartedAt: r.startedAt, Unavailable: r.err.Error(),
+				StartedAt: r.startedAt, Unavailable: r.err.Error(), Definition: r.options.Definition,
 			}
 		}
 		return resultInfo(r.result)
@@ -138,7 +147,7 @@ func (r *Run) Info() RunInfo {
 	}
 	info := RunInfo{
 		RunID: r.ID(), Dir: r.Dir(), Status: StatusRunning, Command: r.options.Command, PID: r.options.PID, StartedAt: r.startedAt,
-		Captures: captures, Process: r.processRefs(), CheckpointErrors: r.checkpoints.failed(),
+		Captures: captures, Process: r.processRefs(), CheckpointErrors: r.checkpoints.failed(), Definition: r.options.Definition,
 	}
 	if r.process != nil {
 		info.Live = &LiveRun{Sessions: r.process.Sessions()}
@@ -229,7 +238,7 @@ func (r *Run) start() error {
 func (r *Run) arm() (map[string]string, error) {
 	env := map[string]string{}
 	for _, spec := range r.specs {
-		capture, err := r.host.Start(spec.Kind, spec.Params)
+		capture, err := r.host.Start(traces.StartOptions{Kind: spec.Kind, Params: spec.Params, Labels: spec.Labels})
 		if err != nil {
 			return nil, err
 		}
@@ -275,7 +284,7 @@ func (r *Run) startCommand() error {
 
 func (r *Run) startProcessTrace(rootPID int) error {
 	var err error
-	if r.process, err = r.host.StartProcessTrace(traces.ProcessTraceOptions{RootPID: rootPID, Facets: r.options.Facets}); err != nil {
+	if r.process, err = r.host.StartProcessTrace(traces.ProcessTraceOptions{RootPID: rootPID, Tree: r.options.Tree}); err != nil {
 		return fmt.Errorf("process trace: %w", err)
 	}
 	return nil
@@ -298,16 +307,20 @@ func (r *Run) wait() {
 	}
 	result := &Result{
 		RunID: r.ID(), Dir: r.Dir(), Command: r.options.Command, PID: r.options.PID, StartedAt: r.startedAt, EndedAt: time.Now(),
-		ExitCode: exitCode, Process: r.processRefs(),
+		ExitCode: exitCode, Process: r.processRefs(), Definition: r.options.Definition,
 	}
 	if err == nil {
 		result.Captures, err = r.summarize(context.Background())
 		result.CheckpointErrors = r.checkpoints.failed()
 	}
-	if err = errors.Join(err, r.close()); err == nil {
-		err = writeManifest(result)
+	if err = errors.Join(err, r.close()); err != nil {
+		result.Error = err.Error()
 	}
-	if err == nil {
+	// A run that could not end cleanly still records that it ended, and why,
+	// rather than leaving its running manifest behind.
+	if manifestErr := writeManifest(result); manifestErr != nil {
+		err = errors.Join(err, manifestErr)
+	} else {
 		r.result = result
 	}
 	r.err = err
@@ -328,6 +341,11 @@ func (r *Run) waitAttached() {
 		case <-r.stopping:
 			return
 		case <-ticker.C:
+			if r.options.host() && slices.ContainsFunc(r.captures, func(c *traces.Capture) bool { return c.Finished() }) {
+				if allCapturesFinished(r.captures) {
+					return
+				}
+			}
 			if !r.options.host() && !alive(r.options.PID) {
 				return
 			}
@@ -374,19 +392,19 @@ func (r *Run) close() error {
 	var errs []error
 	if r.process != nil {
 		if r.options.TraceRoot == TraceRootSelf && r.cmd != nil {
-			errs = append(errs, r.process.CheckpointStacks(ctx, stacks.CheckpointParams{PID: os.Getpid(), Transport: stacks.TransportInProcess, Reason: "final"}))
+			errs = append(errs, r.process.CheckpointStacks(ctx, stacks.CheckpointParams{PID: os.Getpid(), CheckpointOptions: stacks.CheckpointOptions{Transport: stacks.TransportInProcess}, Reason: "final"}))
 		}
 		errs = append(errs, r.process.CheckpointTree(ctx), r.process.Stop(ctx))
 	}
 	if r.output != nil {
 		errs = append(errs, r.output.Close())
 	}
-	errs = append(errs, r.host.Close(ctx), traces.Prune(r.options.WorkDir, traces.KeepRuns))
+	errs = append(errs, r.host.Close(ctx), traces.Prune(r.options.DataDir, traces.KeepRuns))
 	return errors.Join(errs...)
 }
 
 // registry is the runs this process is running, by the absolute path of
-// their store, which is how Stop, Get and List find a run from its work dir
+// their store, which is how Stop, Get and List find a run from its data dir
 // and id.
 type registry struct {
 	mu   sync.Mutex
@@ -426,15 +444,15 @@ func (g *registry) get(dir string) (*Run, bool, error) {
 	return run, ok, nil
 }
 
-// Live is the run runID of workDir if this process is running it.
-func Live(workDir, runID string) (*Run, bool, error) {
-	return live.get(traces.StoreDir(workDir, runID))
+// Live is the run runID of dataDir if this process is running it.
+func Live(dataDir, runID string) (*Run, bool, error) {
+	return live.get(traces.StoreDir(dataDir, runID))
 }
 
 // Stop stops the run options name, ErrNotLive when this process is not
 // running it.
 func Stop(options StopOptions) error {
-	run, ok, err := Live(options.WorkDir, options.RunID)
+	run, ok, err := Live(options.DataDir, options.RunID)
 	if err != nil {
 		return err
 	}
@@ -446,6 +464,6 @@ func Stop(options StopOptions) error {
 
 // StopOptions name a run to stop.
 type StopOptions struct {
-	WorkDir string
+	DataDir string
 	RunID   string
 }

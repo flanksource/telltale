@@ -29,9 +29,9 @@ export interface CaptureResult {
   summary?: Record<string, unknown>;
 }
 
-export type RunStatus = "running" | "succeeded" | "failed" | "unfinished";
+export type RunStatus = "running" | "succeeded" | "failed" | "unfinished" | "standing";
 
-export const RUN_STATUSES: RunStatus[] = ["running", "succeeded", "failed", "unfinished"];
+export const RUN_STATUSES: RunStatus[] = ["running", "succeeded", "failed", "unfinished", "standing"];
 
 /** One run as the browser reaches it (telltale.MountedRun). */
 export interface RunTraces {
@@ -53,6 +53,10 @@ export interface RunTraces {
   unavailable?: string;
   /** The checkpoints that failed, which fail the run. */
   checkpointErrors?: string[];
+  /** Why a failed run could not end cleanly, such as a capture that failed to stop. */
+  error?: string;
+  /** A standing store served as a pseudo-run, such as the OTLP receiver: continuous, never stopped from here. */
+  standing?: boolean;
 }
 
 /** Which runs a listing returns; empty fields keep every run. */
@@ -90,9 +94,24 @@ export interface TraceTarget {
   wait?: boolean;
 }
 
-export interface StartRequest extends Record<string, unknown> {
-  command?: string;
+/** What the run-wide process tree reads of each process (traces.TreeOptions). */
+export interface TreeOptions {
   facets?: boolean;
+  environment?: { keys?: string[]; prefixes?: string[] };
+}
+
+/** The execution fields of a run: what a saved definition leaves to each run of it. */
+export interface RunExecution {
+  pid?: number;
+  duration?: string;
+  every?: string;
+  command?: string;
+}
+
+export interface StartRequest extends RunExecution, Record<string, unknown> {
+  /** A saved trace definition to run, in place of inline traces. */
+  definition?: string;
+  tree?: TreeOptions;
   traces?: Record<string, { enabled?: boolean; target?: TraceTarget; [param: string]: unknown }>;
 }
 
@@ -176,6 +195,67 @@ function windowQuery(ref: TraceRef, extra: Record<string, string> = {}): string 
 /** The download of ref's window in one of its kind's export formats. */
 export function traceExportUrl(mount: string, ref: TraceRef, format: string): string {
   return `${mount}/api/v1/traces/${encodeURIComponent(ref.kind)}/export?${windowQuery(ref, { format })}`;
+}
+
+export function traceRecordsUrl(mount: string, ref: TraceRef, params: Record<string, string> = {}): string {
+  return `${mount}/traces/${encodeURIComponent(ref.kind)}/records?${windowQuery(ref, params)}`;
+}
+
+interface FollowOptions {
+  mount: string;
+  ref: TraceRef;
+  onRow: (row: TraceRecord) => void;
+  onError: (error: Error) => void;
+  onOpen: () => void;
+  onEnd: () => void;
+}
+
+/** Native EventSource reconnects with Last-Event-ID; end closes a sealed capture. */
+export function followTraceRecords({ mount, ref, onRow, onError, onOpen, onEnd }: FollowOptions): () => void {
+  const source = new EventSource(traceRecordsUrl(mount, ref, { follow: "1" }));
+  let last = ref.afterSeq ?? 0;
+  let closed = false;
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    source.close();
+  };
+  source.addEventListener("open", () => { if (!closed) onOpen(); });
+  source.addEventListener("message", event => {
+    if (closed) return;
+    try {
+      const row: unknown = JSON.parse(event.data);
+      if (!row || typeof row !== "object" || !("seq" in row) || typeof row.seq !== "number" || !Number.isSafeInteger(row.seq) || row.seq <= 0) {
+        throw new Error(`follow ${ref.kind}: row has no valid seq`);
+      }
+      if (event.lastEventId !== String(row.seq)) throw new Error(`follow ${ref.kind}: event id does not match row seq`);
+      if (row.seq <= last) return;
+      onRow(row as TraceRecord);
+      last = row.seq;
+    } catch (error) {
+      close();
+      onError(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
+  source.addEventListener("error", event => {
+    if (closed) return;
+    if (event instanceof MessageEvent) {
+      close();
+      try {
+        const payload: unknown = JSON.parse(event.data);
+        if (!payload || typeof payload !== "object" || !("error" in payload) || typeof payload.error !== "string") throw new Error("invalid stream error");
+        onError(new Error(payload.error));
+      } catch (error) { onError(error instanceof Error ? error : new Error(String(error))); }
+    } else {
+      onError(new Error(`follow ${ref.kind} stream failed`));
+    }
+  });
+  source.addEventListener("end", () => {
+    if (closed) return;
+    close();
+    onEnd();
+  });
+  return close;
 }
 
 /** Parses an NDJSON body: one record per non-empty line. */

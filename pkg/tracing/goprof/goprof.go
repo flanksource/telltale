@@ -44,16 +44,24 @@ var Profiles = []string{"cpu", "heap", "allocs", "mutex", "block", "goroutine"}
 // let its client choose.
 const gopsCPUSeconds = 30
 
+// Options are what a capture of a tree's profiles chooses beside its target:
+// nothing, as each checkpoint chooses its own profile (CheckpointOptions).
+type Options struct{}
+
+// Validate is the static check of the options, which hold nothing to refuse.
+func (Options) Validate() error { return nil }
+
 // Params choose the tree whose processes a capture profiles.
 type Params struct {
 	Target target.Target `json:"target,omitzero"`
+	Options
 }
 
 func (p Params) Validate() error {
 	if p.Target.PID < 0 {
 		return fmt.Errorf("pid %d is not a process id", p.Target.PID)
 	}
-	return nil
+	return p.Options.Validate()
 }
 
 func (p Params) root() int {
@@ -86,13 +94,20 @@ type Sample struct {
 // Path, a profile a process that may have exited wrote, recorded under the
 // key or pid given. Reason is recorded with the samples.
 type CheckpointParams struct {
-	Key     string `json:"key,omitempty"`
-	PID     int    `json:"pid,omitempty"`
-	Source  string `json:"source"`
-	Profile string `json:"profile"`
-	Seconds int    `json:"seconds,omitempty"`
-	Path    string `json:"path,omitempty"`
-	Reason  string `json:"reason,omitempty"`
+	Key string `json:"key,omitempty"`
+	PID int    `json:"pid,omitempty"`
+	CheckpointOptions
+	Path   string `json:"path,omitempty"`
+	Reason string `json:"reason,omitempty"`
+}
+
+// CheckpointOptions are what a user chooses of each checkpoint's profile: its
+// source, which profile, and how long a live cpu profile runs. The run
+// supplies the reason and the process.
+type CheckpointOptions struct {
+	Source  string `json:"source" clicky:"title=Source,desc=Process profile source"`
+	Profile string `json:"profile" clicky:"title=Profile,desc=Go profile read at each checkpoint"`
+	Seconds int    `json:"seconds,omitempty" clicky:"title=Seconds,desc=Duration of a CPU profile window in seconds"`
 }
 
 func (p CheckpointParams) Validate() error {
@@ -100,8 +115,24 @@ func (p CheckpointParams) Validate() error {
 	if p.Key != "" && p.PID != 0 {
 		errs = append(errs, fmt.Errorf("name a process by key %q or pid %d, not both", p.Key, p.PID))
 	}
-	if p.PID < 0 || p.Seconds < 0 {
-		errs = append(errs, fmt.Errorf("pid %d and seconds %d must not be negative", p.PID, p.Seconds))
+	if p.PID < 0 {
+		errs = append(errs, fmt.Errorf("pid %d must not be negative", p.PID))
+	}
+	if (p.Path != "") != (p.Source == SourceFile) {
+		errs = append(errs, errors.New("a path is what a file source, and only it, reads"))
+	}
+	if p.Source == SourceFile && p.Key == "" && p.PID == 0 {
+		errs = append(errs, errors.New("a profile file needs the key or pid of the process that wrote it"))
+	}
+	return errors.Join(append(errs, p.CheckpointOptions.Validate())...)
+}
+
+// Validate is the static check of a checkpoint's profile choice, before the
+// run names the process it reads.
+func (p CheckpointOptions) Validate() error {
+	var errs []error
+	if p.Seconds < 0 {
+		errs = append(errs, fmt.Errorf("seconds %d must not be negative", p.Seconds))
 	}
 	if !slices.Contains(Profiles, p.Profile) {
 		errs = append(errs, fmt.Errorf("profile %q: expected one of %v", p.Profile, Profiles))
@@ -109,18 +140,12 @@ func (p CheckpointParams) Validate() error {
 	if p.Seconds != 0 && (p.Profile != "cpu" || p.Source == SourceFile) {
 		errs = append(errs, fmt.Errorf("seconds is how long a live cpu profile runs, not a %s %s profile's", p.Source, p.Profile))
 	}
-	if (p.Path != "") != (p.Source == SourceFile) {
-		errs = append(errs, errors.New("a path is what a file source, and only it, reads"))
-	}
 	return errors.Join(append(errs, p.validateSource())...)
 }
 
-func (p CheckpointParams) validateSource() error {
+func (p CheckpointOptions) validateSource() error {
 	switch p.Source {
 	case SourceFile:
-		if p.Key == "" && p.PID == 0 {
-			return errors.New("a profile file needs the key or pid of the process that wrote it")
-		}
 	case SourcePProf:
 		if p.Profile == "cpu" && p.Seconds == 0 {
 			return errors.New("a cpu profile over pprof needs the seconds it runs for")

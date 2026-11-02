@@ -30,7 +30,7 @@ var (
 )
 
 func (p UnifiedParams) httpParams() tracehttp.Params {
-	return tracehttp.Params{Features: p.Features, DedupWindow: p.DedupWindow, Target: p.Target}
+	return tracehttp.Params{Options: tracehttp.Options{Features: p.Features, DedupWindow: p.DedupWindow}, Target: p.Target}
 }
 
 func (p *UnifiedParams) ValidateInput(raw json.RawMessage) error {
@@ -57,7 +57,10 @@ func (p *UnifiedParams) Validate() error {
 		p.dedupDuration = value
 	}
 	if p.Target.Seam == target.Proxy {
-		return p.Params.Validate()
+		return p.Options.Validate()
+	}
+	if p.configured() {
+		return fmt.Errorf("listen and export configure the proxy: they apply only to the %s seam, not %s", target.Proxy, p.Target.Seam)
 	}
 	return p.httpParams().Validate()
 }

@@ -23,6 +23,8 @@ export default defineConfig({
           name: "api",
           environment: "node",
           include: ["packages/api/test/*.spec.ts"],
+          // Each spec drives real telltale servers and child processes.
+          testTimeout: 30000,
           hookTimeout: 30000,
         },
       },

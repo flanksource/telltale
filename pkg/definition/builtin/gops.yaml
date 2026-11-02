@@ -1,0 +1,22 @@
+apiVersion: telltale.flanksource.com/v1alpha1
+kind: TraceDefinition
+metadata:
+  name: gops
+  annotations:
+    telltale.flanksource.com/summary: Read the goroutines and heap of a Go process over its gops agent
+    telltale.flanksource.com/examples: |
+      1234 # read process 1234 every 30 seconds until Ctrl+C
+      1234 --every 5s --duration 1m # read it every 5 seconds for a minute
+spec:
+  description: >-
+    Dumps the goroutines of a Go process that runs a gops agent (github.com/google/gops/agent), and reads its heap profile,
+    every 30s and as an attached run stops. The agent is found from the port file it writes; a process without one is refused.
+  # A gops agent's CPU profile runs 30s.
+  every: 30s
+  collect:
+    go:
+      gops:
+        - {}
+      pprof:
+        - source: gops
+          profile: heap

@@ -8,6 +8,7 @@ import (
 	"github.com/flanksource/telltale/internal/server"
 	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/credentials/apitoken"
+	"github.com/flanksource/telltale/pkg/datadir"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/spf13/cobra"
@@ -16,12 +17,13 @@ import (
 var _ = Describe("HTTP routing", func() {
 	It("protects non-loopback API routes according to token scope", func() {
 		dir := GinkgoT().TempDir()
-		store := agentclient.NewTokenStore(dir)
+		configDirs := []datadir.ConfigDir{{Name: datadir.ConfigGlobal, Dir: dir}}
+		store := agentclient.NewTokenStore(configDirs)
 		agent, err := store.Mint("agent", apitoken.ScopeAgent)
 		Expect(err).NotTo(HaveOccurred())
 		api, err := store.Mint("api", apitoken.ScopeAPI)
 		Expect(err).NotTo(HaveOccurred())
-		handler, err := server.NewHandler(server.HandlerOptions{Root: &cobra.Command{Use: "telltale"}, Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("ok")}}, Traces: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }), Top: http.NotFoundHandler(), WorkDir: dir, RequireAPIAuth: true})
+		handler, err := server.NewHandler(server.HandlerOptions{Root: &cobra.Command{Use: "telltale"}, Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("ok")}}, Traces: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(204) }), Top: http.NotFoundHandler(), DataDir: dir, ConfigDirs: configDirs, RequireAPIAuth: true})
 		Expect(err).NotTo(HaveOccurred())
 		for _, tc := range []struct {
 			token  string

@@ -1,0 +1,98 @@
+{
+  "type": "object",
+  "properties": {
+    "backend": {
+      "type": "string"
+    },
+    "connection": {
+      "type": "string"
+    },
+    "container": {
+      "type": "string"
+    },
+    "levels": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "match": {
+      "type": "string"
+    },
+    "minLevel": {
+      "type": "string"
+    },
+    "namespace": {
+      "type": "string"
+    },
+    "options": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "description": "Dynamic response value"
+      }
+    },
+    "podSelector": {
+      "type": "string"
+    },
+    "query": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "target": {
+      "properties": {
+        "agent": {
+          "type": "string",
+          "title": "Agent",
+          "description": "Agent ID to observe"
+        },
+        "allowMutation": {
+          "type": "boolean",
+          "title": "Allow mutation",
+          "description": "Allow probes to change runtime settings"
+        },
+        "pid": {
+          "type": "integer",
+          "title": "PID",
+          "format": "int32",
+          "description": "Process to observe"
+        },
+        "seam": {
+          "type": "string",
+          "title": "Seam",
+          "description": "How the capture is armed (supported seams: [self agent process])",
+          "enum": [
+            "self",
+            "agent",
+            "process"
+          ],
+          "default": "self"
+        },
+        "selector": {
+          "type": "object",
+          "title": "Selector",
+          "description": "Agent resource attributes to match",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "wait": {
+          "type": "boolean",
+          "title": "Wait for agents",
+          "description": "Wait for a matching agent to connect"
+        }
+      },
+      "type": "object",
+      "x-telltale-seams": [
+        "self",
+        "agent",
+        "process"
+      ]
+    },
+    "timeField": {
+      "type": "string"
+    }
+  }
+}

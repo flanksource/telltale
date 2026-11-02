@@ -31,9 +31,21 @@ type ProcessTraceOptions struct {
 	RootPID int
 	// Interval is how often the tree is sampled; zero is a second.
 	Interval time.Duration
-	// Facets arms every process_samples facet and reads each process's whole
-	// environment onto its node, as a run watched in a UI does.
-	Facets bool
+	// Tree is what the trace reads of each process beside its samples.
+	Tree TreeOptions
+}
+
+// TreeOptions choose what the run-wide process tree reads of each process:
+// the same environment params a process_tree capture takes, and the facets.
+type TreeOptions struct {
+	// Facets arms every process_samples facet and, unless Environment narrows
+	// it, reads each process's whole environment onto its node, as a run
+	// watched in a UI does.
+	Facets bool `json:"facets,omitempty" clicky:"title=Process facets,desc=Read every process's open files sockets and environment into the process tree"`
+	// Environment reads only these keys and prefixes of each process's
+	// environment onto its node, with or without Facets; empty ones read all
+	// of it. Absent reads none, unless Facets is set.
+	Environment *process.EnvironmentParams `json:"environment,omitempty" clicky:"title=Environment,desc=Environment variables read onto each process"`
 }
 
 // ProcessRefs name the process capture's streams in the run's store.
@@ -58,10 +70,14 @@ func (h *Host) StartProcessTrace(options ProcessTraceOptions) (*ProcessTrace, er
 	if options.Interval == 0 {
 		options.Interval = time.Second
 	}
-	base := process.Params{Target: target.Target{PID: options.RootPID}, Interval: options.Interval.String()}
-	tree, samples := process.TreeParams{Params: base}, process.SampleParams{Params: base}
-	if options.Facets {
+	root, interval := target.Target{PID: options.RootPID}, process.Options{Interval: options.Interval.String()}
+	tree := process.TreeParams{TreeOptions: process.TreeOptions{Options: interval}, Target: root}
+	samples := process.SampleParams{SampleOptions: process.SampleOptions{Options: interval}, Target: root}
+	if options.Tree.Facets {
 		tree.Environment, samples.Facets = &process.EnvironmentParams{}, process.Facets
+	}
+	if options.Tree.Environment != nil {
+		tree.Environment = options.Tree.Environment
 	}
 	trace := &ProcessTrace{host: h, interval: options.Interval}
 	var err error
@@ -86,7 +102,7 @@ func (h *Host) startWith(kind string, params any) (*Capture, error) {
 	if err != nil {
 		return nil, fmt.Errorf("encode %s params: %w", kind, err)
 	}
-	return h.Start(kind, raw)
+	return h.Start(StartOptions{Kind: kind, Params: raw})
 }
 
 // Interval is how often the trace samples the tree.

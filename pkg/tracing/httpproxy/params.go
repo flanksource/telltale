@@ -6,6 +6,8 @@ import (
 	"path"
 	"strings"
 
+	"github.com/flanksource/commons-db/query"
+	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/target"
 
 	"github.com/flanksource/commons/properties"
@@ -36,9 +38,13 @@ const defaultBodies = "256KiB"
 // maxBodies is the most of a body a capture may keep.
 const maxBodies = 4 << 20
 
-// Params configure the recording proxy a capture's processes are pointed at.
+// defaultListen is the address a proxy binds when its options name none: a
+// free loopback port.
+const defaultListen = "127.0.0.1:0"
+
+// Options configure the recording proxy a capture's processes are pointed at.
 // Plain (non-TLS) exchanges are recorded in full in either mode.
-type Params struct {
+type Options struct {
 	Mode Mode `json:"mode,omitempty" clicky:"title=Mode,desc=connect records HTTPS tunnels by host; mitm decrypts and records each exchange"`
 	// Hosts are host globs (path.Match), without a port, limiting what is
 	// recorded and, under mitm, what is decrypted; empty records every host.
@@ -59,11 +65,34 @@ type Params struct {
 	// UpstreamCA is a PEM file of authorities the proxy trusts beside the
 	// system roots when, under mitm, it connects to the real server, such as a
 	// local test server's own certificate. It is read when the capture starts.
-	UpstreamCA string        `json:"upstreamCA,omitempty" clicky:"title=Upstream CA file,desc=PEM file of authorities the proxy trusts beside the system roots under mitm"`
-	Target     target.Target `json:"target,omitzero"`
+	UpstreamCA string `json:"upstreamCA,omitempty" clicky:"title=Upstream CA file,desc=PEM file of authorities the proxy trusts beside the system roots under mitm"`
+	// Listen is the host:port the proxy binds; empty is a free loopback port.
+	// A port another process holds fails the start.
+	Listen string `json:"listen,omitempty" clicky:"title=Listen,desc=host:port the proxy listens on such as 127.0.0.1:18080; empty takes a free loopback port"`
+	// Export renames the variables the proxy is exported under, so two
+	// proxies in one run each point the command at their own.
+	Export Export `json:"export,omitzero" clicky:"title=Export,desc=Variable names the proxy and its CA are exported under"`
 }
 
-func (p Params) Validate() error {
+// Export names the variables a proxy capture exports. An empty name keeps the
+// standard ones: HTTP(S)_PROXY in both cases, NO_PROXY in both cases, and,
+// under mitm, the TLS trust variables.
+type Export struct {
+	// Proxy is the one variable the proxy URL is exported under instead of
+	// HTTP_PROXY, http_proxy, HTTPS_PROXY and https_proxy.
+	Proxy string `json:"proxy,omitempty" clicky:"title=Proxy variable,desc=Variable the proxy URL is exported under instead of HTTP(S)_PROXY"`
+	// NoProxy is the one variable the bypass list is exported under instead
+	// of NO_PROXY and no_proxy. With Proxy renamed and NoProxy empty no bypass
+	// list is exported: a client reads it only beside the standard proxy names.
+	NoProxy string `json:"noProxy,omitempty" clicky:"title=No-proxy variable,desc=Variable the bypass list is exported under instead of NO_PROXY"`
+	// CA is the one variable a mitm capture's CA file is exported under
+	// instead of the TLS trust variables.
+	CA string `json:"ca,omitempty" clicky:"title=CA variable,desc=Variable the mitm CA file is exported under instead of SSL_CERT_FILE and the other trust variables"`
+}
+
+// Validate is the static check of a proxy's options: it binds no port and
+// reads no file.
+func (p Options) Validate() error {
 	if p.Mode != ModeConnect && p.Mode != ModeMITM {
 		return fmt.Errorf("mode %q is neither %q nor %q", p.Mode, ModeConnect, ModeMITM)
 	}
@@ -76,11 +105,46 @@ func (p Params) Validate() error {
 	if p.UpstreamCA != "" && p.Mode != ModeMITM {
 		return fmt.Errorf("upstreamCA applies only to mode %q: a %q tunnel is verified by its client", ModeMITM, p.Mode)
 	}
-	return errors.Join(globs("hosts", p.Hosts), globs("paths", p.Paths), names("redact", p.Redact), names("noProxy", p.NoProxy))
+	if p.Export.CA != "" && p.Mode != ModeMITM {
+		return fmt.Errorf("export.ca applies only to mode %q: a %q proxy has no CA to export", ModeMITM, p.Mode)
+	}
+	return errors.Join(globs("hosts", p.Hosts), globs("paths", p.Paths), names("redact", p.Redact), names("noProxy", p.NoProxy),
+		tracing.ValidateListen(p.Listen), p.Export.validate())
+}
+
+// listenAddress is the address the proxy binds.
+func (p Options) listenAddress() string {
+	if p.Listen == "" {
+		return defaultListen
+	}
+	return p.Listen
+}
+
+// configured reports whether any proxy-only option is set, which only the
+// proxy seam honours.
+func (p Options) configured() bool { return p.Listen != "" || p.Export != Export{} }
+
+func (e Export) validate() error {
+	var errs []error
+	for _, name := range []struct{ field, value string }{{"export.proxy", e.Proxy}, {"export.noProxy", e.NoProxy}, {"export.ca", e.CA}} {
+		if name.value == "" {
+			continue
+		}
+		if err := query.ValidateEnvName(name.value); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", name.field, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// Params are a capture's Options on the seam it is armed through.
+type Params struct {
+	Options
+	Target target.Target `json:"target,omitzero"`
 }
 
 // bodyLimit is how many bytes of each body the capture keeps.
-func (p Params) bodyLimit() (int64, error) {
+func (p Options) bodyLimit() (int64, error) {
 	limit, err := properties.ParseBytes(p.Bodies)
 	if err != nil {
 		return 0, fmt.Errorf("bodies: %w", err)

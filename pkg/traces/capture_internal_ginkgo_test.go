@@ -16,10 +16,10 @@ import (
 
 var _ = Describe("marking a capture whose session failed", func() {
 	It("names the failure that ended the session", func() {
-		host, err := Open(OpenOptions{WorkDir: GinkgoT().TempDir(), RunID: RunID(time.Now())})
+		host, err := Open(OpenOptions{DataDir: GinkgoT().TempDir(), RunID: RunID(time.Now())})
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(func() { Expect(host.Close(context.Background())).To(Succeed()) })
-		capture, err := host.startWith(process.SamplesKind, process.SampleParams{Params: process.Params{Target: target.Target{PID: os.Getpid()}, Interval: time.Hour.String()}})
+		capture, err := host.startWith(process.SamplesKind, process.SampleParams{SampleOptions: process.SampleOptions{Options: process.Options{Interval: time.Hour.String()}}, Target: target.Target{PID: os.Getpid()}})
 		Expect(err).ToNot(HaveOccurred())
 		cause := errors.New("read disk I/O for process 5675: operation not permitted")
 		_, _ = capture.managed.Abort(cause)

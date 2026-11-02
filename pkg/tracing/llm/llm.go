@@ -16,14 +16,21 @@ import (
 
 const Kind = "llm"
 
-type Params struct {
-	Target           target.Target `json:"target,omitzero"`
-	Models           string        `json:"models,omitempty" clicky:"desc=Model glob"`
-	IncludePrompts   bool          `json:"includePrompts,omitempty" clicky:"desc=Include prompts"`
-	IncludeResponses bool          `json:"includeResponses,omitempty" clicky:"desc=Include responses"`
+// Options choose the model calls a capture records and what it keeps of them.
+type Options struct {
+	Models           string `json:"models,omitempty" clicky:"desc=Model glob"`
+	IncludePrompts   bool   `json:"includePrompts,omitempty" clicky:"desc=Include prompts"`
+	IncludeResponses bool   `json:"includeResponses,omitempty" clicky:"desc=Include responses"`
 }
 
-func (p Params) Validate() error {
+// Params are a capture's Options in the process its target names.
+type Params struct {
+	Target target.Target `json:"target,omitzero"`
+	Options
+}
+
+// Validate is the static check of the models glob.
+func (p Options) Validate() error {
 	if _, err := path.Match(p.Models, ""); err != nil {
 		return fmt.Errorf("models glob: %w", err)
 	}

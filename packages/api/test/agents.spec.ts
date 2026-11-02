@@ -8,15 +8,17 @@ import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const run = promisify(execFile);
-let workDir: string;
+let testDir: string;
 let server: ChildProcessWithoutNullStreams;
 let apiURL: string;
 let token: string;
+// env keeps the tokens the tests mint out of the user's config dir.
+const env = () => ({ ...process.env, XDG_CONFIG_HOME: join(testDir, "config") });
 
 beforeAll(async () => {
-  workDir = await mkdtemp(join(process.cwd(), ".tmp", "agents-"));
-  token = (await run(".bin/telltale", ["agents", "token", "create", "api-test", "--work-dir", workDir])).stdout.trim();
-  server = spawn(".bin/telltale", ["serve", "--port", "0", "--work-dir", workDir]);
+  testDir = await mkdtemp(join(process.cwd(), ".tmp", "agents-"));
+  token = (await run(".bin/telltale", ["agents", "token", "create", "api-test"], { env: env() })).stdout.trim();
+  server = spawn(".bin/telltale", ["serve", "--port", "0", "--data-dir", testDir], { env: env() });
   apiURL = await new Promise<string>((resolve, reject) => {
     let output = "";
     server.stdout.on("data", (chunk: Buffer) => {
@@ -36,13 +38,13 @@ afterAll(async () => {
     server.kill("SIGTERM");
     await stopped;
   }
-  if (workDir) await rm(workDir, { recursive: true, force: true });
+  if (testDir) await rm(testDir, { recursive: true, force: true });
 });
 
 describe("agents API", () => {
   it("requires API scope on non-loopback server routes", async () => {
-    const apiToken = (await run(".bin/telltale", ["agents", "token", "create", "api-test", "--scope", "api", "--work-dir", workDir])).stdout.trim();
-    const publicServer = spawn(".bin/telltale", ["serve", "--host", "0.0.0.0", "--port", "0", "--work-dir", workDir]);
+    const apiToken = (await run(".bin/telltale", ["agents", "token", "create", "api-test", "--scope", "api"], { env: env() })).stdout.trim();
+    const publicServer = spawn(".bin/telltale", ["serve", "--host", "0.0.0.0", "--port", "0", "--data-dir", testDir], { env: env() });
     try {
       const address = await new Promise<string>((resolve, reject) => {
         let output = "";
@@ -92,7 +94,7 @@ describe("agents API", () => {
 
   it("arms a connected agent selected by its pod resource", async () => {
     const child = spawn("go", ["run", "./pkg/tracing/seam/testdata/hubchild"], {
-      env: { ...process.env, TELLTALE_URL: apiURL, TELLTALE_TOKEN: token, POD_NAME: "api-pod", AGENT_CONFIG_DIR: workDir, AGENT_LISTEN: "tcp" },
+      env: { ...process.env, TELLTALE_URL: apiURL, TELLTALE_TOKEN: token, POD_NAME: "api-pod", AGENT_CONFIG_DIR: testDir, AGENT_LISTEN: "tcp" },
     });
     let childError = "";
     child.stderr.on("data", (chunk: Buffer) => { childError += chunk.toString(); });

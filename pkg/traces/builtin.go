@@ -1,6 +1,9 @@
 package traces
 
 import (
+	"encoding/json"
+	"fmt"
+
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/goprof"
 	"github.com/flanksource/telltale/pkg/tracing/groups"
@@ -29,7 +32,7 @@ func init() {
 				{Args: "--pid 1234 --duration 30s", Says: "follow process 1234's tree for 30 seconds"},
 			},
 			New: func(deps KindDeps) tracing.TracePlugin {
-				return process.NewTreeKind(deps.Sampler, process.TreeOptions{Dumpers: deps.Dumpers})
+				return process.NewTreeKind(deps.Sampler, process.TreeKindOptions{Dumpers: deps.Dumpers})
 			},
 		},
 		{
@@ -48,7 +51,7 @@ func init() {
 			Summary: "Record the CPU, memory, disk, sockets and network of each tool's processes on the host",
 			Description: "Sorts every process on the host into the tool that owns it — claude, codex, cmux, gavel, go test, vitest, agent-browser, chrome and more — " +
 				"as a tree of groups, each with its working directory, checkout, agent session and cmux workspace, and records what each group and those under it use. " +
-				"Rules come from the built-in catalog and .telltale/groups.yaml. Network bytes are read with nettop on darwin only when asked for, as it costs over a core.",
+				"Rules come from the built-in catalog and groups.yaml in ./.telltale, else the global config dir. Network bytes are read with nettop on darwin only when asked for, as it costs over a core.",
 			Examples: []Example{
 				{Args: "--duration 10m", Says: "record every tool's groups for ten minutes"},
 				{Args: "--groups claude,vitest --net", Says: "record claude sessions and vitest runs with their network bytes"},
@@ -65,11 +68,16 @@ func init() {
 				{Args: "--every 10s -- ./server", Says: "dump the server's stacks every 10 seconds"},
 				{Args: "--pid 1234 --duration 5s", Says: "dump process 1234's stacks once as the run stops"},
 			},
+			Readable: gopsReadable(func(checkpoint json.RawMessage) (bool, error) {
+				var params stacks.CheckpointParams
+				err := json.Unmarshal(checkpoint, &params)
+				return params.Transport == stacks.TransportGops, err
+			}),
 			New: func(deps KindDeps) tracing.TracePlugin { return stacks.NewKind(nil, deps.Dumpers) },
 		},
 		{
 			Name: goprof.Kind, Title: "Go profiles", Seams: []target.Seam{target.Process, target.Agent, target.Self}, DefaultSeam: target.Process,
-			Checkpoint: goprof.CheckpointParams{Source: goprof.SourceGops, Profile: "heap", Reason: "interval"},
+			Checkpoint: goprof.CheckpointParams{CheckpointOptions: goprof.CheckpointOptions{Source: goprof.SourceGops, Profile: "heap"}, Reason: "interval"},
 			Summary:    "Read the heap profile of a Go process over its gops agent at each checkpoint",
 			Description: "Reads a pprof profile of a Go process that runs a gops agent (github.com/google/gops/agent) at each checkpoint: " +
 				"every --every, and as an attached run stops. The agent is found from the port file it writes. " +
@@ -78,6 +86,11 @@ func init() {
 				{Args: "--every 30s -- ./server", Says: "read the server's heap every 30 seconds"},
 				{Args: "--pid 1234 --duration 1m --every 15s", Says: "read process 1234's heap every 15 seconds for a minute"},
 			},
+			Readable: gopsReadable(func(checkpoint json.RawMessage) (bool, error) {
+				var params goprof.CheckpointParams
+				err := json.Unmarshal(checkpoint, &params)
+				return params.Source == goprof.SourceGops, err
+			}),
 			New: func(KindDeps) tracing.TracePlugin { return goprof.NewKind(goprof.Addresses{Gops: stacks.GopsAddress}) },
 		},
 		{
@@ -106,5 +119,22 @@ func init() {
 		},
 	} {
 		MustRegister(registration)
+	}
+}
+
+// gopsReadable refuses a process without a gops agent when its checkpoint
+// params, as readsGops tells, read over one: the agent's port file is what a
+// gops reading dials, so a process without one could never be read.
+func gopsReadable(readsGops func(checkpoint json.RawMessage) (bool, error)) func(int, json.RawMessage) error {
+	return func(pid int, checkpoint json.RawMessage) error {
+		gops, err := readsGops(checkpoint)
+		if err != nil {
+			return fmt.Errorf("checkpoint params: %w", err)
+		}
+		if !gops {
+			return nil
+		}
+		_, err = stacks.GopsPort(pid)
+		return err
 	}
 }

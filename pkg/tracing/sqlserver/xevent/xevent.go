@@ -14,15 +14,16 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing/sqlserver/xeprovider"
 	"github.com/flanksource/telltale/pkg/tracing/sqlserver/xesession"
 	"github.com/flanksource/telltale/pkg/tracing/sqlserver/xetrace"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
 )
 
-// Options are what a capture opens: the connection it captures on, the XE
+// SessionOptions are what a capture opens: the connection it captures on, the XE
 // session it creates there, and how that session is drained.
-type Options struct {
+type SessionOptions struct {
 	Connection string
 	Create     xetrace.CreateOptions
 	Drain      xetrace.DrainOptions
@@ -32,25 +33,34 @@ type Options struct {
 // is asked once as the capture starts, so options it takes from the clock,
 // such as a drain's StartedAt, are the start's.
 type Capturable interface {
-	XEventOptions() (Options, error)
+	XEventOptions() (SessionOptions, error)
 }
 
 // Params are the SQL Server connection to capture on and the capture's
 // options, as the sqlserver-xevent provider takes them.
 type Params struct {
+	Target target.Target `json:"target,omitzero"`
+	Options
+}
+
+// Options are the SQL Server connection a capture's XE session is created on
+// and the session's own options.
+type Options struct {
 	Connection string `json:"connection" clicky:"required,title=Connection"`
 	xeprovider.XEventCaptureOptions
 }
 
-func (p Params) XEventOptions() (Options, error) {
+func (p Options) XEventOptions() (SessionOptions, error) {
 	if strings.TrimSpace(p.Connection) == "" {
-		return Options{}, errors.New("connection is required: the SQL Server connection to capture on")
+		return SessionOptions{}, errors.New("connection is required: the SQL Server connection to capture on")
 	}
 	create, drain, err := p.CaptureOptions()
-	return Options{Connection: p.Connection, Create: create, Drain: drain}, err
+	return SessionOptions{Connection: p.Connection, Create: create, Drain: drain}, err
 }
 
-func (p Params) Validate() error {
+// Validate is the static check of the session's options: it opens no
+// connection and creates no session.
+func (p Options) Validate() error {
 	_, err := p.XEventOptions()
 	return err
 }
@@ -196,7 +206,7 @@ func (events[P]) Handle(ctx dbcontext.Context, _ P, records tracing.Emitter[xese
 // type: events masked, but never the session ids and users that only look
 // sensitive.
 func NewKindFor[P Capturable](capture Capture) *tracing.Handler[P, xesession.EventRow] {
-	return tracing.NewHandler[P, xesession.EventRow](events[P]{capture: capture}, tracing.Capabilities{Live: true}, "process").
+	return tracing.NewHandler[P, xesession.EventRow](events[P]{capture: capture}, tracing.Capabilities{Live: true}, target.Connection).
 		WithSecretMasking("sessionId", "username")
 }
 

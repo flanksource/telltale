@@ -1,11 +1,8 @@
 package telltale
 
 import (
-	"encoding/json"
 	"fmt"
-	"maps"
 	"slices"
-	"strings"
 
 	"github.com/flanksource/clicky/rpc"
 	"github.com/flanksource/telltale/pkg/traces"
@@ -14,8 +11,8 @@ import (
 )
 
 // ArmableKinds are the registered kinds the start form offers
-// (traces.Registration.Armable): the proxies a command is pointed at through
-// their exports, sorted by name.
+// (traces.Registration.Armable), sorted by name. A start request may arm any
+// registered kind; these are the ones its form shows.
 func ArmableKinds() []traces.Registration {
 	var armable []traces.Registration
 	for _, registration := range traces.Registrations() {
@@ -24,101 +21,6 @@ func ArmableKinds() []traces.Registration {
 		}
 	}
 	return armable
-}
-
-// enabledKey is the switch each capture's object in a StartRequest carries
-// beside its kind's params.
-const enabledKey = "enabled"
-
-// StartRequest is a run as a client asks for it, the shape StartSchema
-// describes: a shell command and, per armable kind, whether to arm it and
-// its params.
-type StartRequest struct {
-	Command string                     `json:"command"`
-	Facets  bool                       `json:"facets,omitempty"`
-	Traces  map[string]json.RawMessage `json:"traces,omitempty"`
-}
-
-// FieldError is one refused field of a StartRequest, at its JSON pointer.
-type FieldError struct {
-	InstancePath string `json:"instancePath"`
-	Message      string `json:"message"`
-}
-
-// ValidationError is a StartRequest refused field by field.
-type ValidationError struct {
-	Fields []FieldError `json:"errors"`
-}
-
-func (e *ValidationError) Error() string {
-	messages := make([]string, 0, len(e.Fields))
-	for _, field := range e.Fields {
-		messages = append(messages, field.InstancePath+": "+field.Message)
-	}
-	return "invalid start request: " + strings.Join(messages, "; ")
-}
-
-// Options are the StartOptions the request asks for, its command run with
-// `sh -c` in workDir and traced from its own root (TraceRootCommand). A
-// refused request is a *ValidationError naming each field.
-func (r StartRequest) Options(workDir string) (StartOptions, error) {
-	kinds, err := traces.Kinds()
-	if err != nil {
-		return StartOptions{}, err
-	}
-	var fields []FieldError
-	if strings.TrimSpace(r.Command) == "" {
-		fields = append(fields, FieldError{InstancePath: "/command", Message: "a command is required"})
-	}
-	var specs []TraceSpec
-	for _, kind := range slices.Sorted(maps.Keys(r.Traces)) {
-		spec, armed, err := armedSpec(kind, r.Traces[kind])
-		if err == nil && armed {
-			err = traces.Validate(kinds, kind, spec.Params)
-		}
-		if err != nil {
-			fields = append(fields, FieldError{InstancePath: "/traces/" + kind, Message: err.Error()})
-			continue
-		}
-		if armed {
-			specs = append(specs, spec)
-		}
-	}
-	if len(fields) > 0 {
-		return StartOptions{}, &ValidationError{Fields: fields}
-	}
-	return StartOptions{
-		WorkDir: workDir, Dir: workDir, Command: []string{"sh", "-c", r.Command}, Traces: specs, Facets: r.Facets,
-		TraceRoot: TraceRootCommand,
-	}, nil
-}
-
-// armedSpec reads one capture's object: its enabled switch and, the switch
-// stripped, its kind's params.
-func armedSpec(kind string, raw json.RawMessage) (TraceSpec, bool, error) {
-	var names []string
-	for _, registration := range ArmableKinds() {
-		names = append(names, registration.Name)
-	}
-	if !slices.Contains(names, kind) {
-		return TraceSpec{}, false, fmt.Errorf("%q is not a kind a run arms (want one of %s)", kind, strings.Join(names, ", "))
-	}
-	var values map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &values); err != nil {
-		return TraceSpec{}, false, fmt.Errorf("want an object: %w", err)
-	}
-	var enabled bool
-	if value, ok := values[enabledKey]; ok {
-		if err := json.Unmarshal(value, &enabled); err != nil {
-			return TraceSpec{}, false, fmt.Errorf("%s: want a boolean: %w", enabledKey, err)
-		}
-	}
-	delete(values, enabledKey)
-	params, err := json.Marshal(values)
-	if err != nil {
-		return TraceSpec{}, false, fmt.Errorf("encode params: %w", err)
-	}
-	return TraceSpec{Kind: kind, Params: params}, enabled, nil
 }
 
 // StartSchema is the JSON schema of a StartRequest, the form a client renders
@@ -141,8 +43,11 @@ func StartSchema() (*rpc.OpenAPISchema, map[string]any, error) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("trace kind %q: %w", kind, err)
 		}
-		if len(registration.Seams) == 1 && slices.Contains([]target.Seam{target.Self, target.Host, target.Proxy}, registration.Seams[0]) {
+		if len(registration.Seams) == 1 && slices.Contains([]target.Seam{target.Self, target.Host, target.Proxy, target.Connection}, registration.Seams[0]) {
 			delete(params.Properties, "target")
+		}
+		if selection := params.Properties["target"]; selection != nil {
+			delete(selection.Properties, "pid")
 		}
 		captures.Properties[kind] = captureSchema(registration.Title, order, params)
 		defaults := map[string]any{enabledKey: kind == httpproxy.Kind}
@@ -160,22 +65,30 @@ func StartSchema() (*rpc.OpenAPISchema, map[string]any, error) {
 		captureDefaults[kind] = defaults
 	}
 	schema := &rpc.OpenAPISchema{
-		Type: "object", Required: []string{"command"},
+		Type: "object",
 		Properties: map[string]*rpc.OpenAPISchema{
+			"pid":      {Type: "integer", Title: "PID", Description: "Attach to a local running process instead of a command"},
+			"duration": {Type: "string", Title: "Duration", Description: "Stop after this duration, e.g. 30s"},
+			"every":    {Type: "string", Title: "Checkpoint interval", Description: "Read checkpoints at this interval, e.g. 10s"},
 			"command": {
 				Type: "string", Title: "Command", Format: "textarea",
-				Description: "Run with sh -c in the server's work dir",
+				Description: "Run with sh -c in the server's working directory",
 				Extensions:  map[string]any{"x-clicky-order": 0},
 			},
-			"facets": {
-				Type: "boolean", Title: "Process facets",
-				Description: "Read every process's open files, sockets and environment into the process tree",
-				Extensions:  map[string]any{"x-clicky-order": 1},
-			},
+			"tree":   withOrder(treeSchema(), 1),
 			"traces": withOrder(captures, 2),
 		},
 	}
-	return schema, map[string]any{"command": "", "facets": false, "traces": captureDefaults}, nil
+	return schema, map[string]any{"command": "", "tree": map[string]any{"facets": false}, "traces": captureDefaults}, nil
+}
+
+// treeSchema is the run-wide process tree's options, reflected from
+// traces.TreeOptions as a kind's params are.
+func treeSchema() *rpc.OpenAPISchema {
+	schema := rpc.SchemaForStruct(traces.TreeOptions{})
+	schema.Title = "Process tree"
+	schema.Description = "What the run's process tree reads of each process"
+	return schema
 }
 
 // captureSchema is one armable kind's object: its enabled switch and, while

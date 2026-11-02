@@ -3,16 +3,16 @@ package groups
 import (
 	"cmp"
 	"context"
-	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	clickyprocess "github.com/flanksource/clicky/process"
+	"github.com/flanksource/telltale/pkg/datadir"
 	"github.com/flanksource/telltale/pkg/tracing/process"
 )
 
@@ -59,15 +59,24 @@ type ProcessSample struct {
 }
 
 // ProcessFilter picks processes: those of a group, those running a
-// program, or a process and every one under it.
+// program, a process and every one under it, or those whose name, command
+// or pid holds the Query text, case-insensitively.
 type ProcessFilter struct {
 	GroupKey string
 	Name     string
 	PID      int
+	Query    string
 }
 
-// Options choose what a Top reads and shows.
-type Options struct {
+func (p ProcessSample) holds(query string) bool {
+	query = strings.ToLower(query)
+	return strings.Contains(strings.ToLower(p.Name), query) ||
+		strings.Contains(strings.ToLower(p.Command), query) ||
+		strings.Contains(strconv.Itoa(p.PID), query)
+}
+
+// TopOptions choose what a Top reads and shows.
+type TopOptions struct {
 	Catalog Catalog
 	// All shows, and reads the disk and descriptors of, the processes in no
 	// tool's group too.
@@ -83,7 +92,7 @@ type Options struct {
 type Top struct {
 	mu        sync.Mutex
 	sampler   *process.Sampler
-	options   Options
+	options   TopOptions
 	rates     *Rates
 	contexts  *contexts
 	launchd   launchd
@@ -98,7 +107,7 @@ type Top struct {
 
 // NewTop is a Top over sampler, refusing a group no rule names; with Net it
 // starts nettop, which Close stops.
-func NewTop(ctx context.Context, sampler *process.Sampler, options Options) (*Top, error) {
+func NewTop(ctx context.Context, sampler *process.Sampler, options TopOptions) (*Top, error) {
 	for _, name := range options.Groups {
 		if _, ok := options.Catalog.Rule(name); !ok {
 			return nil, fmt.Errorf("group %q is no rule of the catalog", name)
@@ -211,6 +220,7 @@ func (t *Top) Processes(filter ProcessFilter) []ProcessSample {
 		case filter.PID != 0 && !picked[p.PID]:
 		case filter.GroupKey != "" && p.GroupKey != filter.GroupKey:
 		case filter.Name != "" && p.Name != filter.Name:
+		case filter.Query != "" && !p.holds(filter.Query):
 		default:
 			result = append(result, p)
 		}
@@ -288,15 +298,13 @@ func countOf(held []clickyprocess.Descriptor, holds func(clickyprocess.Descripto
 
 func keyOf(p process.Observed) string { return process.Key(p.Process) }
 
-// CatalogFile is the groups catalog a work directory keeps, at
-// .telltale/groups.yaml, or "" when it keeps none.
-func CatalogFile(workDir string) (string, error) {
-	path := filepath.Join(workDir, ".telltale", "groups.yaml")
-	if _, err := os.Stat(path); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return "", nil
-		}
+// CatalogFile is the groups.yaml of the first config dir that keeps one (the
+// working directory's .telltale, then the global config dir), or "" when none
+// does.
+func CatalogFile() (string, error) {
+	dirs, err := datadir.ConfigDirs()
+	if err != nil {
 		return "", fmt.Errorf("groups catalog: %w", err)
 	}
-	return path, nil
+	return datadir.ConfigFile(dirs, "groups.yaml")
 }

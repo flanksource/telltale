@@ -16,6 +16,7 @@ import (
 
 	"github.com/elazarl/goproxy"
 
+	"github.com/flanksource/telltale/pkg/tracing"
 	tracehttp "github.com/flanksource/telltale/pkg/tracing/http"
 )
 
@@ -49,16 +50,17 @@ type recorder struct {
 	ended bool
 }
 
-// listen starts a recorder on a loopback port it keeps, so nothing can take
-// the port between choosing and binding it.
+// listen starts a recorder on the address its options name, by default a
+// loopback port it keeps, so nothing can take the port between choosing and
+// binding it.
 func listen(params Params, rules policy, ca *authority, emit func(tracehttp.Exchange), warn func(string)) (*recorder, error) {
 	roots, err := upstreamRoots(params.UpstreamCA)
 	if err != nil {
 		return nil, err
 	}
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	listener, err := tracing.Listen("http proxy", params.listenAddress())
 	if err != nil {
-		return nil, fmt.Errorf("http proxy listen: %w", err)
+		return nil, err
 	}
 	r := &recorder{
 		params: params, rules: rules, listener: listener, ca: ca, emit: emit,

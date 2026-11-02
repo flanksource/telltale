@@ -27,7 +27,9 @@ const maxValueBytes = 6 << 20
 
 type proxy struct{}
 
-func (proxy) Params() Params { return Params{Mode: ModeConnect, Bodies: defaultBodies} }
+func (proxy) Params() Params {
+	return Params{Options: Options{Mode: ModeConnect, Bodies: defaultBodies}}
+}
 
 func (proxy) Schema() recordresults.ResultType[tracehttp.Exchange] {
 	return recordresults.ResultType[tracehttp.Exchange]{Title: "HTTP proxy traffic", TimeColumn: "startedAt"}
@@ -51,7 +53,7 @@ func (proxy) Prepare(ctx dbcontext.Context, params Params, records tracing.Emitt
 	if err != nil {
 		return ctx, nil, errors.Join(err, removeDir(caDir))
 	}
-	for _, variable := range proxyEnv(rec.addr(), params.NoProxy, caPath) {
+	for _, variable := range proxyEnv(rec.addr(), params.NoProxy, caPath, params.Export) {
 		records.Export(variable[0], variable[1])
 	}
 	metadata := []query.SessionMetadata{{Name: "mode", Label: "Mode", Value: string(params.Mode)}}
@@ -85,20 +87,49 @@ func removeDir(dir string) error {
 	return nil
 }
 
+// ExportNames are the variables a capture with these options exports, so two
+// proxies of one run can be checked for a clash before either starts. An
+// empty mode is the connect default, which exports no CA.
+func (o Options) ExportNames() []string {
+	var caPath string
+	if o.Mode == ModeMITM {
+		caPath = "ca.pem"
+	}
+	var names []string
+	for _, pair := range proxyEnv(defaultListen, o.NoProxy, caPath, o.Export) {
+		names = append(names, pair[0])
+	}
+	return names
+}
+
 // proxyEnv routes a process through the proxy at addr. Both cases are set,
 // curl reading the lowercase names and Node the uppercase. NO_PROXY bypasses
 // the proxy itself and noProxy, but not loopback at large: a server the host
 // started on 127.0.0.1 is the traffic most worth recording. Under mitm the
-// process's TLS stack is pointed at caPath.
-func proxyEnv(addr string, noProxy []string, caPath string) [][2]string {
+// process's TLS stack is pointed at caPath. Each name export sets replaces
+// its standard ones; a renamed proxy exports a bypass list only under a
+// renamed one.
+func proxyEnv(addr string, noProxy []string, caPath string, export Export) [][2]string {
 	proxyURL := "http://" + addr
 	bypass := strings.Join(append([]string{addr}, noProxy...), ",")
-	env := [][2]string{
-		{"HTTP_PROXY", proxyURL}, {"http_proxy", proxyURL},
-		{"HTTPS_PROXY", proxyURL}, {"https_proxy", proxyURL},
-		{"NO_PROXY", bypass}, {"no_proxy", bypass},
+	var env [][2]string
+	switch export.Proxy {
+	case "":
+		env = [][2]string{{"HTTP_PROXY", proxyURL}, {"http_proxy", proxyURL}, {"HTTPS_PROXY", proxyURL}, {"https_proxy", proxyURL}}
+	default:
+		env = [][2]string{{export.Proxy, proxyURL}}
 	}
-	if caPath != "" {
+	switch {
+	case export.NoProxy != "":
+		env = append(env, [2]string{export.NoProxy, bypass})
+	case export.Proxy == "":
+		env = append(env, [2]string{"NO_PROXY", bypass}, [2]string{"no_proxy", bypass})
+	}
+	switch {
+	case caPath == "":
+	case export.CA != "":
+		env = append(env, [2]string{export.CA, caPath})
+	default:
 		env = append(env, trustEnv(caPath)...)
 	}
 	return env

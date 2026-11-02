@@ -22,8 +22,8 @@ const (
 	maxEvents = 20000
 )
 
-// Params describe the terminal a host feeds the capture from.
-type Params struct {
+// Options describe the terminal a host feeds the capture from.
+type Options struct {
 	// Width and Height are the terminal's size in cells, and the viewport the
 	// settled snapshots are bounded by.
 	Width  int `json:"width,omitempty" clicky:"title=Width,desc=Terminal width in cells"`
@@ -35,11 +35,17 @@ type Params struct {
 	// events. The screen goes on settling past it.
 	MaxBytes string `json:"maxBytes,omitempty" clicky:"title=Max bytes,desc=Most output recorded as events such as 4MiB"`
 	// Command is the command line the terminal runs, for the cast's header.
-	Command []string      `json:"command,omitempty" clicky:"title=Command,desc=Command line named in the cast's header"`
-	Target  target.Target `json:"target,omitzero"`
+	Command []string `json:"command,omitempty" clicky:"title=Command,desc=Command line named in the cast's header"`
 }
 
-func (p Params) Validate() error {
+// Params are a capture's Options in this process.
+type Params struct {
+	Options
+	Target target.Target `json:"target,omitzero"`
+}
+
+// Validate is the static check of the terminal's size, interval and cap.
+func (p Options) Validate() error {
 	if p.Width <= 0 || p.Height <= 0 {
 		return fmt.Errorf("width and height must be > 0 (got %dx%d)", p.Width, p.Height)
 	}
@@ -50,7 +56,7 @@ func (p Params) Validate() error {
 	return err
 }
 
-func (p Params) interval() (time.Duration, error) {
+func (p Options) interval() (time.Duration, error) {
 	interval, err := time.ParseDuration(p.SnapshotInterval)
 	if err != nil || interval <= 0 {
 		return 0, fmt.Errorf("snapshotInterval %q is not a positive duration such as 100ms", p.SnapshotInterval)
@@ -58,7 +64,7 @@ func (p Params) interval() (time.Duration, error) {
 	return interval, nil
 }
 
-func (p Params) byteCap() (int64, error) {
+func (p Options) byteCap() (int64, error) {
 	size, err := properties.ParseBytes(p.MaxBytes)
 	if err != nil || size <= 0 {
 		return 0, fmt.Errorf("maxBytes %q is not a positive size such as 4MiB", p.MaxBytes)

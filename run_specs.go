@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/flanksource/telltale/pkg/traces"
+	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/seam"
 	"github.com/flanksource/telltale/pkg/tracing/target"
 )
@@ -69,7 +70,7 @@ func aimedSpecs(options StartOptions) ([]aimedSpec, error) {
 		if err != nil {
 			return nil, fmt.Errorf("trace %s params: %w", spec.Kind, err)
 		}
-		if options.host() && resolved.Seam != target.Host && resolved.Seam != target.Self && resolved.Seam != target.Agent {
+		if options.host() && resolved.Seam != target.Host && resolved.Seam != target.Self && resolved.Seam != target.Agent && resolved.Seam != target.Connection {
 			return nil, fmt.Errorf("%s observes a command or a process: give a command or a pid to attach to", spec.Kind)
 		}
 		armed := aimedSpec{TraceSpec: spec, target: resolved.Seam, checkpoint: spec.Checkpoint}
@@ -81,6 +82,11 @@ func aimedSpecs(options StartOptions) ([]aimedSpec, error) {
 		if armed.checkpoint == nil && registration.Checkpoint != nil {
 			if armed.checkpoint, err = json.Marshal(registration.Checkpoint); err != nil {
 				return nil, fmt.Errorf("trace %s checkpoint params: %w", spec.Kind, err)
+			}
+		}
+		if registration.Readable != nil && armed.checkpoint != nil && resolved.Seam == target.Process && resolved.PID != 0 {
+			if err := registration.Readable(resolved.PID, armed.checkpoint); err != nil {
+				return nil, fmt.Errorf("trace %s: %w", spec.Kind, err)
 			}
 		}
 		specs = append(specs, armed)
@@ -157,21 +163,41 @@ func (c *checkpoints) failed() []string {
 func (r *Run) checkpoint(ctx context.Context, reason string) {
 	for index, capture := range r.captures {
 		spec := r.specs[index]
-		if spec.checkpoint == nil {
+		if spec.checkpoint == nil || capture.Finished() {
 			continue
 		}
 		params, err := withValue(spec.checkpoint, "reason", reason)
-		if err == nil && spec.target == target.Process && r.cmd != nil && !names(params, "pid", "key") {
+		ofCommand := err == nil && spec.target == target.Process && r.cmd != nil && !names(params, "pid", "key")
+		if ofCommand {
 			params, err = withValue(params, "pid", r.cmd.Process.Pid)
 		}
 		if err == nil {
 			err = capture.Checkpoint(ctx, params)
+		}
+		// The command leaves its tree only by exiting: a read that found it gone
+		// raced the exit that ends the run, and is no failure once the command exits.
+		if ofCommand && errors.Is(err, tracing.ErrCheckpointParams) && r.exitsWithin(commandExitGrace) {
+			continue
 		}
 		if err != nil {
 			r.checkpoints.mu.Lock()
 			r.checkpoints.errors = append(r.checkpoints.errors, fmt.Sprintf("%s %s checkpoint: %v", spec.Kind, reason, err))
 			r.checkpoints.mu.Unlock()
 		}
+	}
+}
+
+// commandExitGrace bounds how long a checkpoint that found the command gone
+// waits for the run to see the command exit.
+const commandExitGrace = time.Second
+
+// exitsWithin reports whether the command has exited, or exits within grace.
+func (r *Run) exitsWithin(grace time.Duration) bool {
+	select {
+	case <-r.exited:
+		return true
+	case <-time.After(grace):
+		return false
 	}
 }
 

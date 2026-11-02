@@ -29,8 +29,16 @@ const Kind = "stacks"
 // maxRawBytes cuts a stored dump longer than this.
 const maxRawBytes = 1 << 20
 
+// Options are what a capture of a tree's stacks chooses beside its target:
+// nothing, as each checkpoint chooses its own transport (CheckpointOptions).
+type Options struct{}
+
+// Validate is the static check of the options, which hold nothing to refuse.
+func (Options) Validate() error { return nil }
+
 // Params choose the tree whose processes a capture dumps.
 type Params struct {
+	Options
 	Target target.Target `json:"target,omitzero"`
 }
 
@@ -38,7 +46,7 @@ func (p Params) Validate() error {
 	if p.Target.PID < 0 {
 		return fmt.Errorf("pid %d is not a process id", p.Target.PID)
 	}
-	return nil
+	return p.Options.Validate()
 }
 
 func (p Params) root() int {
@@ -85,11 +93,17 @@ type Stack struct {
 // no transport. Reason, such as "periodic", "timeout" or "manual", is
 // recorded with the stacks.
 type CheckpointParams struct {
-	Key       string `json:"key,omitempty"`
-	PID       int    `json:"pid,omitempty"`
+	Key string `json:"key,omitempty"`
+	PID int    `json:"pid,omitempty"`
+	CheckpointOptions
+	Reason string `json:"reason,omitempty"`
+	Dump   *Dump  `json:"dump,omitempty"`
+}
+
+// CheckpointOptions are what a user chooses of each checkpoint's dump: the
+// transport it is taken over. The run supplies the reason and the process.
+type CheckpointOptions struct {
 	Transport string `json:"transport,omitempty"`
-	Reason    string `json:"reason,omitempty"`
-	Dump      *Dump  `json:"dump,omitempty"`
 }
 
 func (p CheckpointParams) Validate() error {

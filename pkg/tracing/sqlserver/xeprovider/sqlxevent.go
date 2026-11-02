@@ -53,12 +53,13 @@ func (sqlXEventProvider) Execute(context.Context, query.ProviderRequest) ([]quer
 // the documented default" rather than a number this struct has to keep in step
 // with xetrace.
 type XEventCaptureOptions struct {
+	Session ExistingSession `json:"session,omitempty" clicky:"title=Existing session"`
 	// SessionName names the Extended Events session on the server. Required:
 	// the session is visible in sys.dm_xe_sessions to everyone on the instance,
 	// so what it is called is the profile author's to say, not this package's.
 	// A unique suffix is appended so concurrent captures of one profile do not
 	// collide on the server.
-	SessionName string `json:"sessionName"`
+	SessionName string `json:"sessionName,omitempty"`
 
 	// Databases scopes the session by database name; empty uses the
 	// connection's own, and "*" captures the whole instance.
@@ -85,6 +86,12 @@ type XEventCaptureOptions struct {
 	// MaxEvents caps the ring buffer's event count; MaxMemoryKB its size.
 	MaxEvents   int `json:"maxEvents,omitempty"`
 	MaxMemoryKB int `json:"maxMemoryKb,omitempty"`
+}
+
+type ExistingSession string
+
+func (ExistingSession) JSONSchema() map[string]any {
+	return map[string]any{"type": "string", "enum": []any{xetrace.SystemHealthSession}}
 }
 
 // decodeXEventOptions reads the profile's options, refusing any key this
@@ -122,7 +129,10 @@ func (o XEventCaptureOptions) CaptureOptions() (xetrace.CreateOptions, xetrace.D
 	var create xetrace.CreateOptions
 	var drain xetrace.DrainOptions
 
-	if strings.TrimSpace(o.SessionName) == "" {
+	if o.Session != "" && o.Session != xetrace.SystemHealthSession {
+		return create, drain, fmt.Errorf("unsupported existing session %q", o.Session)
+	}
+	if o.Session == "" && strings.TrimSpace(o.SessionName) == "" {
 		return create, drain, fmt.Errorf("sessionName is required: it names the Extended Events session on the server, where it is visible to everyone on the instance")
 	}
 	events, err := xetrace.NormalizeEvents(o.Events)
@@ -154,6 +164,7 @@ func (o XEventCaptureOptions) CaptureOptions() (xetrace.CreateOptions, xetrace.D
 	}
 
 	create = xetrace.CreateOptions{
+		Session:           string(o.Session),
 		Name:              uniqueSessionName(o.SessionName),
 		Databases:         o.Databases,
 		Users:             o.Users,
@@ -210,7 +221,12 @@ func (sqlXEventProvider) Stream(ctx context.Context, req query.ProviderRequest, 
 	}
 	defer release()
 
-	session, err := xetrace.Create(ctx, client, create)
+	var session *xetrace.Session
+	if create.Session == xetrace.SystemHealthSession {
+		session, err = xetrace.AttachSystemHealth(ctx, client, create)
+	} else {
+		session, err = xetrace.Create(ctx, client, create)
+	}
 	if err != nil {
 		return err
 	}

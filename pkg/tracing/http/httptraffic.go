@@ -32,18 +32,24 @@ const (
 	ResponseBody = "response.content.text"
 )
 
-// Params choose the features whose exchanges a capture records.
-type Params struct {
+// Options choose the features whose exchanges a capture records.
+type Options struct {
 	// Features name the transports to observe, as their HAR levels do:
 	// http, prometheus, loki, opensearch, git, ...
 	Features []string `json:"features" clicky:"required,title=Features,desc=Telltale's transports to observe by their HAR level: http prometheus loki opensearch git ..."`
 	// DedupWindow, a duration such as 1h, stores an exchange only once within
 	// it: the same method, URL, status and bodies. Empty stores every one.
-	DedupWindow string        `json:"dedupWindow,omitempty" clicky:"title=Dedup window,desc=Store an identical exchange only once within this duration such as 1h"`
-	Target      target.Target `json:"target,omitzero"`
+	DedupWindow string `json:"dedupWindow,omitempty" clicky:"title=Dedup window,desc=Store an identical exchange only once within this duration such as 1h"`
 }
 
-func (p Params) Validate() error {
+// Params are a capture's Options in the process it observes.
+type Params struct {
+	Options
+	Target target.Target `json:"target,omitzero"`
+}
+
+// Validate is the static check of the features a capture records.
+func (p Options) Validate() error {
 	if len(p.Features) == 0 {
 		return errors.New("name at least one feature to observe")
 	}
@@ -58,7 +64,7 @@ func (p Params) Validate() error {
 	return nil
 }
 
-func (p Params) window() (time.Duration, error) {
+func (p Options) window() (time.Duration, error) {
 	if p.DedupWindow == "" {
 		return 0, nil
 	}

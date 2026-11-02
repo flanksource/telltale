@@ -56,7 +56,7 @@ var _ = Describe("release-only assets", func() {
 		run("init", "-b", "main")
 		run("config", "user.name", "Release Test")
 		run("config", "user.email", "release@example.com")
-		Expect(os.WriteFile(filepath.Join(directory, ".gitignore"), []byte("webapp/dist/\n"), 0644)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(directory, ".gitignore"), []byte("webapp/dist/\npkg/agentinstall/java/assets/\n"), 0644)).To(Succeed())
 		Expect(os.MkdirAll(filepath.Join(directory, "sdk/adapter"), 0755)).To(Succeed())
 		Expect(os.MkdirAll(filepath.Join(directory, "hack/modsum"), 0755)).To(Succeed())
 		tool, err := os.ReadFile("../modsum/main.go")
@@ -65,7 +65,19 @@ var _ = Describe("release-only assets", func() {
 		rootSum, err := os.ReadFile("../../go.sum")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(os.WriteFile(filepath.Join(directory, "go.sum"), rootSum, 0644)).To(Succeed())
-		Expect(os.WriteFile(filepath.Join(directory, "go.mod"), []byte("module github.com/flanksource/telltale\n\ngo 1.27.1\n\nrequire (\n github.com/flanksource/telltale/sdk v0.0.0\n github.com/flanksource/telltale/sdk/adapter v0.0.0\n golang.org/x/mod v0.37.0\n)\n"), 0644)).To(Succeed())
+		// modsum runs on the root go.sum, so it must require the x/mod that file holds sums for.
+		rootMod, err := os.ReadFile("../../go.mod")
+		Expect(err).NotTo(HaveOccurred())
+		rootFile, err := modfile.Parse("go.mod", rootMod, nil)
+		Expect(err).NotTo(HaveOccurred())
+		modVersion := ""
+		for _, require := range rootFile.Require {
+			if require.Mod.Path == "golang.org/x/mod" {
+				modVersion = require.Mod.Version
+			}
+		}
+		Expect(modVersion).NotTo(BeEmpty(), "go.mod requires golang.org/x/mod")
+		Expect(os.WriteFile(filepath.Join(directory, "go.mod"), []byte("module github.com/flanksource/telltale\n\ngo 1.27.1\n\nrequire (\n github.com/flanksource/telltale/sdk v0.0.0\n github.com/flanksource/telltale/sdk/adapter v0.0.0\n golang.org/x/mod "+modVersion+"\n)\n"), 0644)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(directory, "sdk/go.mod"), []byte("module github.com/flanksource/telltale/sdk\n\ngo 1.27.1\n"), 0644)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(directory, "sdk/core.go"), []byte("package sdk\n"), 0644)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(directory, "sdk/adapter/go.mod"), []byte("module github.com/flanksource/telltale/sdk/adapter\n\ngo 1.27.1\n\nrequire github.com/flanksource/telltale/sdk v0.0.0\n"), 0644)).To(Succeed())
@@ -76,6 +88,7 @@ var _ = Describe("release-only assets", func() {
 		source = run("rev-parse", "HEAD")
 		Expect(os.MkdirAll(filepath.Join(directory, "webapp/dist/assets"), 0755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(directory, "webapp/dist/index.html"), []byte("<html>Telltale</html>"), 0644)).To(Succeed())
+		writeAgentFixture(directory)
 		Expect(os.WriteFile(filepath.Join(directory, "webapp/dist/assets/app.js"), []byte("export default 'telltale'"), 0644)).To(Succeed())
 	})
 
@@ -101,6 +114,14 @@ var _ = Describe("release-only assets", func() {
 		output, err := prepare("v0.0.1")
 		Expect(err).To(HaveOccurred())
 		Expect(string(output)).To(ContainSubstring("already exists"))
+	})
+
+	It("refuses a release without the embedded Java agent", func() {
+		Expect(os.Remove(filepath.Join(directory, "pkg/agentinstall/java/assets/telltale-agent.jar"))).To(Succeed())
+		output, err := prepare("v0.0.1")
+		Expect(err).To(HaveOccurred())
+		Expect(string(output)).To(ContainSubstring("Missing Java agent JAR"))
+		Expect(run("rev-parse", "HEAD")).To(Equal(source))
 	})
 
 	It("preserves non-SDK replacements and removes SDK replacements", func() {
@@ -144,6 +165,7 @@ var _ = Describe("release-only assets", func() {
 		Expect(selectVersion()).To(Equal("v0.0.2"))
 		Expect(os.MkdirAll(filepath.Join(directory, "webapp/dist"), 0755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(directory, "webapp/dist/index.html"), []byte("<html>New release</html>"), 0644)).To(Succeed())
+		writeAgentFixture(directory)
 		output, err = prepare(selectVersion())
 		Expect(err).NotTo(HaveOccurred(), string(output))
 		Expect(run("rev-parse", "v0.0.2^")).To(Equal(source))
@@ -151,6 +173,13 @@ var _ = Describe("release-only assets", func() {
 
 	It("requires workspace replacements to resolve unpublished placeholder versions", func() {
 		workspace := filepath.Join(directory, "go.work.ci")
+		// Fetch the published graph first, so the offline lookups below fail
+		// only for want of the replacements, never for an uncached module.
+		warm := exec.Command("go", "list", "-m", "all")
+		warm.Dir = directory
+		warm.Env = append(os.Environ(), "GOWORK="+workspace)
+		output, err := warm.CombinedOutput()
+		Expect(err).NotTo(HaveOccurred(), string(output))
 		original, err := os.ReadFile(workspace)
 		Expect(err).NotTo(HaveOccurred())
 		without := strings.Split(string(original), "\nreplace ")[0] + "\n"
@@ -158,7 +187,7 @@ var _ = Describe("release-only assets", func() {
 		cmd := exec.Command("go", "list", "-m", "all")
 		cmd.Dir = directory
 		cmd.Env = append(os.Environ(), "GOWORK="+workspace, "GOPROXY=off", "GOSUMDB=off")
-		output, err := cmd.CombinedOutput()
+		output, err = cmd.CombinedOutput()
 		Expect(err).To(HaveOccurred())
 		Expect(string(output)).To(ContainSubstring("github.com/flanksource/telltale/sdk@v0.0.0"))
 		Expect(os.WriteFile(workspace, original, 0644)).To(Succeed())
@@ -261,6 +290,7 @@ var _ = Describe("release-only assets", func() {
 		source = run("rev-parse", "HEAD")
 		Expect(os.MkdirAll(filepath.Join(directory, "webapp/dist/assets"), 0755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(directory, "webapp/dist/index.html"), []byte("<html>Next release</html>"), 0644)).To(Succeed())
+		writeAgentFixture(directory)
 		output, err = prepare("v0.0.2")
 		Expect(err).NotTo(HaveOccurred(), string(output))
 		Expect(run("rev-parse", "main")).To(Equal(source))

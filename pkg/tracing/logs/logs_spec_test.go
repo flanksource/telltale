@@ -24,8 +24,8 @@ import (
 func TestLogs(t *testing.T) { RegisterFailHandler(Fail); RunSpecs(t, "Logs") }
 
 var _ = Describe("logs", func() {
-	It("refuses process level changes and names the agent seam", func() {
-		params := logs.Params{Target: target.Target{Seam: target.Process}, Source: "container", Container: "example", Levels: map[string]string{"*": "debug"}}
+	It("refuses level changes of a host source and names the agent seam", func() {
+		params := logs.Params{Target: target.Target{Seam: target.Host}, Options: logs.Options{Source: "container", Container: "example", Levels: map[string]string{"*": "debug"}}}
 		Expect(params.Validate()).To(MatchError(ContainSubstring("agent seam")))
 	})
 	It("stores matching slog records with agent resource", func() {
@@ -55,7 +55,7 @@ var _ = Describe("logs", func() {
 		DeferCleanup(server.Close)
 		GinkgoT().Setenv("DOCKER_HOST", "unix://"+socket)
 		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{logs.Kind: logs.NewKind(nil)})
-		session := env.Start(logs.Kind, `{"target":{"seam":"process"},"source":"container","container":"example"}`)
+		session := env.Start(logs.Kind, `{"target":{"seam":"host"},"source":"container","container":"example"}`)
 		Eventually(func() string { data, _ := json.Marshal(env.Rows(session.Snapshot())); return string(data) }).WithTimeout(5 * time.Second).Should(And(ContainSubstring("container message"), ContainSubstring("container.id")))
 	})
 })

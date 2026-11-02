@@ -24,6 +24,7 @@ var _ = Describe("samplesRun.read", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(readings[os.Getpid()].IO).NotTo(BeNil())
 		Expect(readings[rootOwned].IO).To(BeNil())
-		Expect(readings[rootOwned].IOError).To(ContainSubstring("operation not permitted"))
+		// EPERM on darwin; linux refuses to open /proc/1/io with EACCES.
+		Expect(readings[rootOwned].IOError).To(Or(ContainSubstring("operation not permitted"), ContainSubstring("permission denied")))
 	})
 })

@@ -1,0 +1,18 @@
+apiVersion: telltale.flanksource.com/v1alpha1
+kind: TraceDefinition
+metadata:
+  name: ps
+  annotations:
+    telltale.flanksource.com/summary: "Follow a process tree: its processes, their resources, descriptors and environment"
+    telltale.flanksource.com/examples: |
+      1234 --duration 30s # follow process 1234's tree for 30 seconds
+      -- make build # follow the build's tree until it exits
+spec:
+  description: >-
+    Records the tree under a running process, or under a command, as it changes: every process as it starts and exits,
+    with its CPU, memory and disk IO each second, its open files, sockets, ports and connections, and its environment.
+    It runs until Ctrl+C, --duration, or the process exits.
+  collect:
+    process:
+      tree:
+        facets: true

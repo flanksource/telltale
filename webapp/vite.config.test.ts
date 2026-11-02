@@ -34,8 +34,13 @@ describe("Clicky UI resolution", () => {
       await expect.poll(() => Object.keys(server.watcher.getWatched()), { timeout: 3000 }).toContain(source);
       const changed: string[] = [];
       server.watcher.on("change", (path) => changed.push(path));
-      writeFileSync(`${source}/components.ts`, "export const revision = 'updated';\n");
-      await expect.poll(() => changed, { timeout: 3000 }).toContain(`${source}/components.ts`);
+      // getWatched lists the directory before inotify has attached to it on
+      // linux, so a single write can land unseen; rewrite until one is reported.
+      let revision = 0;
+      await expect.poll(() => {
+        writeFileSync(`${source}/components.ts`, `export const revision = ${++revision};\n`);
+        return changed;
+      }, { timeout: 5000 }).toContain(`${source}/components.ts`);
     } finally {
       await server.close();
     }

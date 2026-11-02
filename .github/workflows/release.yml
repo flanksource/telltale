@@ -30,12 +30,16 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
           cache: pnpm
-      - uses: flanksource/deps@v1.0.48
+      - uses: flanksource/deps@v1.0.49
         with:
           tools: |
             task
@@ -48,12 +52,6 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.tag }}
         run: make build
-      - uses: flanksource/gavel@2c08bfcf913a04f7f6adea45e362c87626d2e2fe # v0.0.62
-        with:
-          version: v0.0.54
-          args: test --framework go,ginkgo,vitest --timeout 20m
-          comment: "false"
-          artifact-name: telltale-release-tests
       - name: Prepare detached release revision
         env:
           RELEASE_TAG: ${{ steps.version.outputs.tag }}

@@ -1,0 +1,146 @@
+package definition
+
+import (
+	"encoding/json"
+	"fmt"
+	"slices"
+	"strings"
+
+	"github.com/flanksource/clicky/rpc"
+	"sigs.k8s.io/yaml"
+)
+
+// CRDFile is where `task generate` writes the CustomResourceDefinition,
+// relative to the repository root.
+const CRDFile = "crds/" + Group + "_" + Plural + ".yaml"
+
+// schemaKeys are the keywords a CRD's JSONSchemaProps knows; the reflector's
+// form hints (x-clicky-*) are dropped from the CRD.
+var schemaKeys = []string{
+	"type", "format", "title", "description", "enum", "default", "properties", "required", "items",
+	"additionalProperties", "nullable", "x-kubernetes-preserve-unknown-fields", "x-kubernetes-list-type",
+}
+
+// dynamicValue is how the reflector describes an interface{} value.
+const dynamicValue = "Dynamic response value"
+
+// Schema is the definition's openAPIV3Schema as a structural schema: the one
+// reflection of TraceDefinition a form and the CRD share, with every list
+// atomic (entry names are optional, so no list can be keyed), free-form
+// leaves preserving their fields, and no connection required, as each may be
+// a default.
+func Schema() (map[string]any, error) {
+	data, err := json.Marshal(rpc.SchemaForStruct(TraceDefinition{}))
+	if err != nil {
+		return nil, fmt.Errorf("reflect trace definition schema: %w", err)
+	}
+	var schema map[string]any
+	if err := json.Unmarshal(data, &schema); err != nil {
+		return nil, fmt.Errorf("reflect trace definition schema: %w", err)
+	}
+	properties, _ := schema["properties"].(map[string]any)
+	if properties == nil {
+		return nil, fmt.Errorf("reflect trace definition schema: no properties in %s", data)
+	}
+	delete(properties, "metadata")
+	schema["required"] = []any{"apiVersion", "kind", "spec"}
+	converted, err := structural(schema, "")
+	if err != nil {
+		return nil, err
+	}
+	// The API server owns metadata's schema; a CRD may only say it is an object.
+	converted["properties"].(map[string]any)["metadata"] = map[string]any{"type": "object"}
+	return converted, nil
+}
+
+// structural rewrites node, at path, into a structural schema node.
+func structural(node map[string]any, path string) (map[string]any, error) {
+	if ref, ok := node["$ref"]; ok {
+		return nil, fmt.Errorf("schema %s refers to %v: the reflector inlines every type, so a $ref is a schema the CRD cannot carry", path, ref)
+	}
+	if node["description"] == dynamicValue || strings.HasPrefix(fmt.Sprint(node["description"]), "Recursive reference to ") {
+		return map[string]any{"x-kubernetes-preserve-unknown-fields": true}, nil
+	}
+	out := map[string]any{}
+	for key, value := range node {
+		if slices.Contains(schemaKeys, key) {
+			out[key] = value
+		}
+	}
+	if err := structuralChildren(out, path); err != nil {
+		return nil, err
+	}
+	switch {
+	case out["type"] == "array":
+		out["x-kubernetes-list-type"] = "atomic"
+	case out["type"] == "object" && out["properties"] == nil && out["additionalProperties"] == nil:
+		out["x-kubernetes-preserve-unknown-fields"] = true
+	case out["type"] == nil && out["x-kubernetes-preserve-unknown-fields"] != true:
+		return nil, fmt.Errorf("schema %s has no type", path)
+	}
+	if required, ok := out["required"].([]any); ok {
+		required = slices.DeleteFunc(required, func(name any) bool { return name == "connection" })
+		if len(required) == 0 {
+			delete(out, "required")
+		} else {
+			out["required"] = required
+		}
+	}
+	return out, nil
+}
+
+func structuralChildren(out map[string]any, path string) error {
+	if properties, ok := out["properties"].(map[string]any); ok {
+		for name, child := range properties {
+			converted, err := structural(child.(map[string]any), path+"/"+name)
+			if err != nil {
+				return err
+			}
+			properties[name] = converted
+		}
+	}
+	for _, key := range []string{"items", "additionalProperties"} {
+		child, ok := out[key].(map[string]any)
+		if !ok {
+			continue
+		}
+		converted, err := structural(child, path+"/"+key)
+		if err != nil {
+			return err
+		}
+		if converted["x-kubernetes-preserve-unknown-fields"] == true && key == "additionalProperties" {
+			delete(out, key)
+			out["x-kubernetes-preserve-unknown-fields"] = true
+			continue
+		}
+		out[key] = converted
+	}
+	return nil
+}
+
+// CRD is the CustomResourceDefinition the definitions kubectl-apply against.
+func CRD() ([]byte, error) {
+	schema, err := Schema()
+	if err != nil {
+		return nil, err
+	}
+	resource := map[string]any{
+		"apiVersion": "apiextensions.k8s.io/v1",
+		"kind":       "CustomResourceDefinition",
+		"metadata":   map[string]any{"name": Plural + "." + Group},
+		"spec": map[string]any{
+			"group": Group,
+			"names": map[string]any{"kind": Kind, "listKind": Kind + "List", "plural": Plural, "singular": strings.ToLower(Kind)},
+			"scope": "Namespaced",
+			"versions": []any{map[string]any{
+				"name": Version, "served": true, "storage": true,
+				"schema": map[string]any{"openAPIV3Schema": schema},
+			}},
+		},
+	}
+	data, err := yaml.Marshal(resource)
+	if err != nil {
+		return nil, fmt.Errorf("encode trace definition CRD: %w", err)
+	}
+	return append([]byte("# Generated by `task generate` from pkg/definition; do not edit.\n"), data...), nil
+}

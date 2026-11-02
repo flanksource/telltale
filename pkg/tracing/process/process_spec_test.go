@@ -38,7 +38,7 @@ func spawnTree(script string) int {
 func newEnv() tracingtest.Env {
 	sampler := process.NewSampler()
 	return tracingtest.NewEnv(map[string]tracing.TracePlugin{
-		process.TreeKind:    process.NewTreeKind(sampler, process.TreeOptions{}),
+		process.TreeKind:    process.NewTreeKind(sampler, process.TreeKindOptions{}),
 		process.SamplesKind: process.NewSamplesKind(sampler),
 	})
 }

@@ -1,15 +1,15 @@
 import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-let workDir: string;
+let testDir: string;
 let server: ChildProcessWithoutNullStreams;
 let apiURL: string;
 
 function serve(): Promise<string> {
-  server = spawn(".bin/telltale", ["serve", "--port", "0", "--work-dir", workDir]);
+  server = spawn(".bin/telltale", ["serve", "--port", "0", "--data-dir", testDir], { env: { ...process.env, XDG_CONFIG_HOME: join(testDir, "config") } });
   return new Promise<string>((resolve, reject) => {
     let output = "";
     server.stdout.on("data", (chunk: Buffer) => {
@@ -25,7 +25,7 @@ function serve(): Promise<string> {
 
 beforeAll(async () => {
   await mkdir(".tmp", { recursive: true });
-  workDir = await mkdtemp(resolve(".tmp", "telltale-top-"));
+  testDir = await mkdtemp(resolve(".tmp", "telltale-top-"));
   apiURL = await serve();
 });
 
@@ -35,7 +35,7 @@ afterAll(async () => {
     server.kill("SIGTERM");
     expect(await stopped).toEqual([0, null]);
   }
-  await rm(workDir, { recursive: true, force: true });
+  await rm(testDir, { recursive: true, force: true });
 });
 
 interface Usage {
@@ -91,6 +91,13 @@ describe("processes of a program or a process", () => {
     expect(response.headers.get("content-type")).toBe("application/json");
     const reading = await response.json() as { tick: number; processes: Array<{ pid: number; ppid: number; name: string; origin: object; rssBytes: number }> };
     expect(reading.tick).toBeGreaterThanOrEqual(1);
+    expect(reading.processes.map(process => process.pid)).toContain(1);
+  });
+
+  it("serves the processes whose pid holds a search text", async () => {
+    const response = await fetch(`${apiURL}/api/top/processes?q=1&all=true`);
+    expect(response.status).toBe(200);
+    const reading = await response.json() as { processes: Array<{ pid: number }> };
     expect(reading.processes.map(process => process.pid)).toContain(1);
   });
 

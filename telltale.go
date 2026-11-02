@@ -1,8 +1,8 @@
 // Package telltale runs commands under trace and finds the runs it recorded:
-// Start opens a run's store at .telltale/traces/<run id>, arms the captures
+// Start opens a run's store at <data dir>/traces/<run id>, arms the captures
 // asked for, points the command at them through their exports and records the
 // process tree it spawns; Stop ends a live run; List and Get read the runs a
-// work dir holds, live or stored.
+// data dir holds, live or stored.
 package telltale
 
 import (
@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/flanksource/commons-db/connection/crd"
 	"github.com/flanksource/commons-db/connection/store"
 	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/tracing"
@@ -26,6 +27,9 @@ type TraceSpec struct {
 	// Checkpoint are the checkpoint params the run reads the capture with;
 	// nil is its kind's registered ones (traces.Registration.Checkpoint).
 	Checkpoint json.RawMessage
+	// Labels are what the capture's session is labelled with, such as the
+	// definition entry it compiles (definition.LabelEntry).
+	Labels map[string]string
 }
 
 // ParseTraceSpec reads kind or kind:{json params}.
@@ -58,8 +62,8 @@ const (
 
 // StartOptions say what Start runs and traces.
 type StartOptions struct {
-	// WorkDir holds the run stores, under traces.Dir.
-	WorkDir string
+	// DataDir holds the run stores, under traces.Dir.
+	DataDir string
 	// Dir is the directory the command runs in; empty is this process's.
 	Dir string
 	// Command is the program and its arguments. A run has a Command or a
@@ -79,8 +83,9 @@ type StartOptions struct {
 	Every time.Duration
 	// Traces are the captures armed around the command.
 	Traces []TraceSpec
-	// Facets reads every process's facets and environment into the tree.
-	Facets    bool
+	// Tree is what the run-wide process tree reads of each process: its
+	// facets and environment.
+	Tree      traces.TreeOptions
 	TraceRoot TraceRoot
 	Stdin     io.Reader
 	// Stdout and Stderr take the command's output; when both are nil it is
@@ -90,6 +95,25 @@ type StartOptions struct {
 	// as sql_xevent's connection; nil answers none (OpenConnections is
 	// telltale's own).
 	Connections *store.Store
+	// RunConnections are connections this run alone defines, such as a trace
+	// definition's inline ones, layered over Connections for its captures
+	// (traces.OpenOptions.RunConnections).
+	RunConnections []crd.Connection
+	// Definition is the trace definition the captures were compiled from,
+	// recorded on the run; nil for captures asked for one by one.
+	Definition *DefinitionRef
+}
+
+// DefinitionRef is the trace definition a run was started from, as it was
+// then: a later edit of the definition never rewrites a recorded run.
+type DefinitionRef struct {
+	Name string `json:"name"`
+	// ResourceVersion is the hash of the definition's file, empty for one
+	// read from no file.
+	ResourceVersion string `json:"resourceVersion,omitempty"`
+	// Spec is the definition's spec as the run resolved it: every entry
+	// named and given its default connection.
+	Spec json.RawMessage `json:"spec"`
 }
 
 // Result is what a finished run recorded, kept in its store as ManifestFile.
@@ -107,6 +131,11 @@ type Result struct {
 	// CheckpointErrors are the checkpoints that failed, such as a dump of a
 	// process that had exited; a run with any failed.
 	CheckpointErrors []string `json:"checkpointErrors,omitempty"`
+	// Definition is the trace definition the run was started from.
+	Definition *DefinitionRef `json:"definition,omitempty"`
+	// Error is why the run could not end cleanly, such as a capture that
+	// failed to stop or summarize; a run with one failed.
+	Error string `json:"error,omitempty"`
 }
 
 // CaptureResult is one capture's stream and, once the run finished, its
@@ -129,8 +158,37 @@ func writeManifest(result *Result) error {
 	if err != nil {
 		return fmt.Errorf("encode run manifest: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(result.Dir, ManifestFile), data, 0o644); err != nil {
+	return writeManifestData(result.Dir, data)
+}
+
+func writeRunningManifest(info RunInfo) error {
+	info.Live = nil
+	data, err := json.MarshalIndent(info, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode running manifest: %w", err)
+	}
+	return writeManifestData(info.Dir, data)
+}
+
+func writeManifestData(dir string, data []byte) error {
+	file, err := os.CreateTemp(dir, ".run-*.json")
+	if err != nil {
+		return fmt.Errorf("create run manifest: %w", err)
+	}
+	defer func() { _ = os.Remove(file.Name()) }()
+	if err := file.Chmod(0o644); err != nil {
+		_ = file.Close()
+		return fmt.Errorf("set run manifest permissions: %w", err)
+	}
+	if _, err := file.Write(data); err != nil {
+		_ = file.Close()
 		return fmt.Errorf("write run manifest: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close run manifest: %w", err)
+	}
+	if err := os.Rename(file.Name(), filepath.Join(dir, ManifestFile)); err != nil {
+		return fmt.Errorf("replace run manifest: %w", err)
 	}
 	return nil
 }

@@ -4,18 +4,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/flanksource/clicky/exec"
 	"github.com/flanksource/clicky/task"
-	cctx "github.com/flanksource/commons/context"
+
+	"github.com/flanksource/telltale/internal/lifetime"
 )
 
 type devOptions struct {
@@ -27,7 +29,7 @@ type devOptions struct {
 type viteServer struct {
 	target *url.URL
 	cancel context.CancelFunc
-	run    task.TypedTask[bool]
+	run    *lifetime.Service
 }
 
 func startVite(ctx context.Context, options devOptions) (*viteServer, error) {
@@ -43,26 +45,32 @@ func startVite(ctx context.Context, options devOptions) (*viteServer, error) {
 		WithContext(ctx).WithProcessGroup().WithEnv(map[string]string{"TELLTALE_DEV": "1", "TELLTALE_API_URL": options.apiURL}).
 		Stream(options.Root.OutOrStdout(), options.Root.ErrOrStderr())
 	task.SetNoRender(true)
-	run := task.StartTask("Vite", func(_ cctx.Context, _ *task.Task) (bool, error) {
+	run := lifetime.Start("Vite", func() error {
 		process.Run()
 		if ctx.Err() != nil {
-			return true, nil
+			return nil
 		}
 		err := fmt.Errorf("vite stopped unexpectedly: %w", errors.Join(process.Err, errors.New(process.GetStderr())))
 		options.cancel(err)
-		return false, err
-	}, task.WithContext(ctx))
-	vite := &viteServer{target: &url.URL{Scheme: "http", Host: net.JoinHostPort("localhost", strconv.Itoa(options.UIPort))}, cancel: cancel, run: run}
-	if err := process.WaitForStdout("Local:", 30*time.Second); err != nil {
+		return err
+	})
+	vite := &viteServer{cancel: cancel, run: run}
+	if err := process.WaitForStdout("http://localhost:", 30*time.Second); err != nil {
 		return nil, errors.Join(fmt.Errorf("start Vite: %w\n%s", err, process.GetStderr()), vite.stop())
+	}
+	match := regexp.MustCompile(`Local:\s+(http://localhost:[0-9]+/)`).FindStringSubmatch(ansi.Strip(process.GetStdout()))
+	if len(match) != 2 {
+		return nil, errors.Join(fmt.Errorf("vite did not report a local URL: %s", process.GetStdout()), vite.stop())
+	}
+	if vite.target, err = url.Parse(match[1]); err != nil {
+		return nil, errors.Join(fmt.Errorf("parse Vite URL: %w", err), vite.stop())
 	}
 	return vite, nil
 }
 
 func (v *viteServer) stop() error {
 	v.cancel()
-	_, err := v.run.GetResult()
-	return err
+	return v.run.Wait()
 }
 
 func (v *viteServer) proxy() http.Handler { return httputil.NewSingleHostReverseProxy(v.target) }

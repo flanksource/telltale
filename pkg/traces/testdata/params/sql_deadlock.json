@@ -1,0 +1,82 @@
+{
+  "type": "object",
+  "properties": {
+    "connection": {
+      "type": "string",
+      "title": "Connection"
+    },
+    "databases": {
+      "type": "array",
+      "title": "Databases",
+      "description": "Participant database patterns; empty selects the connected database",
+      "items": {
+        "type": "string"
+      }
+    },
+    "from": {
+      "type": "string",
+      "title": "From",
+      "description": "Historical window start in RFC3339; empty follows from now"
+    },
+    "poll": {
+      "type": "string",
+      "title": "Poll",
+      "description": "Follow poll interval",
+      "default": "30s"
+    },
+    "target": {
+      "properties": {
+        "agent": {
+          "type": "string",
+          "title": "Agent",
+          "description": "Agent ID to observe"
+        },
+        "allowMutation": {
+          "type": "boolean",
+          "title": "Allow mutation",
+          "description": "Allow probes to change runtime settings"
+        },
+        "pid": {
+          "type": "integer",
+          "title": "PID",
+          "format": "int32",
+          "description": "Process to observe"
+        },
+        "seam": {
+          "type": "string",
+          "title": "Seam",
+          "description": "How the capture is armed (supported seams: [connection])",
+          "enum": [
+            "connection"
+          ],
+          "default": "connection"
+        },
+        "selector": {
+          "type": "object",
+          "title": "Selector",
+          "description": "Agent resource attributes to match",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "wait": {
+          "type": "boolean",
+          "title": "Wait for agents",
+          "description": "Wait for a matching agent to connect"
+        }
+      },
+      "type": "object",
+      "x-telltale-seams": [
+        "connection"
+      ]
+    },
+    "to": {
+      "type": "string",
+      "title": "To",
+      "description": "Historical window end in RFC3339; empty uses server time"
+    }
+  },
+  "required": [
+    "connection"
+  ]
+}

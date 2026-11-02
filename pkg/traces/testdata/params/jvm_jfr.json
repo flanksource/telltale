@@ -1,0 +1,96 @@
+{
+  "type": "object",
+  "properties": {
+    "asyncProfiler": {
+      "type": "string",
+      "title": "Async-profiler executable",
+      "description": "Local asprof executable for process captures"
+    },
+    "engine": {
+      "default": "jfr",
+      "enum": [
+        "jfr",
+        "async-profiler"
+      ],
+      "title": "Engine",
+      "type": "string"
+    },
+    "event": {
+      "enum": [
+        "cpu",
+        "wall",
+        "alloc",
+        "lock"
+      ],
+      "title": "Async-profiler event",
+      "type": "string"
+    },
+    "interval": {
+      "type": "string",
+      "title": "Sampling interval"
+    },
+    "maxStackDepth": {
+      "type": "integer",
+      "title": "Maximum stack depth",
+      "format": "int32",
+      "description": "Keep this many leaf frames; zero keeps all recorded frames"
+    },
+    "settings": {
+      "type": "string",
+      "title": "JFR settings"
+    },
+    "target": {
+      "properties": {
+        "agent": {
+          "type": "string",
+          "title": "Agent",
+          "description": "Agent ID to observe"
+        },
+        "allowMutation": {
+          "type": "boolean",
+          "title": "Allow mutation",
+          "description": "Allow probes to change runtime settings"
+        },
+        "pid": {
+          "type": "integer",
+          "title": "PID",
+          "format": "int32",
+          "description": "Process to observe"
+        },
+        "seam": {
+          "type": "string",
+          "title": "Seam",
+          "description": "How the capture is armed (supported seams: [process agent])",
+          "enum": [
+            "process",
+            "agent"
+          ],
+          "default": "process"
+        },
+        "selector": {
+          "type": "object",
+          "title": "Selector",
+          "description": "Agent resource attributes to match",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "wait": {
+          "type": "boolean",
+          "title": "Wait for agents",
+          "description": "Wait for a matching agent to connect"
+        }
+      },
+      "type": "object",
+      "x-telltale-seams": [
+        "process",
+        "agent"
+      ]
+    },
+    "threads": {
+      "type": "boolean",
+      "title": "Split by thread",
+      "description": "Retain thread identities in decoded samples"
+    }
+  }
+}

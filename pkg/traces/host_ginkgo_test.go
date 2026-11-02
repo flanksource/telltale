@@ -18,8 +18,8 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing"
 )
 
-func openHost(workDir string) *traces.Host {
-	host, err := traces.Open(traces.OpenOptions{WorkDir: workDir, RunID: traces.RunID(time.Now())})
+func openHost(dataDir string) *traces.Host {
+	host, err := traces.Open(traces.OpenOptions{DataDir: dataDir, RunID: traces.RunID(time.Now())})
 	Expect(err).ToNot(HaveOccurred())
 	DeferCleanup(func() { Expect(host.Close(context.Background())).To(Succeed()) })
 	return host
@@ -44,23 +44,34 @@ var _ = Describe("trace host", func() {
 		DeferCleanup(server.Close)
 	})
 
-	It("keeps the run's store under .telltale/traces/<runID>, suffixing a run id already taken", func() {
-		workDir := GinkgoT().TempDir()
+	It("keeps the run's store under <data dir>/traces/<runID>, suffixing a run id already taken", func() {
+		dataDir := GinkgoT().TempDir()
 		runID := traces.RunID(time.Date(2026, 10, 15, 9, 30, 0, 0, time.UTC))
-		first, err := traces.Open(traces.OpenOptions{WorkDir: workDir, RunID: runID})
+		first, err := traces.Open(traces.OpenOptions{DataDir: dataDir, RunID: runID})
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(func() { Expect(first.Close(context.Background())).To(Succeed()) })
-		second, err := traces.Open(traces.OpenOptions{WorkDir: workDir, RunID: runID})
+		second, err := traces.Open(traces.OpenOptions{DataDir: dataDir, RunID: runID})
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(func() { Expect(second.Close(context.Background())).To(Succeed()) })
 
 		Expect([]string{first.RunID(), second.RunID()}).To(Equal([]string{"run-2026-10-15T09-30-00Z", "run-2026-10-15T09-30-00Z-2"}))
-		Expect(first.Dir()).To(Equal(filepath.Join(workDir, ".telltale", "traces", first.RunID())))
+		Expect(first.Dir()).To(Equal(filepath.Join(dataDir, "traces", first.RunID())))
+	})
+
+	It("labels a capture's session with the labels it is started with", func() {
+		host := openHost(GinkgoT().TempDir())
+		labels := map[string]string{"telltale_entry": "checkout-proxy-http-1", "telltale_definition": "checkout"}
+		capture, err := host.Start(traces.StartOptions{Kind: "http", Params: json.RawMessage(`{"target":{"seam":"proxy"}}`), Labels: labels})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(host.Runtime().Sessions.List()).To(ContainElement(And(
+			HaveField("Events.Stream", capture.Stream()), HaveField("Labels", HaveKeyWithValue("telltale_entry", "checkout-proxy-http-1")),
+			HaveField("Labels", HaveKeyWithValue("telltale_definition", "checkout")),
+		)))
 	})
 
 	It("windows a running capture by its marks, and summarizes each window apart", func() {
 		host := openHost(GinkgoT().TempDir())
-		capture, err := host.Start("http", json.RawMessage(`{"target":{"seam":"proxy"}}`))
+		capture, err := host.Start(traces.StartOptions{Kind: "http", Params: json.RawMessage(`{"target":{"seam":"proxy"}}`)})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(capture.Exports()).To(HaveKey("HTTPS_PROXY"))
 
@@ -84,10 +95,10 @@ var _ = Describe("trace host", func() {
 	})
 
 	It("reopens a finished run's store to serve it, and finds no store a prune removed", func() {
-		workDir := GinkgoT().TempDir()
-		host, err := traces.Open(traces.OpenOptions{WorkDir: workDir, RunID: traces.RunID(time.Now())})
+		dataDir := GinkgoT().TempDir()
+		host, err := traces.Open(traces.OpenOptions{DataDir: dataDir, RunID: traces.RunID(time.Now())})
 		Expect(err).ToNot(HaveOccurred())
-		capture, err := host.Start("http", json.RawMessage(`{"target":{"seam":"proxy"}}`))
+		capture, err := host.Start(traces.StartOptions{Kind: "http", Params: json.RawMessage(`{"target":{"seam":"proxy"}}`)})
 		Expect(err).ToNot(HaveOccurred())
 		getThrough(capture, server.URL+"/kept")
 		end, err := capture.Stop(context.Background())
@@ -95,39 +106,39 @@ var _ = Describe("trace host", func() {
 		ref := capture.Ref(0, end)
 		Expect(host.Close(context.Background())).To(Succeed())
 
-		runtime, closeStore, err := traces.Reopen(traces.StoreDir(workDir, host.RunID()))
+		runtime, closeStore, err := traces.Reopen(traces.StoreDir(dataDir, host.RunID()))
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(closeStore)
 		summary, err := runtime.Summarize(context.Background(), ref)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(summary).To(HaveKeyWithValue("count", BeEquivalentTo(1)))
 
-		_, _, err = traces.Reopen(traces.StoreDir(workDir, "run-pruned"))
+		_, _, err = traces.Reopen(traces.StoreDir(dataDir, "run-pruned"))
 		Expect(err).To(MatchError(os.ErrNotExist))
 	})
 
 	It("refuses an unknown kind by naming the registered ones", func() {
 		host := openHost(GinkgoT().TempDir())
-		_, err := host.Start("smtp", nil)
+		_, err := host.Start(traces.StartOptions{Kind: "smtp"})
 		Expect(err).To(MatchError(And(ContainSubstring(`unknown trace kind "smtp"`), ContainSubstring("http"), ContainSubstring("sql"))))
 	})
 
 	It("refuses params the kind refuses before starting anything", func() {
 		host := openHost(GinkgoT().TempDir())
-		_, err := host.Start("http", json.RawMessage(`{"target":{"seam":"proxy"},"mode": "sniff"}`))
+		_, err := host.Start(traces.StartOptions{Kind: "http", Params: json.RawMessage(`{"target":{"seam":"proxy"},"mode": "sniff"}`)})
 		Expect(err).To(MatchError(ContainSubstring("trace http params")))
 	})
 })
 
 var _ = Describe("Prune", func() {
 	It("keeps only the newest runs' stores", func() {
-		workDir := GinkgoT().TempDir()
+		dataDir := GinkgoT().TempDir()
 		runs := []string{"run-2026-10-13T00-00-00Z", "run-2026-10-14T00-00-00Z", "run-2026-10-15T00-00-00Z"}
 		for _, run := range runs {
-			Expect(os.MkdirAll(filepath.Join(workDir, traces.Dir, run, "locks"), 0o755)).To(Succeed())
+			Expect(os.MkdirAll(filepath.Join(dataDir, traces.Dir, run, "locks"), 0o755)).To(Succeed())
 		}
-		Expect(traces.Prune(workDir, 2)).To(Succeed())
-		entries, err := os.ReadDir(filepath.Join(workDir, traces.Dir))
+		Expect(traces.Prune(dataDir, 2)).To(Succeed())
+		entries, err := os.ReadDir(filepath.Join(dataDir, traces.Dir))
 		Expect(err).ToNot(HaveOccurred())
 		var kept []string
 		for _, entry := range entries {
@@ -136,7 +147,7 @@ var _ = Describe("Prune", func() {
 		Expect(kept).To(Equal(runs[1:]))
 	})
 
-	It("has nothing to prune in a work dir that never traced", func() {
+	It("has nothing to prune in a data dir that never traced", func() {
 		Expect(traces.Prune(GinkgoT().TempDir(), traces.KeepRuns)).To(Succeed())
 	})
 })

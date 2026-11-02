@@ -14,3 +14,7 @@ go.work
 go.work.sum
 go.work.ci.sum
 .new
+sdk/java/.gradle/
+sdk/java/build/
+pkg/agentinstall/java/assets/*
+!pkg/agentinstall/java/assets/.gitkeep

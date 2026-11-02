@@ -36,7 +36,7 @@ func parsed(schema *rpc.OpenAPISchema, args ...string) (string, error) {
 var _ = Describe("a kind's params as flags", func() {
 	It("builds a CPU checkpoint from profile flags", func() {
 		flags := pflag.NewFlagSet("goprof", pflag.ContinueOnError)
-		checkpoint := bindProfileCheckpoint(flags, goprof.CheckpointParams{Source: goprof.SourceGops, Profile: "heap"})
+		checkpoint := bindProfileCheckpoint(flags, goprof.CheckpointParams{CheckpointOptions: goprof.CheckpointOptions{Source: goprof.SourceGops, Profile: "heap"}})
 		Expect(flags.Parse([]string{"--profile", "cpu", "--seconds", "1"})).To(Succeed())
 		data, err := checkpoint.params()
 		Expect(err).NotTo(HaveOccurred())
@@ -122,7 +122,7 @@ var _ = Describe("a kind's params as flags", func() {
 	DescribeTable("refuses a schema it cannot bind",
 		func(schema *rpc.OpenAPISchema, refusal string) {
 			flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
-			flags.String("work-dir", ".", "taken")
+			flags.String("data-dir", ".", "taken")
 			_, err := bindParamFlags(flags, schema)
 			Expect(err).To(MatchError(refusal))
 		},
@@ -130,7 +130,7 @@ var _ = Describe("a kind's params as flags", func() {
 			"rules": {Type: "array", Items: &rpc.OpenAPISchema{Type: "object"}},
 		}}, "param rules: a list of object param cannot be a flag"),
 		Entry("a param whose flag is taken", &rpc.OpenAPISchema{Type: "object", Properties: map[string]*rpc.OpenAPISchema{
-			"workDir": {Type: "string"},
-		}}, "param workDir: its flag --work-dir is already defined"),
+			"dataDir": {Type: "string"},
+		}}, "param dataDir: its flag --data-dir is already defined"),
 	)
 })

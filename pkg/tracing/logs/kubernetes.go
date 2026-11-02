@@ -15,7 +15,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-func followKubernetes(ctx context.Context, client kubernetes.Interface, p Params, emit func(Log) error) error {
+func followKubernetes(ctx context.Context, client kubernetes.Interface, p Options, emit func(Log) error) error {
 	pods, err := client.CoreV1().Pods(p.Namespace).List(ctx, metav1.ListOptions{LabelSelector: p.PodSelector})
 	if err != nil {
 		return fmt.Errorf("list kubernetes pods: %w", err)

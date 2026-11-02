@@ -360,7 +360,7 @@ func (a *Agent) handshake(stream net.Conn, conn *protocol.Conn, token string, re
 func (a *Agent) sendHello(conn *protocol.Conn, remote bool) error {
 	catalog.RLock()
 	defer catalog.RUnlock()
-	hello := protocol.Hello{AgentID: strconv.Itoa(a.endpoint.PID), Service: a.options.Service, Version: a.options.Version, SDKVersion: "dev", Protocol: protocol.ProtocolVersion, Started: a.endpoint.Started, Runtime: a.endpoint.Runtime, Resource: a.endpoint.Resource, Labels: a.options.Labels, Warnings: a.warnings}
+	hello := protocol.Hello{AgentID: strconv.Itoa(a.endpoint.PID), Service: a.options.Service, Version: a.options.Version, SDKVersion: sdkVersion, Protocol: protocol.ProtocolVersion, Started: a.endpoint.Started, Runtime: a.endpoint.Runtime, Resource: a.endpoint.Resource, Labels: a.options.Labels, Warnings: a.warnings}
 	if remote {
 		hello.AgentID = a.dialID
 	}

@@ -1,6 +1,6 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -10,14 +10,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const run = promisify(execFile);
 
-let workDir: string;
+let testDir: string;
 let upstream: Server;
 let upstreamURL: string;
 let server: ChildProcessWithoutNullStreams;
 let apiURL: string;
 
 function serve(): Promise<string> {
-  server = spawn(".bin/telltale", ["serve", "--port", "0", "--work-dir", workDir]);
+  server = spawn(".bin/telltale", ["serve", "--port", "0", "--data-dir", testDir], { env: { ...process.env, XDG_CONFIG_HOME: join(testDir, "config") } });
   return new Promise<string>((resolve, reject) => {
     let output = "";
     server.stdout.on("data", (chunk: Buffer) => {
@@ -32,12 +32,12 @@ function serve(): Promise<string> {
 }
 
 beforeAll(async () => {
-  workDir = await mkdtemp(join(tmpdir(), "telltale-traces-"));
+  testDir = await mkdtemp(join(tmpdir(), "telltale-traces-"));
   upstream = createServer((_, response) => response.end("traced"));
   upstream.listen(0, "127.0.0.1");
   await once(upstream, "listening");
   upstreamURL = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}/hello`;
-  await run(".bin/telltale", ["trace", "run", "--work-dir", workDir, "--", "curl", "-sS", upstreamURL]);
+  await run(".bin/telltale", ["trace", "run", "--data-dir", testDir, "--", "curl", "-sS", upstreamURL], { env: { ...process.env, XDG_CONFIG_HOME: join(testDir, "config") } });
   apiURL = await serve();
 });
 
@@ -48,7 +48,7 @@ afterAll(async () => {
     expect(await stopped).toEqual([0, null]);
   }
   upstream?.close();
-  await rm(workDir, { recursive: true, force: true });
+  await rm(testDir, { recursive: true, force: true });
 });
 
 interface Captured {
@@ -71,6 +71,18 @@ interface Listed {
 }
 
 describe("recorded trace runs", () => {
+  it("serves typed result-profile columns and query rows for a recorded capture", async () => {
+    const listed = await (await fetch(`${apiURL}/api/traces`)).json() as Listed;
+    const recorded = listed.runs[0];
+    const capture = recorded.captures.find(item => item.kind === "http")!;
+    const path = `${apiURL}${recorded.mount}/traces/http/records?stream=${encodeURIComponent(capture.ref.stream)}`;
+    const schema = await fetch(path, { headers: { Accept: "application/schema+json" } });
+    expect(schema.status).toBe(200);
+    expect(await schema.json()).toMatchObject({ optionsSchema: { properties: { where: { type: "string" } } }, columns: expect.arrayContaining([expect.objectContaining({ name: "url" })]) });
+    const rows = await fetch(path + "&limit=1");
+    expect(rows.status).toBe(200);
+    expect(await rows.json()).toMatchObject({ rows: [expect.objectContaining({ url: upstreamURL })] });
+  });
   it("lists the run with the proxy capture it armed", async () => {
     const response = await fetch(`${apiURL}/api/traces`);
     expect(response.status).toBe(200);
@@ -114,11 +126,63 @@ async function settled(runId: string): Promise<ListedRun> {
 }
 
 describe("runs started over the API", () => {
+  it("previews the embedded Java installer through its generated API", async () => {
+    const response = await fetch(`${apiURL}/api/v1/agents/install/java`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pid: 1, directory: join(testDir, "agents"), "dry-run": true }) });
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("telltale-agent.jar");
+  });
+
+  it("rejects cross-origin installer requests and leaves other command execution disabled", async () => {
+    const refused = await fetch(`${apiURL}/api/v1/agents/install/java`, { method: "POST", headers: { Origin: "https://untrusted.example.com", "Content-Type": "application/json" }, body: "{}" });
+    expect(refused.status).toBe(403);
+    expect((await fetch(`${apiURL}/api/v1/agents/token/create/example`, { method: "POST" })).status).toBe(404);
+  });
+
+  it("captures and exports a disposable JVM through a PID-only start request", async () => {
+    const classes = join(testDir, "java-classes");
+    await mkdir(classes);
+    await run("javac", ["-d", classes, "pkg/agentinstall/testdata/Workload.java"]);
+    const child = spawn("java", ["-cp", classes, "Workload"]);
+    try {
+      await once(child.stdout, "data");
+      const response = await start({ pid: child.pid, duration: "2s", every: "1s", traces: { jvm_jfr: { enabled: true, engine: "jfr" } } });
+      expect(response.status).toBe(201);
+      const started = await response.json() as ListedRun;
+      const finished = await settled(started.runId);
+      expect(finished.status).toBe("succeeded");
+      expect(finished.captures[0].summary?.count).toBeGreaterThan(0);
+      const capture = finished.captures[0];
+      const exported = await fetch(`${apiURL}${finished.mount}/api/v1/traces/jvm_jfr/export?format=ndjson&stream=${capture.ref.stream}`);
+      expect(exported.status).toBe(200);
+      expect((await exported.text()).trim()).not.toBe("");
+    } finally {
+      const exited = once(child, "exit");
+      child.kill("SIGTERM");
+      await exited;
+    }
+  });
+
+  it("offers SQL Server and JVM capture schemas with connection and agent targets", async () => {
+    const response = await fetch(`${apiURL}/api/traces/start`);
+    const form = await response.json() as { schema: { properties: { traces: { properties: Record<string, { title: string }> }; pid: { type: string }; duration: { type: string } } } };
+    expect(response.status).toBe(200);
+    expect(form.schema.properties.traces.properties).toMatchObject({ sql_xevent: { title: "SQL Server XEvents" }, sql_deadlock: { title: "SQL Server deadlocks" }, jvm_jfr: { title: "JVM JFR" } });
+    expect(form.schema.properties.pid.type).toBe("integer");
+    expect(form.schema.properties.duration.type).toBe("string");
+  });
+
+  it("validates a commandless historical deadlock request at its capture fields", async () => {
+    const response = await start({ traces: { sql_deadlock: { enabled: true, from: "2026-10-28T12:00:00Z", to: "2026-10-28T11:00:00Z" } } });
+    expect(response.status).toBe(400);
+    const refused = await response.json() as { errors: { instancePath: string }[] };
+    expect(refused.errors.map(field => field.instancePath).sort()).toEqual(["/traces/sql_deadlock", "/traces/sql_deadlock/connection"]);
+  });
+
   it("serves the start form", async () => {
     const response = await fetch(`${apiURL}/api/traces/start`);
     expect(response.status).toBe(200);
     const form = await response.json() as { schema: { required: string[] }; defaults: { traces: Record<string, { enabled: boolean }> } };
-    expect(form.schema.required).toEqual(["command"]);
+    expect(form.schema.required).toBeUndefined();
     expect(form.defaults.traces.http.enabled).toBe(true);
   });
 

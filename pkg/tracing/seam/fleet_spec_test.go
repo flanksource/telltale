@@ -10,6 +10,7 @@ import (
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/telltale/pkg/agentclient"
+	"github.com/flanksource/telltale/pkg/datadir"
 	"github.com/flanksource/telltale/pkg/tracing/seam"
 	"github.com/flanksource/telltale/pkg/tracing/target"
 	. "github.com/onsi/ginkgo/v2"
@@ -31,7 +32,7 @@ func (*fleetEmitter) Export(string, string)                        {}
 
 var _ = Describe("dial-out fleet", func() {
 	It("streams records with each pod resource and arms a late joining process", func() {
-		store := agentclient.NewTokenStore(GinkgoT().TempDir())
+		store := agentclient.NewTokenStore([]datadir.ConfigDir{{Name: datadir.ConfigGlobal, Dir: GinkgoT().TempDir()}})
 		token, err := store.Mint("fleet-test", "agent")
 		Expect(err).NotTo(HaveOccurred())
 		registry := testRegistry()

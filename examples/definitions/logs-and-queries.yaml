@@ -1,0 +1,25 @@
+# A host-only TraceDefinition: it needs no command or pid, so a run of it
+# records until stopped or its --duration passes.
+#
+#   telltale run --definition logs-and-queries --duration 30m
+apiVersion: telltale.flanksource.com/v1alpha1
+kind: TraceDefinition
+metadata:
+  name: logs-and-queries
+spec:
+  description: Follow the checkout pods' logs and poll their CPU while an incident is open
+  connections:
+    - connection://loki # a loki connection in the connection store
+  collect:
+    logs:
+      kubernetes:
+        - namespace: checkout
+          podSelector: app=checkout
+      loki: # takes the default loki connection
+        - query: '{namespace="checkout"} |= "error"'
+          minLevel: warn
+    query:
+      profile:
+        - profile: pod-cpu-by-pod # a saved profile in <config dir>/profiles
+          params: {namespace: checkout}
+          every: 30s

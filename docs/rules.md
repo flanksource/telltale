@@ -17,7 +17,7 @@ After reviewing the configuration and preview, enable hooks by starting the serv
 .bin/telltale serve --rules examples/rules.yaml --enforce-rules
 ```
 
-The rules loop runs every two seconds even when no browser is open. Configuration is loaded once from the explicit file; restart to load edits. Process classification continues to use the work directory's `.telltale/groups.yaml`. One enforcing instance per OS user holds an advisory lock. Observation instances never invoke hooks.
+The rules loop runs every two seconds even when no browser is open. Configuration is loaded once from the explicit file; restart to load edits. Process classification uses `./.telltale/groups.yaml`, else the global config dir's `groups.yaml` (`$XDG_CONFIG_HOME/telltale` or `~/.config/telltale`). One enforcing instance per OS user holds an advisory lock. Observation instances never invoke hooks.
 
 ## Resource values and CEL
 
@@ -131,4 +131,4 @@ Open `/top?topTab=events`, or use a rule's **View events** button, to inspect tr
 
 `since` accepts RFC3339; `limit` defaults to 100 and accepts 1..10000. CLI status/events use `--server`, defaulting to `http://localhost:8080`. HTTP routes are read-only and appear in `/api/openapi.json`.
 
-History is stored through recordstore in `.telltale/monitor`. Action intents are written before dispatch. Persistence errors stop enforcement until restart. Restart restores stages for the current configuration and mode, requires fresh timing observations, and skips unfinished attempts whose outcome is unknown. Switching from observation to enforcement starts separate enforcement incident state. Budget rules react to sampled usage; they do not impose kernel CPU or memory quotas.
+History is stored through recordstore in `monitor/` under the data dir (`--data-dir`, by default `$XDG_CACHE_HOME/telltale` or the OS cache dir). Action intents are written before dispatch. Persistence errors stop enforcement until restart. Restart restores stages for the current configuration and mode, requires fresh timing observations, and skips unfinished attempts whose outcome is unknown. Switching from observation to enforcement starts separate enforcement incident state. Budget rules react to sampled usage; they do not impose kernel CPU or memory quotas.

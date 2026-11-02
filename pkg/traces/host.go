@@ -1,5 +1,5 @@
 // Package traces is a run's trace host: one persistent trace store per run,
-// at .telltale/traces/<runID>, serving every trace kind a fixture
+// at <data dir>/traces/<runID>, serving every trace kind a fixture
 // can arm (`traces:`) and the run-wide process capture behind the Processes
 // tab. The store outlives the run so a saved snapshot can reopen it; Prune
 // bounds how many runs are kept.
@@ -16,18 +16,23 @@ import (
 	"strings"
 	"time"
 
+	"github.com/flanksource/commons-db/connection/crd"
 	"github.com/flanksource/commons-db/connection/store"
 	dbcontext "github.com/flanksource/commons-db/context"
+	"github.com/flanksource/commons-db/models"
 	"github.com/flanksource/commons-db/query"
+	"github.com/flanksource/commons-db/query/profilestore"
 	"github.com/flanksource/commons-db/recordstore"
+	"github.com/flanksource/commons-db/recordstore/recordresults"
 	"github.com/flanksource/telltale/pkg/traceserve"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/process"
+	"github.com/flanksource/telltale/pkg/tracing/prometheus"
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
 )
 
-// Dir is where a work dir keeps its runs' trace stores, one directory each.
-const Dir = ".telltale/traces"
+// Dir is where a data dir keeps its runs' trace stores, one directory each.
+const Dir = "traces"
 
 const (
 	// pollEvery is how often a capture's records are committed, and so how
@@ -49,6 +54,9 @@ type Host struct {
 	// ctx is what each capture is started under, answering connection
 	// references from the host's connection store.
 	ctx dbcontext.Context
+	// releases are what the run's kinds hold beyond their captures, released
+	// by Close after the captures stop.
+	releases []func(context.Context) error
 }
 
 // RunPrefix and RunTimestampLayout name a run: run-<UTC start>, filesystem
@@ -66,22 +74,57 @@ func RunID(started time.Time) string {
 
 // OpenOptions name the run a Host is opened for.
 type OpenOptions struct {
-	WorkDir string
+	DataDir string
 	RunID   string
 	// Connections answer the connection references its captures name, such
 	// as sql_xevent's connection, before any connections table; nil answers
 	// none.
 	Connections *store.Store
+	// RunConnections are connections the run alone defines, such as a trace
+	// definition's inline ones: written to the run's store under
+	// RunConnectionsDir as one more layer, after Connections' so a run's
+	// connection shadows a stored one of its name for this run only.
+	RunConnections []crd.Connection
 }
 
-// Open creates the run's store under WorkDir/.telltale/traces. A RunID already
+// RunConnectionsDir is where a run's own connections are kept in its store;
+// they hold secret references, never secrets.
+const RunConnectionsDir = "connections"
+
+// runConnections is base with the run's own connections as its last layer,
+// written into the run's store dir; base alone when the run defines none.
+func runConnections(base *store.Store, dir string, defined []crd.Connection) (*store.Store, error) {
+	if len(defined) == 0 {
+		return base, nil
+	}
+	var layers []store.Layer
+	if base != nil {
+		layers = base.Layers()
+	}
+	layers = append(layers, store.Layer{Name: RunConnectionsDir, Dir: filepath.Join(dir, RunConnectionsDir)})
+	composed, err := store.New(layers...)
+	if err != nil {
+		return nil, fmt.Errorf("run connections: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, RunConnectionsDir), 0o700); err != nil {
+		return nil, fmt.Errorf("run connections: %w", err)
+	}
+	for _, connection := range defined {
+		if err := composed.Save(RunConnectionsDir, &connection); err != nil {
+			return nil, fmt.Errorf("run connections: %w", err)
+		}
+	}
+	return composed, nil
+}
+
+// Open creates the run's store under DataDir/traces. A RunID already
 // taken by an earlier run in the same second gets a -2, -3, … suffix, so a
 // run never writes into another's store; RunID reports the name used.
 func Open(options OpenOptions) (*Host, error) {
-	if options.WorkDir == "" || options.RunID == "" {
-		return nil, fmt.Errorf("open trace store: a work dir and a run id are required (got %q, %q)", options.WorkDir, options.RunID)
+	if options.DataDir == "" || options.RunID == "" {
+		return nil, fmt.Errorf("open trace store: a data dir and a run id are required (got %q, %q)", options.DataDir, options.RunID)
 	}
-	root := filepath.Join(options.WorkDir, Dir)
+	root := filepath.Join(options.DataDir, Dir)
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, fmt.Errorf("open trace store: %w", err)
 	}
@@ -89,11 +132,17 @@ func Open(options OpenOptions) (*Host, error) {
 	if err != nil {
 		return nil, err
 	}
+	connections, err := runConnections(options.Connections, dir, options.RunConnections)
+	if err != nil {
+		return nil, err
+	}
 	dumpers, err := NewDumpers()
 	if err != nil {
 		return nil, err
 	}
-	runtime, _, err := openStore(dir, dumpers)
+	var releases []func(context.Context) error
+	onClose := func(release func(context.Context) error) { releases = append(releases, release) }
+	runtime, _, err := openStore(dir, KindDeps{Dumpers: dumpers, DataDir: options.DataDir, RunID: name, OnClose: onClose})
 	if err != nil {
 		return nil, err
 	}
@@ -102,10 +151,32 @@ func Open(options OpenOptions) (*Host, error) {
 		MaxDuration: maxDuration, BeforeRead: runtime.Results.Registry.BeforeRead,
 	})
 	ctx := dbcontext.New()
-	if options.Connections != nil {
-		ctx = options.Connections.Attach(ctx)
+	if connections != nil {
+		ctx = connections.Attach(ctx)
 	}
-	return &Host{runID: name, dir: dir, runtime: runtime, dumpers: dumpers, ctx: ctx}, nil
+	paths, err := prometheus.Paths(options.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	// A run that queries the managed Prometheus holds it as its scraping
+	// captures do, so it is up for every read and stops once no run holds it.
+	managed := prometheus.NewManaged(options.DataDir)
+	releases = append(releases, managed.Release)
+	stored := ctx.ConnectionResolver()
+	// The connections telltale manages in the data dir resolve after the stored
+	// ones, as telltale serve's connections list them.
+	ctx = ctx.WithConnectionResolver(func(ctx dbcontext.Context, reference string) (*models.Connection, error) {
+		if stored != nil {
+			if connection, err := stored(ctx, reference); err != nil || connection != nil {
+				return connection, err
+			}
+		}
+		if !prometheus.NamesManaged(paths, reference) {
+			return nil, nil
+		}
+		return managed.Connection(ctx)
+	})
+	return &Host{runID: name, dir: dir, runtime: runtime, dumpers: dumpers, ctx: ctx, releases: releases}, nil
 }
 
 // RegisterDumper adds a stack transport the run's stacks are dumped over,
@@ -114,9 +185,9 @@ func (h *Host) RegisterDumper(dumper stacks.Dumper) error {
 	return h.dumpers.Register(dumper)
 }
 
-// StoreDir is where the run runID of workDir keeps its trace store.
-func StoreDir(workDir, runID string) string {
-	return filepath.Join(workDir, Dir, runID)
+// StoreDir is where the run runID of dataDir keeps its trace store.
+func StoreDir(dataDir, runID string) string {
+	return filepath.Join(dataDir, Dir, runID)
 }
 
 // Reopen opens the store a finished run left in dir, such as for a saved
@@ -134,17 +205,31 @@ func Reopen(dir string) (*tracing.Runtime, func() error, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return openStore(dir, dumpers)
+	return openStore(dir, KindDeps{Dumpers: dumpers})
 }
 
-// openStore opens the store in dir with every kind of the catalog, the
-// way query serves a store.
-func openStore(dir string, dumpers *stacks.Dumpers) (*tracing.Runtime, func() error, error) {
-	kinds, err := kindsWith(dumpers)
+// openStore opens the store in dir with every kind of the catalog over deps,
+// the way query serves a store.
+// The kinds are built before the store whose registry prepares their reads,
+// so BeforeExecute is bound to that registry once the store is open.
+func openStore(dir string, deps KindDeps) (*tracing.Runtime, func() error, error) {
+	var registry *recordresults.Registry
+	deps.BeforeExecute = func(ctx context.Context, reads []profilestore.ReadRequest) (func(), error) {
+		if registry == nil {
+			return nil, fmt.Errorf("trace store %s: a profile read before the store opened", dir)
+		}
+		return registry.BeforeExecute(ctx, reads)
+	}
+	kinds, err := kindsWith(deps)
 	if err != nil {
 		return nil, nil, err
 	}
-	return traceserve.Open(traceserve.OpenOptions{Dir: dir, Kinds: kinds, Retention: retention})
+	runtime, closeStore, err := traceserve.Open(traceserve.OpenOptions{Dir: dir, Kinds: kinds, Retention: retention})
+	if err != nil {
+		return nil, nil, err
+	}
+	registry = runtime.Results.Registry
+	return runtime, closeStore, nil
 }
 
 // claimRunDir creates root/runID, or the first free suffixed name.
@@ -181,14 +266,21 @@ func Kinds() (*tracing.Kinds, error) {
 	if err != nil {
 		return nil, err
 	}
-	return kindsWith(dumpers)
+	return kindsWith(KindDeps{Dumpers: dumpers})
 }
 
-// kindsWith is the catalog over dumpers: every registered kind (Registrations),
-// sharing one process sampler and the dumpers.
-func kindsWith(dumpers *stacks.Dumpers) (*tracing.Kinds, error) {
+// kindsWith is the catalog over deps: every registered kind (Registrations),
+// sharing one new process sampler, the dumpers and the run.
+func kindsWith(deps KindDeps) (*tracing.Kinds, error) {
 	kinds := tracing.NewKinds()
-	deps := KindDeps{Dumpers: dumpers, Sampler: process.NewSampler()}
+	deps.Sampler = process.NewSampler()
+	if deps.BeforeExecute == nil {
+		// A catalog with no store, read for its schemas and to validate
+		// params, refuses any profile read loudly rather than running it.
+		deps.BeforeExecute = func(context.Context, []profilestore.ReadRequest) (func(), error) {
+			return nil, errors.New("this trace kind catalog has no store to prepare profile reads; start the capture in a run")
+		}
+	}
 	for _, registration := range Registrations() {
 		plugin := registration.New(deps)
 		seams, defaultSeam := plugin.TargetSeams()
@@ -252,16 +344,25 @@ func (h *Host) Kinds() *tracing.Kinds { return h.runtime.Kinds }
 // traceserve for the test UI.
 func (h *Host) Runtime() *tracing.Runtime { return h.runtime }
 
-// Start starts a capture of kind with params into a new stream of the store.
-func (h *Host) Start(kind string, params json.RawMessage) (*Capture, error) {
-	if err := Validate(h.runtime.Kinds, kind, params); err != nil {
+// StartOptions are one capture a Host starts: its kind, its params, and the
+// labels its session carries, such as the definition entry it was armed for.
+type StartOptions struct {
+	Kind   string
+	Params json.RawMessage
+	Labels map[string]string
+}
+
+// Start starts a capture of options.Kind with its params into a new stream of
+// the store, its session labelled with options.Labels.
+func (h *Host) Start(options StartOptions) (*Capture, error) {
+	if err := Validate(h.runtime.Kinds, options.Kind, options.Params); err != nil {
 		return nil, err
 	}
-	managed, err := h.runtime.Start(h.ctx, tracing.StartRequest{Kind: kind, Params: params})
+	managed, err := h.runtime.Start(h.ctx, tracing.StartRequest{Kind: options.Kind, Params: options.Params, Labels: options.Labels})
 	if err != nil {
-		return nil, fmt.Errorf("start %s trace: %w", kind, err)
+		return nil, fmt.Errorf("start %s trace: %w", options.Kind, err)
 	}
-	return &Capture{host: h, kind: kind, managed: managed}, nil
+	return &Capture{host: h, kind: options.Kind, managed: managed}, nil
 }
 
 // Summarize is the kind's summary of ref's window; it always has `count`.
@@ -269,10 +370,15 @@ func (h *Host) Summarize(ctx context.Context, ref tracing.TraceRef) (map[string]
 	return h.runtime.Summarize(ctx, ref)
 }
 
-// Close stops every capture still running and closes the store, which stays
-// on disk for the run's snapshot to reopen.
+// Close stops every capture still running, releases what the run's kinds
+// hold, such as the managed Prometheus, and closes the store, which stays on
+// disk for the run's snapshot to reopen.
 func (h *Host) Close(ctx context.Context) error {
-	return errors.Join(h.runtime.Sessions.StopAll(ctx), h.runtime.Results.Close())
+	errs := []error{h.runtime.Sessions.StopAll(ctx)}
+	for _, release := range h.releases {
+		errs = append(errs, release(ctx))
+	}
+	return errors.Join(append(errs, h.runtime.Results.Close())...)
 }
 
 // highSeq is the seq stream has committed through: 0 for one that never

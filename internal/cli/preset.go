@@ -1,33 +1,42 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
 	"github.com/flanksource/clicky/api"
 	"github.com/flanksource/telltale"
+	"github.com/flanksource/telltale/pkg/definition"
 	"github.com/spf13/cobra"
 )
 
-// newPresetCommand is `telltale <preset> PID | -- command`.
-func newPresetCommand(preset telltale.Preset) *cobra.Command {
+// newPresetCommand is `telltale <definition> PID | -- command`, a built-in
+// trace definition run against a process or a command.
+func newPresetCommand(def *definition.TraceDefinition) *cobra.Command {
 	var flags runFlags
 	cmd := &cobra.Command{
-		Use:   preset.Name + " [flags] PID | -- command [args...]",
-		Short: preset.Summary,
+		Use:   def.Name + " [flags] PID | -- command [args...]",
+		Short: def.Summary(),
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options := flags.options
 			var err error
 			if options.PID, options.Command, err = presetTarget(args, cmd.ArgsLenAtDash()); err != nil {
-				return fmt.Errorf("%s: %w", preset.Name, err)
+				return fmt.Errorf("%s: %w", def.Name, err)
 			}
-			return runTraced(cmd, options, preset.Start)
+			return runTraced(cmd, options, func(ctx context.Context, options telltale.StartOptions) (*telltale.Run, error) {
+				applied, err := definition.Apply(def, options)
+				if err != nil {
+					return nil, err
+				}
+				return telltale.Start(ctx, applied)
+			})
 		},
 	}
-	flags.bind(cmd)
-	cmd.Flags().BoolVar(&flags.options.Facets, "facets", false, "Read every process's facets and environment into the process tree")
-	setHelp(cmd, func(cmd *cobra.Command) api.Text { return presetHelp(cmd, preset).Text })
+	flags.bind(cmd, true)
+	cmd.Flags().BoolVar(&flags.options.Tree.Facets, "facets", false, "Read every process's facets and environment into the process tree")
+	setHelp(cmd, func(cmd *cobra.Command) api.Text { return presetHelp(cmd, def).Text })
 	return cmd
 }
 

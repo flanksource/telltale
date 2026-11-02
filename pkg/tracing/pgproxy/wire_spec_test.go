@@ -9,7 +9,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	. "github.com/onsi/gomega/gstruct"
+	"github.com/onsi/gomega/gstruct"
 
 	"github.com/flanksource/commons-db/connection"
 )
@@ -82,7 +82,7 @@ var _ = Describe("pg session", func() {
 		session.frontend('Q', []byte("SELECT 1\x00"))
 		session.backend('Z', []byte{'I'})
 		Expect(emitted).To(HaveLen(1))
-		Expect(emitted[0]).To(MatchFields(IgnoreExtras, Fields{
+		Expect(emitted[0]).To(gstruct.MatchFields(gstruct.IgnoreExtras, gstruct.Fields{
 			"Connection": Equal("db"), "Driver": Equal("postgres"), "SQL": Equal("SELECT 1"), "Rows": BeEquivalentTo(-1),
 		}))
 	})

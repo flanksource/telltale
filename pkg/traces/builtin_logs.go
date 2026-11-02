@@ -7,5 +7,5 @@ import (
 )
 
 func init() {
-	MustRegister(Registration{Name: logs.Kind, Title: "Logs", Summary: "Record application logs", Seams: []target.Seam{target.Self, target.Agent, target.Process}, DefaultSeam: target.Self, Armable: true, New: func(KindDeps) tracing.TracePlugin { return logs.NewKind(nil) }})
+	MustRegister(Registration{Name: logs.Kind, Title: "Logs", Summary: "Record application logs", Seams: []target.Seam{target.Self, target.Agent, target.Host}, DefaultSeam: target.Self, Armable: true, New: func(KindDeps) tracing.TracePlugin { return logs.NewKind(nil) }})
 }

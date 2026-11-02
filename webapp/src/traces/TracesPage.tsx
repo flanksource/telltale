@@ -32,6 +32,12 @@ function readPageState(): PageState {
 
 function usePageState(): [PageState, (next: Partial<PageState>) => void] {
   const [state, setState] = useState(readPageState);
+  // Navigation, such as the ⌘K search selecting a run, changes the URL under the mounted page.
+  useEffect(() => {
+    const follow = () => setState(readPageState());
+    window.addEventListener("popstate", follow);
+    return () => window.removeEventListener("popstate", follow);
+  }, []);
   useEffect(() => {
     // The page owns only its own parameters: others, such as the process groups panel's, stay.
     const params = new URLSearchParams(window.location.search);
@@ -73,12 +79,13 @@ function RunSummary({ run }: { run: RunTraces }) {
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["trace-runs"] }),
   });
   // A host run traces the host, not a command or a pid, and is live while it is running (it has no live sessions).
-  const hostRun = !run.pid && !run.command?.length;
+  const hostRun = !run.standing && !run.pid && !run.command?.length;
   const running = !!run.live || (hostRun && run.status === "running");
-  const command = <code>{run.pid ? `pid ${run.pid}` : hostRun ? "host run" : run.command?.join(" ")}</code>;
-  const failed = run.checkpointErrors?.length ? (
+  const command = <code>{run.standing ? "standing store" : run.pid ? `pid ${run.pid}` : hostRun ? "host run" : run.command?.join(" ")}</code>;
+  const errors = [...(run.error ? [run.error] : []), ...(run.checkpointErrors ?? [])];
+  const failed = errors.length ? (
     <ul role="alert" className="text-sm text-red-700 dark:text-red-400">
-      {run.checkpointErrors.map(error => <li key={error}>{error}</li>)}
+      {errors.map(error => <li key={error}>{error}</li>)}
     </ul>
   ) : null;
   if (!running) {
@@ -99,13 +106,14 @@ function RunSummary({ run }: { run: RunTraces }) {
   );
 }
 
-/** A host run's process groups, which it records in place of a process trace. */
+/** Captures recorded without a local process tree. */
 function HostRunDetail({ run }: { run: RunTraces }) {
   const [view, setView] = useState<GroupsView>(DEFAULT_VIEW);
   return (
     <div className="space-y-6">
       <RunSummary run={run} />
-      <Panel title="Process groups"><RecordedGroups run={run} view={view} onViewChange={next => setView(previous => ({ ...previous, ...next }))} /></Panel>
+      <Panel title="Captures"><TracesPanel run={run} /></Panel>
+      {processGroupsCapture(run) && <Panel title="Process groups"><RecordedGroups run={run} view={view} onViewChange={next => setView(previous => ({ ...previous, ...next }))} /></Panel>}
     </div>
   );
 }
@@ -121,7 +129,7 @@ function RunDetail({ run }: { run: RunTraces }) {
     ...(selectedKey ? { selectedKey } : {}),
     done: !run.live,
   });
-  if (!run.process) return processGroupsCapture(run) ? <HostRunDetail run={run} /> : <p role="alert">{run.unavailable}</p>;
+  if (!run.process) return run.unavailable ? <p role="alert">{run.unavailable}</p> : <HostRunDetail run={run} />;
   return (
     <div className="space-y-6">
       <RunSummary run={run} />

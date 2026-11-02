@@ -12,6 +12,7 @@ import (
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/internal/cli"
 	"github.com/flanksource/telltale/pkg/agentclient"
+	"github.com/flanksource/telltale/pkg/definition"
 	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/target"
@@ -38,9 +39,9 @@ func help(args ...string) string {
 	return stdout
 }
 
-// manifest is the one run workDir recorded.
-func manifest(workDir string) telltale.Result {
-	runs, err := telltale.List(telltale.ListOptions{WorkDir: workDir})
+// manifest is the one run dataDir recorded.
+func manifest(dataDir string) telltale.Result {
+	runs, err := telltale.List(telltale.ListOptions{DataDir: dataDir})
 	Expect(err).ToNot(HaveOccurred())
 	Expect(runs).To(HaveLen(1))
 	data, err := os.ReadFile(filepath.Join(runs[0].Dir, telltale.ManifestFile))
@@ -96,10 +97,10 @@ var _ = Describe("telltale run <kind>", func() {
 
 	DescribeTable("refuses what it cannot run before making a run store",
 		func(kind string, args []string, refusal string) {
-			workDir := GinkgoT().TempDir()
-			_, _, err := execute(append([]string{"run", kind, "--work-dir", workDir}, args...)...)
+			dataDir := GinkgoT().TempDir()
+			_, _, err := execute(append([]string{"run", kind, "--data-dir", dataDir}, args...)...)
 			Expect(err).To(MatchError(ContainSubstring(refusal)))
-			Expect(filepath.Join(workDir, ".telltale")).ToNot(BeADirectory())
+			Expect(os.ReadDir(dataDir)).To(BeEmpty())
 		},
 		Entry("a value outside a param's choices", "http", []string{"--seam", "proxy", "--mode", "sideways", "--", "true"}, `--mode: "sideways" is not one of connect, mitm`),
 		Entry("params the kind refuses", "sql", []string{"--seam", "proxy", "--dsn", "postgres://localhost/db", "--max-statements", "-1", "--", "true"}, "maxStatements -1 must be at least 1"),
@@ -110,10 +111,10 @@ var _ = Describe("telltale run <kind>", func() {
 	)
 
 	It("runs a command with one kind, recording it in the run's manifest", func() {
-		workDir := GinkgoT().TempDir()
-		_, stderr, err := execute("run", "http", "--seam", "proxy", "--work-dir", workDir, "--", "true")
+		dataDir := GinkgoT().TempDir()
+		_, stderr, err := execute("run", "http", "--seam", "proxy", "--data-dir", dataDir, "--", "true")
 		Expect(err).ToNot(HaveOccurred(), stderr)
-		Expect(manifest(workDir).Captures).To(ConsistOf(HaveField("Kind", "http")))
+		Expect(manifest(dataDir).Captures).To(ConsistOf(HaveField("Kind", "http")))
 	})
 
 	It("attaches to a running process for a duration", func() {
@@ -123,11 +124,11 @@ var _ = Describe("telltale run <kind>", func() {
 			_ = target.Process.Kill()
 			_ = target.Wait()
 		})
-		workDir := GinkgoT().TempDir()
-		_, stderr, err := execute("run", "process_samples", "--work-dir", workDir, "--pid", strconv.Itoa(target.Process.Pid), "--duration", "1s")
+		dataDir := GinkgoT().TempDir()
+		_, stderr, err := execute("run", "process_samples", "--data-dir", dataDir, "--pid", strconv.Itoa(target.Process.Pid), "--duration", "1s")
 		Expect(err).ToNot(HaveOccurred(), stderr)
 		Expect(stderr).To(ContainSubstring("Tracing pid " + strconv.Itoa(target.Process.Pid)))
-		result := manifest(workDir)
+		result := manifest(dataDir)
 		Expect(result.PID).To(Equal(target.Process.Pid))
 		Expect(result.Captures).To(ConsistOf(HaveField("Kind", "process_samples")))
 	})
@@ -140,19 +141,19 @@ var _ = Describe("telltale run <kind>", func() {
 			kind  string
 			extra []string
 		}{{kind: "goprof", extra: []string{"--seam", "agent"}}, {kind: "goprof", extra: []string{"--seam", "agent", "--profile", "cpu", "--seconds", "1"}}, {kind: "goprof"}, {kind: "stacks", extra: []string{"--seam", "agent"}}} {
-			workDir := GinkgoT().TempDir()
-			args := append([]string{"run", run.kind, "--work-dir", workDir, "--pid", strconv.Itoa(child.PID), "--duration", "1s"}, run.extra...)
+			dataDir := GinkgoT().TempDir()
+			args := append([]string{"run", run.kind, "--data-dir", dataDir, "--pid", strconv.Itoa(child.PID), "--duration", "1s"}, run.extra...)
 			_, stderr, err := execute(args...)
 			Expect(err).NotTo(HaveOccurred(), stderr)
-			Expect(manifest(workDir).Captures).To(ContainElement(HaveField("Kind", run.kind)))
+			Expect(manifest(dataDir).Captures).To(ContainElement(HaveField("Kind", run.kind)))
 		}
 	})
 	DescribeTable("attaches a run while keeping the kind's seam", func(kind string, extra []string) {
-		workDir := GinkgoT().TempDir()
-		args := append([]string{"run", kind, "--work-dir", workDir, "--pid", strconv.Itoa(os.Getpid()), "--duration", "300ms"}, extra...)
+		dataDir := GinkgoT().TempDir()
+		args := append([]string{"run", kind, "--data-dir", dataDir, "--pid", strconv.Itoa(os.Getpid()), "--duration", "300ms"}, extra...)
 		_, stderr, err := execute(args...)
 		Expect(err).NotTo(HaveOccurred(), stderr)
-		Expect(manifest(workDir).PID).To(Equal(os.Getpid()))
+		Expect(manifest(dataDir).PID).To(Equal(os.Getpid()))
 	},
 		Entry("self", "http", []string{"--seam", "self", "--features", "http"}),
 		Entry("host", "process_groups", nil),
@@ -190,19 +191,22 @@ var _ = Describe("telltale trace run", func() {
 	})
 
 	It("refuses an unknown kind before making a run store, naming the registered ones", func() {
-		workDir := GinkgoT().TempDir()
-		_, _, err := execute("trace", "run", "--work-dir", workDir, "--trace", "nope", "--", "true")
+		dataDir := GinkgoT().TempDir()
+		_, _, err := execute("trace", "run", "--data-dir", dataDir, "--trace", "nope", "--", "true")
 		Expect(err).To(MatchError(And(ContainSubstring(`unknown trace kind "nope" (registered: `), ContainSubstring("http"), ContainSubstring("sql"))))
-		Expect(filepath.Join(workDir, ".telltale")).ToNot(BeADirectory())
+		Expect(os.ReadDir(dataDir)).To(BeEmpty())
 	})
 })
 
 var _ = Describe("presets", func() {
 	It("each have a command with their help", func() {
-		for _, preset := range telltale.Presets() {
-			page := help(preset.Name)
-			Expect(page).To(ContainSubstring(preset.Description))
-			Expect(page).To(ContainSubstring("telltale " + preset.Name + " [flags] PID"))
+		builtins, err := definition.Builtins()
+		Expect(err).ToNot(HaveOccurred())
+		Expect(builtins).ToNot(BeEmpty())
+		for _, def := range builtins {
+			page := help(def.Name)
+			Expect(page).To(ContainSubstring(def.Spec.Description))
+			Expect(page).To(ContainSubstring("telltale " + def.Name + " [flags] PID"))
 		}
 		Expect(help("gops")).To(ContainSubstring("stacks"))
 	})
@@ -225,9 +229,9 @@ var _ = Describe("presets", func() {
 			_ = target.Process.Kill()
 			_ = target.Wait()
 		})
-		workDir := GinkgoT().TempDir()
-		_, stderr, err := execute("ps", "--work-dir", workDir, "--duration", "1s", strconv.Itoa(target.Process.Pid))
+		dataDir := GinkgoT().TempDir()
+		_, stderr, err := execute("ps", "--data-dir", dataDir, "--duration", "1s", strconv.Itoa(target.Process.Pid))
 		Expect(err).ToNot(HaveOccurred(), stderr)
-		Expect(manifest(workDir).PID).To(Equal(target.Process.Pid))
+		Expect(manifest(dataDir).PID).To(Equal(target.Process.Pid))
 	})
 })

@@ -17,8 +17,9 @@ import (
 // TopMount serves the latest frame of the host's process groups, read live
 // and kept nowhere: GET with all=true to include the processes no tool's
 // group holds, net=true to read network bytes with nettop. Under it,
-// TopProcessesPath serves the processes running a program (name=) or a
-// process and those under it (pid=).
+// TopProcessesPath serves the processes running a program (name=), a
+// process and those under it (pid=), or those whose name, command or pid
+// holds a search text (q=).
 const TopMount = "/api/top"
 
 // TopProcessesPath is the processes route under TopMount.
@@ -44,7 +45,6 @@ const topIdle = 30 * time.Second
 // TopHandler serves TopMount, one Top per choice of all and net, each read
 // every groups.DefaultInterval while asked for.
 type TopHandler struct {
-	workDir string
 	sampler *process.Sampler
 	every   time.Duration
 	mu      sync.Mutex
@@ -56,10 +56,10 @@ type topChoice struct {
 	all, net bool
 }
 
-// NewTopHandler serves the groups of the host, with the rules of workDir's
-// .telltale/groups.yaml applied over the built-in ones.
-func NewTopHandler(workDir string) *TopHandler {
-	return &TopHandler{workDir: workDir, sampler: process.NewSampler(), every: groups.DefaultInterval, tops: map[topChoice]*liveTop{}}
+// NewTopHandler serves the groups of the host, with the rules of the
+// groups.yaml its config dirs keep applied over the built-in ones.
+func NewTopHandler() *TopHandler {
+	return &TopHandler{sampler: process.NewSampler(), every: groups.DefaultInterval, tops: map[topChoice]*liveTop{}}
 }
 
 func (h *TopHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -127,15 +127,23 @@ func (h *TopHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// processFilter is the program (name=) or the process (pid=) a processes
-// request asks for: one, not both.
+// processFilter is the program (name=), the process (pid=) or the search
+// text (q=) a processes request asks for: exactly one of them.
 func processFilter(r *http.Request) (groups.ProcessFilter, error) {
-	name, pid := r.URL.Query().Get("name"), r.URL.Query().Get("pid")
+	name, pid, query := r.URL.Query().Get("name"), r.URL.Query().Get("pid"), r.URL.Query().Get("q")
+	given := 0
+	for _, value := range []string{name, pid, query} {
+		if value != "" {
+			given++
+		}
+	}
 	switch {
-	case (name == "") == (pid == ""):
-		return groups.ProcessFilter{}, errors.New("give a program's name= or a process's pid=, one of them")
+	case given != 1:
+		return groups.ProcessFilter{}, errors.New("give a program's name=, a process's pid= or a search q=, one of them")
 	case name != "":
 		return groups.ProcessFilter{Name: name}, nil
+	case query != "":
+		return groups.ProcessFilter{Query: query}, nil
 	}
 	parsed, err := queryPID(r)
 	return groups.ProcessFilter{PID: parsed}, err
@@ -172,11 +180,11 @@ func (h *TopHandler) live(choice topChoice) (*liveTop, error) {
 	if live, ok := h.tops[choice]; ok {
 		return live, nil
 	}
-	catalog, err := groups.CatalogFile(h.workDir)
+	catalog, err := groups.CatalogFile()
 	if err != nil {
 		return nil, err
 	}
-	options, err := groups.Params{All: choice.all, Net: choice.net, Catalog: catalog, Interval: h.every.String()}.Options()
+	options, err := groups.Options{All: choice.all, Net: choice.net, Catalog: catalog, Interval: h.every.String()}.TopOptions()
 	if err != nil {
 		return nil, err
 	}

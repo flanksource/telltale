@@ -34,8 +34,8 @@ var _ = Describe("cloud log source", func() {
 	It("filters cloud severity using the requested minimum", func() {
 		var records []Log
 		emit := func(row Log) error { records = append(records, row); return nil }
-		Expect(emitCloud(query.Row{"message": "notice", "severity": "NOTICE"}, Params{MinLevel: "warn"}, emit)).To(Succeed())
-		Expect(emitCloud(query.Row{"message": "warning", "severity": "WARNING"}, Params{MinLevel: "warn"}, emit)).To(Succeed())
+		Expect(emitCloud(query.Row{"message": "notice", "severity": "NOTICE"}, Options{MinLevel: "warn"}, emit)).To(Succeed())
+		Expect(emitCloud(query.Row{"message": "warning", "severity": "WARNING"}, Options{MinLevel: "warn"}, emit)).To(Succeed())
 		Expect(records).To(HaveLen(1))
 		Expect(records[0].Message).To(Equal("warning"))
 	})
@@ -47,7 +47,7 @@ var _ = Describe("cloud log source", func() {
 			ctx := dbcontext.New().WithConnectionResolver(func(_ dbcontext.Context, _ string) (*models.Connection, error) {
 				return &models.Connection{Name: "example", Type: connectionType}, nil
 			})
-			err := followCloud(ctx, Params{Backend: backend, Connection: "connection://example", Query: "example"}, func(Log) error { return nil })
+			err := followCloud(ctx, Options{Backend: backend, Connection: "connection://example", Query: "example"}, func(Log) error { return nil })
 			Expect(err).To(MatchError(ContainSubstring(expected)))
 		},
 		Entry("GCP Cloud Logging", "gcpcloudlogging", models.ConnectionTypeGCP, "project"),
@@ -56,7 +56,7 @@ var _ = Describe("cloud log source", func() {
 	It("emits history and then stream rows through the selected connection", func() {
 		query.RegisterProvider(testCloudProvider{})
 		var records []Log
-		err := followCloud(dbcontext.NewContext(context.Background()), Params{Backend: "test-log-cloud", Connection: "connection://example"}, func(row Log) error { records = append(records, row); return nil })
+		err := followCloud(dbcontext.NewContext(context.Background()), Options{Backend: "test-log-cloud", Connection: "connection://example"}, func(row Log) error { records = append(records, row); return nil })
 		Expect(err).NotTo(HaveOccurred())
 		Expect(records).To(HaveLen(2))
 		Expect(records[0].Message).To(Equal("connection://example"))
@@ -88,7 +88,7 @@ var _ = Describe("cloud log source", func() {
 		records := make(chan Log, 2)
 		done := make(chan error, 1)
 		go func() {
-			done <- followCloud(ctx, Params{Backend: "loki", Connection: "connection://loki", Query: `{app="api"}`}, func(row Log) error { records <- row; return nil })
+			done <- followCloud(ctx, Options{Backend: "loki", Connection: "connection://loki", Query: `{app="api"}`}, func(row Log) error { records <- row; return nil })
 		}()
 		var first, second Log
 		select {
@@ -120,7 +120,7 @@ var _ = Describe("cloud log source", func() {
 			return &models.Connection{Name: "cloud", Type: models.ConnectionTypeAWS, Username: "example-access", Password: "example-secret", Properties: types.JSONStringMap{"region": "eu-west-1"}}, nil
 		})
 		var records []Log
-		err := followCloud(ctx, Params{Backend: "cloudwatch", Connection: "connection://cloud", Query: "fields @message", Options: map[string]any{"logGroup": "example", "endpoint": server.URL}}, func(row Log) error { records = append(records, row); return nil })
+		err := followCloud(ctx, Options{Backend: "cloudwatch", Connection: "connection://cloud", Query: "fields @message", ProviderOptions: map[string]any{"logGroup": "example", "endpoint": server.URL}}, func(row Log) error { records = append(records, row); return nil })
 		Expect(err).NotTo(HaveOccurred())
 		Expect(records).To(HaveLen(1))
 		Expect(records[0].Message).To(Equal("cloud history"))
@@ -163,7 +163,7 @@ var _ = Describe("cloud log source", func() {
 		records := make(chan Log, 4)
 		done := make(chan error, 1)
 		go func() {
-			done <- followCloud(ctx, Params{Backend: "opensearch", Connection: "connection://search", Query: `{"query":{"match_all":{}}}`, TimeField: "@timestamp", Options: map[string]any{"index": "logs", "limit": "10"}}, func(row Log) error { records <- row; return nil })
+			done <- followCloud(ctx, Options{Backend: "opensearch", Connection: "connection://search", Query: `{"query":{"match_all":{}}}`, TimeField: "@timestamp", ProviderOptions: map[string]any{"index": "logs", "limit": "10"}}, func(row Log) error { records <- row; return nil })
 		}()
 		var first, second Log
 		select {

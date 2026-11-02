@@ -32,11 +32,12 @@ func ParseSelector(value string) (map[string]string, error) {
 type Seam string
 
 const (
-	Self    Seam = "self"
-	Agent   Seam = "agent"
-	Process Seam = "process"
-	Proxy   Seam = "proxy"
-	Host    Seam = "host"
+	Self       Seam = "self"
+	Agent      Seam = "agent"
+	Process    Seam = "process"
+	Proxy      Seam = "proxy"
+	Host       Seam = "host"
+	Connection Seam = "connection"
 )
 
 var (

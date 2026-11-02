@@ -1,4 +1,4 @@
-// Live specs for the opensearch trace kind against a real OpenSearch: an
+// Live specs for the spans kind's OpenSearch host seam against a real OpenSearch: an
 // import of a window ends by itself, and a follow stores spans indexed later.
 
 package opensearch_test
@@ -21,7 +21,7 @@ import (
 	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/commons-db/types"
 	"github.com/flanksource/telltale/pkg/tracing"
-	"github.com/flanksource/telltale/pkg/tracing/opensearch"
+	"github.com/flanksource/telltale/pkg/tracing/spans"
 	"github.com/flanksource/telltale/pkg/tracing/tracingtest"
 )
 
@@ -81,7 +81,7 @@ var _ = Describe("opensearch trace kind (live)", func() {
 			span{id: "s1", traceID: "t1", service: "checkout", at: now.Add(-10 * time.Minute)},
 			span{id: "s2", traceID: "t1", service: "payments", at: now.Add(-9 * time.Minute)},
 		)
-		env = tracingtest.NewEnv(map[string]tracing.TracePlugin{"opensearch": opensearch.Kind()})
+		env = tracingtest.NewEnv(map[string]tracing.TracePlugin{spans.Kind: spans.NewKind(nil)})
 	})
 
 	start := func(params string) *query.Session {
@@ -96,16 +96,17 @@ var _ = Describe("opensearch trace kind (live)", func() {
 			}
 			return nil, nil
 		})
-		managed, err := env.Runtime.Start(ctx, tracing.StartRequest{Kind: "opensearch", Params: json.RawMessage(
-			fmt.Sprintf(`{"connection": "connection://traces", "index": %q, %s}`, index, params))})
+		managed, err := env.Runtime.Start(ctx, tracing.StartRequest{Kind: spans.Kind, Params: json.RawMessage(
+			fmt.Sprintf(`{"target": {"seam": "host"}, "opensearch": {"connection": "connection://traces", "index": %q, %s}}`, index, params))})
 		Expect(err).ToNot(HaveOccurred())
 		return managed.Session()
 	}
 
-	sourceKeys := func(rows []recordstore.Row) []any {
+	sources := func(rows []recordstore.Row) []any {
 		keys := []any{}
 		for _, row := range rows {
-			keys = append(keys, row["sourceKey"])
+			source := row["source"].(map[string]any)
+			keys = append(keys, fmt.Sprint(source["index"], "/", source["id"]))
 		}
 		return keys
 	}
@@ -119,13 +120,12 @@ var _ = Describe("opensearch trace kind (live)", func() {
 		Expect(rows[0]["traceId"]).To(Equal("t1"))
 		Expect(rows[0]["spanId"]).To(Equal("s1"))
 		Expect(rows[0]["service"]).To(Equal("checkout"))
-		Expect(rows[0]["sourceIndex"]).To(Equal(index))
 		Expect(rows[1]["service"]).To(Equal("payments"))
-		Expect(sourceKeys(rows)).To(ConsistOf(index+"/s1", index+"/s2"))
+		Expect(sources(rows)).To(ConsistOf(index+"/s1", index+"/s2"))
 	})
 
 	It("follows the index until stopped, storing each span once, including those indexed later", func() {
-		session := start(`"from": "now-1h", "follow": true, "poll": "200ms"`)
+		session := start(`"from": "now-1h", "followIndex": true, "poll": "200ms"`)
 		Eventually(func() int64 { return session.Snapshot().EventCount }).WithTimeout(30 * time.Second).Should(Equal(int64(2)))
 		indexSpans(span{id: "s3", traceID: "t2", service: "checkout", at: time.Now()})
 		Eventually(func() int64 { return session.Snapshot().EventCount }).WithTimeout(30 * time.Second).Should(Equal(int64(3)))
@@ -134,6 +134,6 @@ var _ = Describe("opensearch trace kind (live)", func() {
 		Expect(info.State).To(Equal(query.SessionStopped))
 		Expect(info.Error).To(BeEmpty())
 		Expect(env.Sealed(info)).To(BeTrue())
-		Expect(sourceKeys(env.Rows(info))).To(ConsistOf(index+"/s1", index+"/s2", index+"/s3"))
+		Expect(sources(env.Rows(info))).To(ConsistOf(index+"/s1", index+"/s2", index+"/s3"))
 	})
 })

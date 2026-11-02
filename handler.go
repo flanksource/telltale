@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/flanksource/commons-db/connection/store"
-	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/traceserve"
 )
 
@@ -27,15 +26,18 @@ const stopWait = 30 * time.Second
 
 // HandlerOptions say which runs a Handler serves and where it is mounted.
 type HandlerOptions struct {
-	// WorkDir holds the run stores, under traces.Dir; new runs' commands run
+	// DataDir holds the run stores, under traces.Dir; new runs' commands run
 	// in it.
-	WorkDir string
+	DataDir string
 	// Prefix is the path the handler is mounted at, such as /api/traces;
 	// requests reach it with the prefix still on their path.
 	Prefix string
 	// Connections answer the connection references of the runs it starts,
 	// and are what it lists at <prefix>/connections.
 	Connections *store.Store
+	// Definitions are the trace definitions it serves at
+	// <prefix>/definitions and arms each run it starts with.
+	Definitions Definitions
 }
 
 // RunsList is the runs a Handler lists, newest first.
@@ -56,13 +58,14 @@ type StartForm struct {
 	Defaults map[string]any `json:"defaults"`
 }
 
-// Handler starts, stops, lists and serves the runs of a work dir, mounted at
+// Handler starts, stops, lists and serves the runs of a data dir, mounted at
 // a prefix:
 //
 //	GET    <prefix>                 the runs, filtered by ?q, ?status, ?kind, ?since (RFC 3339), ?limit
 //	POST   <prefix>                 start a run: a StartRequest JSON body, from the server's own origin
 //	GET    <prefix>/start           the start form (StartForm)
 //	GET    <prefix>/connections     the connections its runs can name (ConnectionInfo), of ?type alone
+//	*      <prefix>/definitions/... the trace definitions (HandlerOptions.Definitions); a write only from its own origin
 //	DELETE <prefix>/<run id>        stop a run this process is running
 //	*      <prefix>/<run id>/...    the run's store (traceserve.Handler): live from its
 //	                                running captures, else reopened read-only
@@ -82,13 +85,16 @@ type openedStore struct {
 	close   func() error
 }
 
-// NewHandler serves the runs of options.WorkDir at options.Prefix.
+// NewHandler serves the runs of options.DataDir at options.Prefix.
 func NewHandler(options HandlerOptions) (*Handler, error) {
-	if options.WorkDir == "" || !strings.HasPrefix(options.Prefix, "/") || strings.HasSuffix(options.Prefix, "/") {
-		return nil, fmt.Errorf("trace handler: a work dir and a prefix like /api/traces are required (got %q, %q)", options.WorkDir, options.Prefix)
+	if options.DataDir == "" || !strings.HasPrefix(options.Prefix, "/") || strings.HasSuffix(options.Prefix, "/") {
+		return nil, fmt.Errorf("trace handler: a data dir and a prefix like /api/traces are required (got %q, %q)", options.DataDir, options.Prefix)
 	}
 	if options.Connections == nil {
 		return nil, fmt.Errorf("trace handler: a connection store is required, such as OpenConnections()")
+	}
+	if options.Definitions == nil {
+		return nil, fmt.Errorf("trace handler: trace definitions are required, such as definition.NewService")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Handler{options: options, ctx: ctx, cancel: cancel, opened: map[string]openedStore{}, started: map[string]*Run{}}, nil
@@ -105,6 +111,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case prefix + "/connections":
 		h.serveConnections(w, r)
+		return
+	}
+	if r.URL.Path == prefix+"/definitions" || strings.HasPrefix(r.URL.Path, prefix+"/definitions/") {
+		h.serveDefinitions(w, r)
 		return
 	}
 	runID, rest, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, prefix+"/"), "/")
@@ -145,7 +155,7 @@ func (h *Handler) serveRuns(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
-	options, err := listOptions(h.options.WorkDir, r.URL.Query())
+	options, err := listOptions(h.options.DataDir, r.URL.Query())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -164,8 +174,8 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 
 // listOptions reads a list's filters: q, status (repeated or comma
 // separated), kind, since (RFC 3339) and limit.
-func listOptions(workDir string, query url.Values) (ListOptions, error) {
-	options := ListOptions{WorkDir: workDir, Query: query.Get("q"), Kind: query.Get("kind")}
+func listOptions(dataDir string, query url.Values) (ListOptions, error) {
+	options := ListOptions{DataDir: dataDir, Query: query.Get("q"), Kind: query.Get("kind")}
 	for _, values := range query["status"] {
 		for _, value := range strings.Split(values, ",") {
 			status, err := ParseStatus(value)
@@ -240,7 +250,7 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, rootError("decode start request: "+err.Error()))
 		return
 	}
-	options, err := request.Options(h.options.WorkDir)
+	options, err := request.Options(StartOptions{DataDir: h.options.DataDir, Connections: h.options.Connections}, h.options.Definitions)
 	var invalid *ValidationError
 	if errors.As(err, &invalid) {
 		writeJSON(w, http.StatusBadRequest, invalid)
@@ -250,7 +260,6 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	options.Connections = h.options.Connections
 	run, err := Start(h.ctx, options)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, rootError(err.Error()))
@@ -258,6 +267,18 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 	}
 	h.track(run)
 	writeJSON(w, http.StatusCreated, h.mounted(run.Info()))
+}
+
+// serveDefinitions hands the definitions routes to HandlerOptions.Definitions,
+// refusing a write from another origin as a start is refused.
+func (h *Handler) serveDefinitions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		if err := sameOrigin(r); err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+	}
+	http.StripPrefix(h.options.Prefix, h.options.Definitions).ServeHTTP(w, r)
 }
 
 // rootError refuses a start request as a whole, such as a capture that could
@@ -292,7 +313,7 @@ func (h *Handler) stop(w http.ResponseWriter, r *http.Request, runID string) {
 		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	}
-	err := Stop(StopOptions{WorkDir: h.options.WorkDir, RunID: runID})
+	err := Stop(StopOptions{DataDir: h.options.DataDir, RunID: runID})
 	switch {
 	case errors.Is(err, ErrNotLive):
 		http.Error(w, err.Error(), http.StatusConflict)
@@ -317,9 +338,10 @@ func (h *Handler) track(run *Run) {
 }
 
 // store is the handler of runID's store: the live run's own runtime while
-// this process runs it, else the store reopened read-only.
+// this process runs it, else the store reopened (Reopen), a standing store's
+// through its own opener.
 func (h *Handler) store(runID string) (http.Handler, error) {
-	run, ok, err := Live(h.options.WorkDir, runID)
+	run, ok, err := Live(h.options.DataDir, runID)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +353,7 @@ func (h *Handler) store(runID string) (http.Handler, error) {
 	if store, ok := h.opened[runID]; ok {
 		return store.handler, nil
 	}
-	runtime, closeStore, err := traces.Reopen(traces.StoreDir(h.options.WorkDir, runID))
+	runtime, closeStore, err := Reopen(h.options.DataDir, runID)
 	if err != nil {
 		return nil, err
 	}

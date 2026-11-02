@@ -14,15 +14,137 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  quality:
+  # build compiles the frontend, the Java agent and the binary once; the test
+  # and lint jobs download what Go embeds (webapp/dist, the agent jar) and the
+  # binary the API specs spawn instead of each building them.
+  build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     env:
       GOWORK: ${{ github.workspace }}/go.work.ci
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - uses: flanksource/deps@v1.0.49
+        with:
+          tools: |
+            task
+      - run: make setup
+      - run: make build
+      - run: .bin/telltale --version
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+          path: |
+            .bin/telltale
+            webapp/dist
+            pkg/agentinstall/java/assets
+
+  # test runs the suites in parallel shards. --ignore pkg keeps the root
+  # module's own packages; the SDK modules are their own roots, so that shard
+  # runs them too. Together the shards hold every Go package once.
+  test:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Each shard posts its results as its own sticky comment; gavel test --pr
+    # and gavel pr status read failures from them.
+    permissions:
+      contents: read
+      pull-requests: write
+    env:
+      GOWORK: ${{ github.workspace }}/go.work.ci
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: root
+            args: test --framework go,ginkgo --ignore pkg
+          - shard: tracing
+            args: test --framework go,ginkgo ./pkg/tracing
+            java: true
+          - shard: pkg
+            args: test --framework go,ginkgo --ignore pkg/tracing ./pkg
+    name: test (${{ matrix.shard }})
+    steps:
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - if: matrix.java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/download-artifact@v4
+        with:
+          name: build
+      - run: chmod +x .bin/telltale
+      - uses: flanksource/gavel@78e109b65a8889fafd5fdfc74a14995b1330054f # v0.0.68
+        with:
+          version: v0.0.68
+          args: ${{ matrix.args }} --timeout 15m --test-timeout 10m
+          timeout-minutes: 18
+          comment-header: gavel-${{ matrix.shard }}
+          artifact-name: telltale-tests-${{ matrix.shard }}
+
+  # Run directly: gavel takes each SDK module as another root and fails a
+  # --framework vitest run on the first, which has none.
+  test-web:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOWORK: ${{ github.workspace }}/go.work.ci
+    steps:
+      - uses: actions/checkout@v4
+      # The API specs go run seed programs and drive a JVM.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: build
+      - run: chmod +x .bin/telltale
+      # Compile what the specs go run up front: cold, it outlasts their deadlines.
+      - name: Warm the Go build cache for the spec helpers
+        run: go build ./internal/tracequery/testdata/seed ./pkg/tracing/seam/testdata/hubchild
+      - run: pnpm exec vitest run
+
+  lint:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GOWORK: ${{ github.workspace }}/go.work.ci
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -31,24 +153,40 @@ jobs:
         with:
           node-version-file: .node-version
           cache: pnpm
-      - uses: flanksource/deps@v1.0.48
+      - uses: flanksource/deps@v1.0.49
         with:
           tools: |
             task
-            actionlint
+            rhysd/actionlint
       - run: make setup
-      - run: make build
-      - run: .bin/telltale --version
-      - uses: flanksource/gavel@2c08bfcf913a04f7f6adea45e362c87626d2e2fe # v0.0.62
+      - uses: actions/download-artifact@v4
         with:
-          version: v0.0.54
-          args: test --framework go,ginkgo,vitest --timeout 20m
+          name: build
+      # make lint runs gavel lint; the action leaves gavel on the PATH.
+      - name: Install gavel
+        uses: flanksource/gavel@78e109b65a8889fafd5fdfc74a14995b1330054f # v0.0.68
+        with:
+          version: v0.0.68
+          args: version
           comment: "false"
-          artifact-name: telltale-tests
+          artifact-name: telltale-gavel-version
       - run: make lint
 
+  java-compatibility:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        java: ['8', '11', '17', '21']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+      - run: ./sdk/java/gradlew -p sdk/java test shadowJar
+
   release:
-    needs: quality
+    needs: [build, test, test-web, lint, java-compatibility]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write

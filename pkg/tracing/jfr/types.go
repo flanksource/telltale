@@ -14,12 +14,17 @@ import (
 // Sample is the record the jfr kind stores: a StackSample, truncated as the
 // kind's processors cut it.
 type Sample struct {
+	Resource map[string]string `json:"resource,omitempty"`
 	tracing.Truncation
 	decode.StackSample
 }
 
 // Engine is what records a JVM's profile into a JFR recording.
 type Engine string
+
+func (Engine) JSONSchema() map[string]any {
+	return map[string]any{"type": "string", "enum": []any{EngineJFR, EngineAsyncProfiler}}
+}
 
 const (
 	// EngineJFR is the JDK's own Flight Recorder (JDK 8u262 and later),
@@ -33,9 +38,11 @@ const (
 // asyncProfilerEvents are the events async-profiler profiles, one at a time.
 var asyncProfilerEvents = []string{decode.EventCPU, decode.EventWall, decode.EventAlloc, decode.EventLock}
 
-// Options are what a capture records and how it reads the recording back.
-type Options struct {
-	Engine Engine
+// RecordOptions are what a capture records and how it reads the recording back.
+type RecordOptions struct {
+	PID           int
+	AsyncProfiler string
+	Engine        Engine
 	// Event is the one event async-profiler profiles; the JDK's recorder
 	// takes its events from Settings instead.
 	Event string
@@ -56,7 +63,7 @@ type Options struct {
 }
 
 // Validate refuses options a recording could not honour.
-func (o Options) Validate() error {
+func (o RecordOptions) Validate() error {
 	var errs []error
 	switch o.Engine {
 	case EngineJFR:
@@ -92,7 +99,7 @@ func (o Options) Validate() error {
 }
 
 // String is what the recording profiles, as its session shows it.
-func (o Options) String() string {
+func (o RecordOptions) String() string {
 	parts := []string{string(o.Engine)}
 	if o.Settings != "" {
 		parts = append(parts, "settings="+o.Settings)

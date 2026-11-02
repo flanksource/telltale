@@ -132,7 +132,7 @@ var _ = Describe("process trace", func() {
 	It("arms every facet and reads each process's environment when watched in a UI", func() {
 		root := startShell()
 		host := openHost(GinkgoT().TempDir())
-		trace := startTrace(host, traces.ProcessTraceOptions{RootPID: root, Facets: true})
+		trace := startTrace(host, traces.ProcessTraceOptions{RootPID: root, Tree: traces.TreeOptions{Facets: true}})
 		store := serveHost(host)
 
 		Eventually(func() map[string]map[string]any { return byCommand(store.records(trace.Refs().Tree)) }).WithTimeout(5 * time.Second).
@@ -142,6 +142,20 @@ var _ = Describe("process trace", func() {
 				HaveKeyWithValue("openFiles", BeNumerically(">", 0)), HaveKeyWithValue("openFileList", Not(BeEmpty())),
 				HaveKeyWithValue("sockets", Not(BeNil())), HaveKeyWithValue("ports", Not(BeNil())), HaveKeyWithValue("connections", Not(BeNil())),
 			)))
+	})
+
+	It("reads only the environment its tree options name onto each process, arming no facet", func() {
+		root := startShell()
+		host := openHost(GinkgoT().TempDir())
+		trace := startTrace(host, traces.ProcessTraceOptions{RootPID: root, Tree: traces.TreeOptions{
+			Environment: &process.EnvironmentParams{Prefixes: []string{"TELLTALE_TRACE_"}},
+		}})
+		store := serveHost(host)
+
+		Eventually(func() map[string]map[string]any { return byCommand(store.records(trace.Refs().Tree)) }).WithTimeout(5 * time.Second).
+			Should(HaveKeyWithValue("sleep 30", HaveKeyWithValue("environment", Equal(map[string]any{"TELLTALE_TRACE_PROBE": "1"}))))
+		Eventually(func() []map[string]any { return store.records(trace.Refs().Samples) }).WithTimeout(5 * time.Second).ShouldNot(BeEmpty())
+		Expect(store.records(trace.Refs().Samples)).To(HaveEach(HaveKeyWithValue("openFiles", BeNil())))
 	})
 
 	It("dumps the run's own goroutines into stacks through the session it names", func() {

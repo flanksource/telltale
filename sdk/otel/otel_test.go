@@ -11,6 +11,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 )
@@ -25,8 +27,8 @@ var _ = Describe("OpenTelemetry span capture", func() {
 		_, err := install()
 		Expect(err).To(MatchError(ContainSubstring("not an SDK provider")))
 	})
-	It("records spans from the global SDK provider", func() {
-		provider := sdktrace.NewTracerProvider()
+	It("records spans from the global SDK provider with service, operation and a typed resource", func() {
+		provider := sdktrace.NewTracerProvider(sdktrace.WithResource(resource.NewSchemaless(attribute.String("service.name", "checkout-api"), attribute.Int("replicas", 2))))
 		otel.SetTracerProvider(provider)
 		DeferCleanup(provider.Shutdown, context.Background())
 		agent := telltale.Loopback()
@@ -49,7 +51,13 @@ var _ = Describe("OpenTelemetry span capture", func() {
 		var records protocol.Records
 		Expect(json.Unmarshal(frame.Body, &records)).To(Succeed())
 		Expect(records.Items).To(HaveLen(1))
-		Expect(string(records.Items[0])).To(ContainSubstring("checkout"))
+		var recorded telltale.Span
+		Expect(json.Unmarshal(records.Items[0], &recorded)).To(Succeed())
+		Expect(recorded).To(SatisfyAll(
+			HaveField("Service", "checkout-api"), HaveField("Operation", "checkout"), HaveField("Status", "unset"),
+			HaveField("Key", recorded.TraceID+"/"+recorded.SpanID), HaveField("Source", telltale.SpanSource{Type: telltale.SpanSourceSDK}),
+			HaveField("Resource", HaveKeyWithValue("replicas", float64(2))),
+		))
 	})
 	It("emits one record when the application also installs a span processor", func() {
 		app := SpanProcessor()

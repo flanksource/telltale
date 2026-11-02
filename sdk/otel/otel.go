@@ -3,6 +3,7 @@ package otel
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
@@ -83,15 +84,26 @@ func (p *processor) OnEnd(span sdktrace.ReadOnlySpan) {
 	for _, attr := range span.Attributes() {
 		attrs[string(attr.Key)] = attr.Value.AsInterface()
 	}
-	resource := make(map[string]string)
+	resource := make(map[string]any)
 	for _, attr := range span.Resource().Attributes() {
-		resource[string(attr.Key)] = attr.Value.Emit()
+		resource[string(attr.Key)] = attr.Value.AsInterface()
 	}
 	parent := ""
 	if span.Parent().IsValid() {
 		parent = span.Parent().SpanID().String()
 	}
-	telltale.Record(context.Background(), "spans", telltale.Span{TraceID: span.SpanContext().TraceID().String(), SpanID: span.SpanContext().SpanID().String(), ParentID: parent, Name: span.Name(), Kind: span.SpanKind().String(), StartedAt: span.StartTime(), DurationMs: float64(span.EndTime().Sub(span.StartTime())) / float64(time.Millisecond), Status: span.Status().Code.String(), Attrs: attrs, Resource: resource})
+	record := telltale.Span{
+		TraceID: span.SpanContext().TraceID().String(), SpanID: span.SpanContext().SpanID().String(), ParentID: parent,
+		Operation: span.Name(), Kind: span.SpanKind().String(), StartedAt: span.StartTime(),
+		DurationMs: float64(span.EndTime().Sub(span.StartTime())) / float64(time.Millisecond),
+		Status:     span.Status().Code.String(), Attributes: attrs, Resource: resource,
+		Source: telltale.SpanSource{Type: telltale.SpanSourceSDK},
+	}
+	if err := record.Normalize(); err != nil {
+		log.Printf("spans: %v", err)
+		return
+	}
+	telltale.Record(context.Background(), "spans", record)
 }
 func (p *processor) Shutdown(context.Context) error {
 	p.mu.Lock()

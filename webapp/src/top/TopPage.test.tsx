@@ -110,7 +110,7 @@ const mount = "/api/traces/run-2026-10-25T10-00-00Z";
 const recording: RunTraces = {
   runId: "run-2026-10-25T10-00-00Z",
   mount,
-  dir: "/work/.telltale/traces/run-2026-10-25T10-00-00Z",
+  dir: "/cache/telltale/traces/run-2026-10-25T10-00-00Z",
   status: "succeeded",
   captures: [{ kind: "process_groups", ref: { kind: "process_groups", stream: "groups-1", toSeq: 8 } }],
 };
@@ -123,11 +123,21 @@ function recordedFrames(): Frame[] {
 
 function serveRecording(runs: RunTraces[]) {
   const rows = recordedFrames().flatMap(frame => frame.groups);
+  vi.stubGlobal("EventSource", vi.fn(function () { return new (class extends EventTarget {
+    closed = false;
+    constructor() {
+      super();
+      queueMicrotask(() => {
+        if (this.closed) return;
+        rows.forEach((row, index) => this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ ...row, seq: index + 1 }), lastEventId: String(index + 1) })));
+        this.dispatchEvent(new Event("end"));
+      });
+    }
+    close() { this.closed = true; }
+  })(); }));
   const fetchMock = vi.fn((url: string) => {
     if (url.startsWith("/api/top")) return Promise.resolve(json(sampleFrame()));
     if (url.startsWith("/api/traces?")) return Promise.resolve(json({ runs }));
-    if (url.includes("/seq?")) return Promise.resolve(json({ seq: 8 }));
-    if (url.includes("/export?")) return Promise.resolve(new Response(rows.map(row => JSON.stringify(row)).join("\n")));
     return Promise.resolve(new Response("", { status: 404 }));
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -142,7 +152,8 @@ describe("recorded process groups", () => {
     expect(await screen.findByRole("option", { name: `${recording.runId} (succeeded)` })).toBeInTheDocument();
     expect(await screen.findByRole("row", { name: /^claude/ })).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith("/api/traces?kind=process_groups", expect.anything());
-    expect(fetchMock).toHaveBeenCalledWith(`${mount}/api/v1/traces/process_groups/export?stream=groups-1&toSeq=8&format=ndjson`, expect.anything());
+    expect(EventSource).toHaveBeenCalledWith(`${mount}/traces/process_groups/records?stream=groups-1&toSeq=8&follow=1`);
+    expect(fetchMock).not.toHaveBeenCalledWith(expect.stringMatching(/\/(seq|export)\?/), expect.anything());
     expect(screen.getByRole("slider", { name: "Tick" })).toHaveValue("1");
     expect(screen.getByText(/tick 2 of 2/)).toBeInTheDocument();
     expect(cpuOf(/^claude/)).toBe("12.5");

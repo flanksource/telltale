@@ -1,0 +1,123 @@
+# A TraceDefinition: what telltale traces of the checkout service, kept apart
+# from any one run of it. A run names the definition and adds what is about
+# that run alone: the command or pid, its duration and, optionally, how often
+# its checkpointed captures are read.
+#
+#   telltale run --definition checkout --duration 10m -- ./bin/checkout-service
+#
+# Save it as .telltale/traces/checkout.yaml (this directory's layer) or
+# ~/.config/telltale/traces/checkout.yaml (the global one); the file name is
+# its metadata.name. It is CRD-compatible, so `kubectl apply` takes it once
+# crds/telltale.flanksource.com_tracedefinitions.yaml is installed, but
+# telltale reads it from files only.
+apiVersion: telltale.flanksource.com/v1alpha1
+kind: TraceDefinition
+metadata:
+  name: checkout
+  labels: {team: payments}
+spec:
+  description: Scrape the checkout service, decrypt its outbound calls and profile its JVM
+  every: 30s # how often checkpointed captures are read; a run may override it
+  # Default connections: an entry that names no connection takes the one of
+  # its type here; naming two of one type that an entry needs is refused.
+  connections:
+    - connection://checkout-sqlserver # a sql_server connection in the connection store
+    - connection://loki
+    # An inline connection, added to this run's connection store. Credentials
+    # are references, never values: onePassword resolves locally with the op
+    # CLI; secretKeyRef needs a cluster, so a local run uses a connection://
+    # reference to a stored connection instead.
+    - name: orders
+      type: postgres
+      url: postgres://$(username):$(password)@localhost:5432/orders
+      username: {valueFrom: {onePassword: op://dev/orders-db/username}}
+      password: {valueFrom: {onePassword: op://dev/orders-db/password}}
+    - name: metrics
+      type: prometheus
+      url: http://localhost:9090
+  proxy: # the command is routed through these
+    http:
+      - listen: 127.0.0.1:18080 # checkout-proxy-http-1; empty listen takes a free port
+        mode: mitm
+        hosts: [api.example.com] # exports HTTP(S)_PROXY, NO_PROXY and the mitm CA variables
+      - name: partner-api
+        listen: 127.0.0.1:18081
+        export: {proxy: PARTNER_PROXY} # a second http proxy exports under its own names
+    postgres:
+      - env: ORDERS_DSN # checkout-proxy-postgres-1: reads the upstream from, and exports the proxied DSN under, this variable
+        connection: orders
+      - env: USERS_DSN # checkout-proxy-postgres-2
+        connection: users
+  instrument: # changes the target's runtime
+    go:
+      pprof: # sets the Go runtime's mutex profile rate
+        - profile: mutex
+    jvm:
+      flightRecorder: # starts a JFR recording through the pricing sidecar's Java agent
+        - agent: {selector: {service.name: pricing}, wait: true}
+          settings: profile
+      asyncProfiler: # attaches async-profiler to the agent's JVM
+        - agent: {selector: {service.name: pricing}, wait: true}
+          event: wall
+    sqlserver:
+      xevent: # creates a server-scoped Extended Events session on the default sql_server connection
+        - sessionName: telltale_checkout
+          minDuration: 50ms
+  collect: # reads only
+    go:
+      gops: # goroutine dumps over the process's gops agent
+        - {}
+      pprof: # a heap profile over gops
+        - source: gops
+          profile: heap
+    process:
+      tree: # the run-wide process tree: one object, not a list
+        facets: true
+        environment: {prefixes: [CHECKOUT_]}
+      nativeStacks: # thread stacks of any process
+        - {}
+      resources:
+        - interval: 1s
+          facets: [ports]
+    logs:
+      kubernetes:
+        - namespace: checkout
+          podSelector: app=checkout
+          container: api
+      loki: # takes the default loki connection
+        - query: '{app="checkout"} |= "error"'
+          minLevel: warn
+      cloudwatch:
+        - connection: connection://aws-dev
+          query: 'fields @timestamp, @message | filter @logStream like /checkout/'
+          options: {logGroups: [/ecs/checkout]}
+    query: # commons-db query providers, read over the run's window
+      sql:
+        - name: slow-orders
+          type: postgres # takes the default postgres connection, the inline orders
+          query: >-
+            SELECT created_at AS time, id, total_ms
+            FROM orders WHERE total_ms > 1000
+              AND created_at >= {{ .params.from }} AND created_at < {{ .params.to }}
+          untilStopped: true # read once, when the run stops, over the whole run
+      prometheus:
+        - connection: connection://telltale-prometheus # explicit beats the default metrics connection
+          query: sum by (pod) (rate(http_requests_total{app="checkout"}[5m]))
+          step: 15s # a range query over the window
+          every: 30s # re-read every 30s, appending points newer than the last read
+      opensearch:
+        - connection: connection://otel-search
+          index: app-events-*
+          query: 'service.name:checkout'
+      profile: # a saved commons-db profile of the config dirs' profile store
+        - profile: pod-cpu-by-pod
+          params: {namespace: checkout}
+          every: 30s
+    prometheus:
+      scrape:
+        - endpoints: [http://localhost:8080/metrics, http://localhost:9100/metrics]
+          interval: 15s
+          labels: {env: dev} # sample labels in the TSDB
+    sqlserver:
+      deadlockReport: # xml_deadlock_report events in system_health, on the default sql_server connection
+        - {}

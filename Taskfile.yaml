@@ -21,6 +21,11 @@ tasks:
       - pnpm typecheck
       - pnpm --filter @flanksource/telltale-webapp build{{if .LOCAL_UI}} --mode local-ui{{end}}
 
+  generate:
+    desc: Write the TraceDefinition CRD reflected from pkg/definition to crds/
+    cmds:
+      - go run ./hack/crd
+
   binary:
     desc: Compile the binary with existing embedded assets
     cmds:
@@ -30,6 +35,7 @@ tasks:
   build:
     desc: Build the frontend and standalone Go binary
     cmds:
+      - task: java:build
       - task: web:build
         vars: { LOCAL_UI: "{{.LOCAL_UI}}" }
       - task: binary
@@ -66,6 +72,7 @@ tasks:
     desc: Run Go, frontend, and live API integration tests
     cmds:
       - task: build
+      - task: java:test
       - gavel test --framework go,ginkgo
       - cmd: gavel test --framework go,ginkgo
         dir: sdk
@@ -109,6 +116,16 @@ tasks:
       JFR_BENCHTIME: '{{.JFR_BENCHTIME | default "5x"}}'
     cmds:
       - JFR_FILE={{.JFR_FILE}} go test ./pkg/tracing/jfr -run '^$' -bench BenchmarkCompression -benchtime {{.JFR_BENCHTIME}}
+
+  java:build:
+    desc: Build the shaded Java 8-compatible agent
+    cmds:
+      - ./sdk/java/gradlew -p sdk/java shadowJar -PbuildVersion={{.VERSION}}
+
+  java:test:
+    desc: Test Java agent recording lifecycle
+    cmds:
+      - ./sdk/java/gradlew -p sdk/java test
 
   clean:
     desc: Remove generated assets and binaries while preserving the embed sentinel

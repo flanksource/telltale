@@ -1,0 +1,79 @@
+{
+  "type": "object",
+  "properties": {
+    "all": {
+      "type": "boolean",
+      "title": "All processes",
+      "description": "Also record the processes no tool's group holds by program"
+    },
+    "catalog": {
+      "type": "string",
+      "title": "Catalog",
+      "description": "A groups.yaml whose rules are applied over the built-in ones"
+    },
+    "groups": {
+      "type": "array",
+      "title": "Groups",
+      "description": "Record only these groups and those under them such as claude or vitest",
+      "items": {
+        "type": "string"
+      }
+    },
+    "interval": {
+      "type": "string",
+      "title": "Interval",
+      "description": "How often the groups are read such as 2s (at least 1s)"
+    },
+    "net": {
+      "type": "boolean",
+      "title": "Network bytes",
+      "description": "Read each process's network bytes with nettop (darwin; costs over a core)"
+    },
+    "target": {
+      "properties": {
+        "agent": {
+          "type": "string",
+          "title": "Agent",
+          "description": "Agent ID to observe"
+        },
+        "allowMutation": {
+          "type": "boolean",
+          "title": "Allow mutation",
+          "description": "Allow probes to change runtime settings"
+        },
+        "pid": {
+          "type": "integer",
+          "title": "PID",
+          "format": "int32",
+          "description": "Process to observe"
+        },
+        "seam": {
+          "type": "string",
+          "title": "Seam",
+          "description": "How the capture is armed (supported seams: [host])",
+          "enum": [
+            "host"
+          ],
+          "default": "host"
+        },
+        "selector": {
+          "type": "object",
+          "title": "Selector",
+          "description": "Agent resource attributes to match",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "wait": {
+          "type": "boolean",
+          "title": "Wait for agents",
+          "description": "Wait for a matching agent to connect"
+        }
+      },
+      "type": "object",
+      "x-telltale-seams": [
+        "host"
+      ]
+    }
+  }
+}

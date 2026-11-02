@@ -20,15 +20,20 @@ type Journal interface {
 }
 type journal struct{ backend recordstore.Backend }
 
-func OpenJournal(workDir string) (Journal, error) {
-	if err := os.MkdirAll(filepath.Join(workDir, ".telltale", "monitor"), 0700); err != nil {
+// JournalPath is the rule event journal of dataDir.
+func JournalPath(dataDir string) string {
+	return filepath.Join(dataDir, "monitor", "events.sqlite")
+}
+
+func OpenJournal(dataDir string) (Journal, error) {
+	if err := os.MkdirAll(filepath.Dir(JournalPath(dataDir)), 0700); err != nil {
 		return nil, err
 	}
 	schemas := recordstore.NewSchemas()
 	if err := schemas.Register("rule_event", []query.ColumnDef{{Name: "event", Type: query.ColumnTypeString}}, recordstore.KindOptions{}); err != nil {
 		return nil, err
 	}
-	backend, err := sqlite.Open(sqlite.Options{Path: filepath.Join(workDir, ".telltale", "monitor", "events.sqlite"), Schema: schemas.Kind, SweepInterval: time.Hour})
+	backend, err := sqlite.Open(sqlite.Options{Path: JournalPath(dataDir), Schema: schemas.Kind, SweepInterval: time.Hour})
 	if err != nil {
 		return nil, err
 	}

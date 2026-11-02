@@ -47,6 +47,7 @@ function serve() {
     if (url.startsWith("/api/top/facets")) return Promise.resolve(new Response("pid 123: not listed at the latest tick", { status: 404 }));
     if (url.startsWith("/api/top")) return Promise.resolve(json(sampleFrame()));
     if (url === "/health") return Promise.resolve(json({ status: "healthy", version: "test" }));
+    if (url === "/api/traces/definitions") return Promise.resolve(json([]));
     if (url.startsWith("/api/traces")) return Promise.resolve(json({ runs: [] }));
     return Promise.resolve(new Response("", { status: 404 }));
   });

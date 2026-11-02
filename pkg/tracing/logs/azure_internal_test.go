@@ -40,7 +40,7 @@ var _ = Describe("Azure Log Analytics source", func() {
 			return &models.Connection{Name: "azure", Type: models.ConnectionTypeAzure, URL: server.URL}, nil
 		})
 		var records []Log
-		err := followCloud(ctx, Params{Backend: "azureloganalytics", Connection: "connection://azure", Query: "Example | take 1", Options: map[string]any{"workspaceID": "example", "start": "now-1h"}}, func(row Log) error { records = append(records, row); return nil })
+		err := followCloud(ctx, Options{Backend: "azureloganalytics", Connection: "connection://azure", Query: "Example | take 1", ProviderOptions: map[string]any{"workspaceID": "example", "start": "now-1h"}}, func(row Log) error { records = append(records, row); return nil })
 		Expect(err).NotTo(HaveOccurred())
 		Expect(records).To(HaveLen(1))
 		Expect(records[0].Message).To(Equal("azure history"))
