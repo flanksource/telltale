@@ -12,6 +12,7 @@ import (
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/internal/cli"
 	"github.com/flanksource/telltale/pkg/agentclient"
+	"github.com/flanksource/telltale/pkg/definition"
 	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/target"
@@ -199,10 +200,13 @@ var _ = Describe("telltale trace run", func() {
 
 var _ = Describe("presets", func() {
 	It("each have a command with their help", func() {
-		for _, preset := range telltale.Presets() {
-			page := help(preset.Name)
-			Expect(page).To(ContainSubstring(preset.Description))
-			Expect(page).To(ContainSubstring("telltale " + preset.Name + " [flags] PID"))
+		builtins, err := definition.Builtins()
+		Expect(err).ToNot(HaveOccurred())
+		Expect(builtins).ToNot(BeEmpty())
+		for _, def := range builtins {
+			page := help(def.Name)
+			Expect(page).To(ContainSubstring(def.Spec.Description))
+			Expect(page).To(ContainSubstring("telltale " + def.Name + " [flags] PID"))
 		}
 		Expect(help("gops")).To(ContainSubstring("stacks"))
 	})

@@ -11,7 +11,7 @@ var _ = Describe("spans host seam arguments", func() {
 	It("separates index following from output following and preserves structured search", func() {
 		command := &cobra.Command{Use: "test"}
 		var run runFlags
-		run.bind(command)
+		run.bind(command, false)
 		schema, err := spans.NewKind(nil).Params()
 		Expect(err).NotTo(HaveOccurred())
 		params, err := bindParamFlags(command.Flags(), schema)

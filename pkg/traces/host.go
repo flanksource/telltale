@@ -16,13 +16,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/flanksource/commons-db/connection/crd"
 	"github.com/flanksource/commons-db/connection/store"
 	dbcontext "github.com/flanksource/commons-db/context"
+	"github.com/flanksource/commons-db/models"
 	"github.com/flanksource/commons-db/query"
+	"github.com/flanksource/commons-db/query/profilestore"
 	"github.com/flanksource/commons-db/recordstore"
+	"github.com/flanksource/commons-db/recordstore/recordresults"
 	"github.com/flanksource/telltale/pkg/traceserve"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/process"
+	"github.com/flanksource/telltale/pkg/tracing/prometheus"
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
 )
 
@@ -75,6 +80,41 @@ type OpenOptions struct {
 	// as sql_xevent's connection, before any connections table; nil answers
 	// none.
 	Connections *store.Store
+	// RunConnections are connections the run alone defines, such as a trace
+	// definition's inline ones: written to the run's store under
+	// RunConnectionsDir as one more layer, after Connections' so a run's
+	// connection shadows a stored one of its name for this run only.
+	RunConnections []crd.Connection
+}
+
+// RunConnectionsDir is where a run's own connections are kept in its store;
+// they hold secret references, never secrets.
+const RunConnectionsDir = "connections"
+
+// runConnections is base with the run's own connections as its last layer,
+// written into the run's store dir; base alone when the run defines none.
+func runConnections(base *store.Store, dir string, defined []crd.Connection) (*store.Store, error) {
+	if len(defined) == 0 {
+		return base, nil
+	}
+	var layers []store.Layer
+	if base != nil {
+		layers = base.Layers()
+	}
+	layers = append(layers, store.Layer{Name: RunConnectionsDir, Dir: filepath.Join(dir, RunConnectionsDir)})
+	composed, err := store.New(layers...)
+	if err != nil {
+		return nil, fmt.Errorf("run connections: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, RunConnectionsDir), 0o700); err != nil {
+		return nil, fmt.Errorf("run connections: %w", err)
+	}
+	for _, connection := range defined {
+		if err := composed.Save(RunConnectionsDir, &connection); err != nil {
+			return nil, fmt.Errorf("run connections: %w", err)
+		}
+	}
+	return composed, nil
 }
 
 // Open creates the run's store under DataDir/traces. A RunID already
@@ -89,6 +129,10 @@ func Open(options OpenOptions) (*Host, error) {
 		return nil, fmt.Errorf("open trace store: %w", err)
 	}
 	dir, name, err := claimRunDir(root, options.RunID)
+	if err != nil {
+		return nil, err
+	}
+	connections, err := runConnections(options.Connections, dir, options.RunConnections)
 	if err != nil {
 		return nil, err
 	}
@@ -107,9 +151,31 @@ func Open(options OpenOptions) (*Host, error) {
 		MaxDuration: maxDuration, BeforeRead: runtime.Results.Registry.BeforeRead,
 	})
 	ctx := dbcontext.New()
-	if options.Connections != nil {
-		ctx = options.Connections.Attach(ctx)
+	if connections != nil {
+		ctx = connections.Attach(ctx)
 	}
+	paths, err := prometheus.Paths(options.DataDir)
+	if err != nil {
+		return nil, err
+	}
+	// A run that queries the managed Prometheus holds it as its scraping
+	// captures do, so it is up for every read and stops once no run holds it.
+	managed := prometheus.NewManaged(options.DataDir)
+	releases = append(releases, managed.Release)
+	stored := ctx.ConnectionResolver()
+	// The connections telltale manages in the data dir resolve after the stored
+	// ones, as telltale serve's connections list them.
+	ctx = ctx.WithConnectionResolver(func(ctx dbcontext.Context, reference string) (*models.Connection, error) {
+		if stored != nil {
+			if connection, err := stored(ctx, reference); err != nil || connection != nil {
+				return connection, err
+			}
+		}
+		if !prometheus.NamesManaged(paths, reference) {
+			return nil, nil
+		}
+		return managed.Connection(ctx)
+	})
 	return &Host{runID: name, dir: dir, runtime: runtime, dumpers: dumpers, ctx: ctx, releases: releases}, nil
 }
 
@@ -144,12 +210,26 @@ func Reopen(dir string) (*tracing.Runtime, func() error, error) {
 
 // openStore opens the store in dir with every kind of the catalog over deps,
 // the way query serves a store.
+// The kinds are built before the store whose registry prepares their reads,
+// so BeforeExecute is bound to that registry once the store is open.
 func openStore(dir string, deps KindDeps) (*tracing.Runtime, func() error, error) {
+	var registry *recordresults.Registry
+	deps.BeforeExecute = func(ctx context.Context, reads []profilestore.ReadRequest) (func(), error) {
+		if registry == nil {
+			return nil, fmt.Errorf("trace store %s: a profile read before the store opened", dir)
+		}
+		return registry.BeforeExecute(ctx, reads)
+	}
 	kinds, err := kindsWith(deps)
 	if err != nil {
 		return nil, nil, err
 	}
-	return traceserve.Open(traceserve.OpenOptions{Dir: dir, Kinds: kinds, Retention: retention})
+	runtime, closeStore, err := traceserve.Open(traceserve.OpenOptions{Dir: dir, Kinds: kinds, Retention: retention})
+	if err != nil {
+		return nil, nil, err
+	}
+	registry = runtime.Results.Registry
+	return runtime, closeStore, nil
 }
 
 // claimRunDir creates root/runID, or the first free suffixed name.
@@ -194,6 +274,13 @@ func Kinds() (*tracing.Kinds, error) {
 func kindsWith(deps KindDeps) (*tracing.Kinds, error) {
 	kinds := tracing.NewKinds()
 	deps.Sampler = process.NewSampler()
+	if deps.BeforeExecute == nil {
+		// A catalog with no store, read for its schemas and to validate
+		// params, refuses any profile read loudly rather than running it.
+		deps.BeforeExecute = func(context.Context, []profilestore.ReadRequest) (func(), error) {
+			return nil, errors.New("this trace kind catalog has no store to prepare profile reads; start the capture in a run")
+		}
+	}
 	for _, registration := range Registrations() {
 		plugin := registration.New(deps)
 		seams, defaultSeam := plugin.TargetSeams()

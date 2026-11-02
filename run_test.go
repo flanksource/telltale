@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/flanksource/telltale"
+	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/tracing/groups"
 	"github.com/flanksource/telltale/pkg/tracing/httpproxy"
 	"github.com/flanksource/telltale/pkg/tracing/process"
@@ -176,7 +177,7 @@ var _ = Describe("a run attached to a running process", func() {
 		target, dataDir := sleeper("30"), GinkgoT().TempDir()
 		run, err := telltale.Start(context.Background(), telltale.StartOptions{
 			DataDir: dataDir, PID: target.Process.Pid, Duration: 500 * time.Millisecond,
-			Traces: []telltale.TraceSpec{{Kind: stacks.Kind, Checkpoint: json.RawMessage(`{"transport": "gops"}`)}},
+			Traces: []telltale.TraceSpec{{Kind: stacks.Kind, Checkpoint: json.RawMessage(`{"transport": "pprof"}`)}},
 		})
 		Expect(err).ToNot(HaveOccurred())
 		result, err := run.Wait()
@@ -209,6 +210,10 @@ var _ = Describe("a run attached to a running process", func() {
 		Entry("a process that is not running", func(int) telltale.StartOptions {
 			return telltale.StartOptions{PID: 999999}
 		}, "pid 999999 is not running"),
+		Entry("a gops reading of a process without a gops agent", func(pid int) telltale.StartOptions {
+			GinkgoT().Setenv("GOPS_CONFIG_DIR", GinkgoT().TempDir())
+			return telltale.StartOptions{PID: pid, Traces: []telltale.TraceSpec{{Kind: stacks.Kind, Checkpoint: json.RawMessage(`{"transport": "gops"}`)}}}
+		}, "trace stacks: pid"),
 	)
 })
 
@@ -241,6 +246,23 @@ var _ = Describe("a host run", func() {
 		stored, err := telltale.Get(telltale.GetOptions{DataDir: dataDir, RunID: result.RunID})
 		Expect(err).ToNot(HaveOccurred())
 		Expect(stored).To(And(HaveField("Status", telltale.StatusSucceeded), HaveField("Process", BeNil())))
+	})
+
+	It("records a run whose end failed as failed, with why, instead of leaving it running", func() {
+		const unknown = "connection://telltale-spec-unknown"
+		dataDir := GinkgoT().TempDir()
+		run, err := telltale.Start(context.Background(), telltale.StartOptions{
+			DataDir: dataDir, Duration: 500 * time.Millisecond,
+			Traces: []telltale.TraceSpec{{Kind: traces.QueryKind, Params: json.RawMessage(`{"provider":{"type":"prometheus","connection":"` + unknown + `","query":"up","prometheus":{"range":{"step":"1s"}}},"untilStopped":true}`)}},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		_, err = run.Wait()
+		Expect(err).To(MatchError(ContainSubstring(unknown)))
+
+		stored, err := telltale.Get(telltale.GetOptions{DataDir: dataDir, RunID: run.ID()})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(stored).To(And(HaveField("Status", telltale.StatusFailed), HaveField("Error", ContainSubstring(unknown)), HaveField("EndedAt", Not(BeZero()))))
+		Expect(run.Info()).To(And(HaveField("Status", stored.Status), HaveField("Error", stored.Error)), "the live run reads as its manifest once it ended")
 	})
 })
 

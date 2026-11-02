@@ -4,15 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"time"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/flanksource/clicky/exec"
 	"github.com/flanksource/clicky/task"
 	cctx "github.com/flanksource/commons/context"
@@ -52,9 +53,16 @@ func startVite(ctx context.Context, options devOptions) (*viteServer, error) {
 		options.cancel(err)
 		return false, err
 	}, task.WithContext(ctx))
-	vite := &viteServer{target: &url.URL{Scheme: "http", Host: net.JoinHostPort("localhost", strconv.Itoa(options.UIPort))}, cancel: cancel, run: run}
-	if err := process.WaitForStdout("Local:", 30*time.Second); err != nil {
+	vite := &viteServer{cancel: cancel, run: run}
+	if err := process.WaitForStdout("http://localhost:", 30*time.Second); err != nil {
 		return nil, errors.Join(fmt.Errorf("start Vite: %w\n%s", err, process.GetStderr()), vite.stop())
+	}
+	match := regexp.MustCompile(`Local:\s+(http://localhost:[0-9]+/)`).FindStringSubmatch(ansi.Strip(process.GetStdout()))
+	if len(match) != 2 {
+		return nil, errors.Join(fmt.Errorf("vite did not report a local URL: %s", process.GetStdout()), vite.stop())
+	}
+	if vite.target, err = url.Parse(match[1]); err != nil {
+		return nil, errors.Join(fmt.Errorf("parse Vite URL: %w", err), vite.stop())
 	}
 	return vite, nil
 }

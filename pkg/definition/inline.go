@@ -34,6 +34,7 @@ func Inline(captures []telltale.RequestedCapture) (*TraceDefinition, map[string]
 	def := &TraceDefinition{
 		TypeMeta:   metav1.TypeMeta{APIVersion: APIVersion, Kind: Kind},
 		ObjectMeta: metav1.ObjectMeta{Name: InlineName},
+		adhoc:      true,
 	}
 	pointers := map[string]string{}
 	var fields []telltale.FieldError

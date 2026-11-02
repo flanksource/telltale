@@ -3,12 +3,14 @@ package traces
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
 	"strings"
 	"sync"
 
+	"github.com/flanksource/commons-db/query/profilestore"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/process"
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
@@ -28,6 +30,9 @@ type KindDeps struct {
 	// every capture stopped, such as a sub-process the kind started; nil for a
 	// store reopened only to be read.
 	OnClose func(release func(context.Context) error)
+	// BeforeExecute prepares, and may refuse, every profile read a kind runs,
+	// as the store's results registry prepares every other read of its data.
+	BeforeExecute profilestore.BeforeExecuteFunc
 }
 
 // Example is one invocation a kind's help shows, as the args after
@@ -59,7 +64,11 @@ type Registration struct {
 	// interval it is given and as an attached run stops; nil for a kind
 	// that records without checkpoints.
 	Checkpoint any
-	New        func(KindDeps) tracing.TracePlugin
+	// Readable refuses a process an attached run would read with the
+	// checkpoint params given, before the run opens its store, such as a Go
+	// process whose gops agent a gops reading needs; nil reads any.
+	Readable func(pid int, checkpoint json.RawMessage) error
+	New      func(KindDeps) tracing.TracePlugin
 }
 
 func (r Registration) validate() error {

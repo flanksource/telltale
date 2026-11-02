@@ -38,6 +38,14 @@ func captureStdout(run func()) string {
 }
 
 var _ = Describe("command boundaries", func() {
+	It("selects an available Vite port by default", func() {
+		serve, _, err := cli.NewRoot("dev").Find([]string{"serve"})
+		Expect(err).NotTo(HaveOccurred())
+		port, err := serve.Flags().GetInt("ui-port")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(port).To(BeZero())
+	})
+
 	It("rejects an invalid top grouping before sampling processes", func() {
 		root := cli.NewRoot("dev")
 		root.SetArgs([]string{"top", "--group-by", "invalid", "--once"})
@@ -54,7 +62,8 @@ var _ = Describe("command boundaries", func() {
 		},
 		Entry("negative port", []string{"serve", "--port", "-1"}, "port must"),
 		Entry("oversized port", []string{"serve", "--port", "65536"}, "port must"),
-		Entry("invalid Vite port", []string{"serve", "--dev", "--ui-port", "0"}, "ui-port must"),
+		Entry("negative Vite port", []string{"serve", "--dev", "--ui-port", "-1"}, "ui-port must"),
+		Entry("oversized Vite port", []string{"serve", "--dev", "--ui-port", "65536"}, "ui-port must"),
 		Entry("missing source checkout", []string{"serve", "--dev", "--port", "0", "--web-dir", "missing"}, "source checkout"),
 	)
 	It("prints in the format its flags ask for", func() {

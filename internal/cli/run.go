@@ -21,22 +21,43 @@ type runFlags struct {
 	options telltale.StartOptions
 }
 
-// bind defines the flags every run command takes on cmd.
-func (f *runFlags) bind(cmd *cobra.Command) {
+// bind defines the flags every run command takes on cmd; --every only when
+// the run reads checkpointed captures, as it is how often they are read. A
+// kind without checkpoints may then take --every as its own param, as the
+// query kind's interval does.
+func (f *runFlags) bind(cmd *cobra.Command, checkpointed bool) {
 	bindDataDir(cmd.Flags(), &f.options.DataDir)
 	cmd.Flags().DurationVar(&f.options.Duration, "duration", 0, "Stop the run after this long, e.g. 30s (0 runs until the command exits or Ctrl+C)")
-	cmd.Flags().DurationVar(&f.options.Every, "every", 0, "Read the checkpointed captures this often, e.g. 10s")
+	if checkpointed {
+		cmd.Flags().DurationVar(&f.options.Every, "every", 0, "Read the checkpointed captures this often, e.g. 10s")
+	}
 	cmd.Flags().Bool("follow", false, "Print each capture's rows while recording")
 }
 
 // newRunCommand is `run` with one subcommand per registered trace kind, each
 // with its params as flags.
 func newRunCommand() *cobra.Command {
+	var flags runFlags
+	var ref string
 	run := &cobra.Command{
 		Use:   "run <kind> [flags] [-- command [args...]]",
-		Short: "Trace a command, or a running process, with one trace kind",
-		Args:  cobra.NoArgs,
+		Short: "Trace a command, or a running process, with one trace kind or a trace definition",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if ref == "" && len(args) > 0 {
+				return fmt.Errorf("unknown trace kind %q: see telltale run --help, or name a definition with --definition", args[0])
+			}
+			if ref == "" {
+				return cmd.Help()
+			}
+			options := flags.options
+			options.Command = args
+			return runDefinition(cmd, ref, options)
+		},
 	}
+	flags.bind(run, true)
+	run.Flags().IntVar(&flags.options.PID, "pid", 0, "With --definition, attach to this running process instead of running a command")
+	run.Flags().StringVar(&ref, "definition", "", "Arm the captures of this trace definition: a stored name, or a .yaml file")
 	setHelp(run, func(cmd *cobra.Command) api.Text { return runHelp(cmd).Text })
 	kinds, err := traces.Kinds()
 	if err != nil {
@@ -60,7 +81,7 @@ func newRunKindCommand(registration traces.Registration, plugin tracing.TracePlu
 		Args:  cobra.ArbitraryArgs,
 	}
 	cmd.Flags().SetInterspersed(false)
-	flags.bind(cmd)
+	flags.bind(cmd, registration.Checkpoint != nil)
 	schema, err := plugin.Params()
 	if err != nil {
 		panic(fmt.Sprintf("trace kind %s params: %v", registration.Name, err))

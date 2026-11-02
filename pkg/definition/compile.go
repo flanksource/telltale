@@ -49,6 +49,10 @@ func compile(def *TraceDefinition, options Options) ([]telltale.TraceSpec, *Vali
 	}
 	specs := make([]telltale.TraceSpec, 0, len(resolved.Entries))
 	for _, at := range resolved.Entries {
+		if refusals.refuses(at.Pointer() + "/connection") {
+			// The kind's own check would only repeat that it has no connection.
+			continue
+		}
 		spec, err := compileEntry(kinds, at, def.Name)
 		refusals.add(at.Pointer(), err)
 		specs = append(specs, spec)

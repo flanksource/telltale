@@ -32,6 +32,9 @@ type TraceDefinition struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 	Spec              Spec `json:"spec"`
+	// adhoc marks the definition Inline makes of an ad-hoc start request,
+	// which has no spec.connections for an entry to default to.
+	adhoc bool
 }
 
 // Spec is a definition's captures. Nothing in it is about one run: the

@@ -17,6 +17,7 @@ import (
 	"github.com/flanksource/telltale/internal/otelreceiver"
 	"github.com/flanksource/telltale/internal/rules"
 	"github.com/flanksource/telltale/pkg/datadir"
+	"github.com/flanksource/telltale/pkg/definition"
 	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/webapp"
 	"github.com/spf13/cobra"
@@ -48,8 +49,8 @@ func Run(ctx context.Context, options Options) (err error) {
 	if options.DataDir == "" || len(options.ConfigDirs) == 0 {
 		return fmt.Errorf("serve: a data dir and config dirs are required (got %q, %v)", options.DataDir, options.ConfigDirs)
 	}
-	if options.Port < 0 || options.Port > 65535 || options.UIPort < 1 || options.UIPort > 65535 {
-		return fmt.Errorf("port must be 0..65535 and ui-port must be 1..65535")
+	if options.Port < 0 || options.Port > 65535 || options.UIPort < 0 || options.UIPort > 65535 {
+		return fmt.Errorf("port must be 0..65535 and ui-port must be 0..65535")
 	}
 	ctx, cancel := context.WithCancelCause(ctx)
 	defer cancel(nil)
@@ -84,7 +85,11 @@ func Run(ctx context.Context, options Options) (err error) {
 	if err != nil {
 		return err
 	}
-	traceMount, err := telltale.NewHandler(telltale.HandlerOptions{DataDir: options.DataDir, Prefix: TracesMount, Connections: connections})
+	definitions, err := definition.NewService(definition.NewStore(options.ConfigDirs), connections)
+	if err != nil {
+		return err
+	}
+	traceMount, err := telltale.NewHandler(telltale.HandlerOptions{DataDir: options.DataDir, Prefix: TracesMount, Connections: connections, Definitions: definitions})
 	if err != nil {
 		return err
 	}

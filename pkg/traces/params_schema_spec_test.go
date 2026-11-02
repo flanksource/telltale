@@ -21,6 +21,10 @@ var schemaGoldens = map[string][]string{
 	"http": {"listen", "export"},
 	"sql":  {"listen", "export"},
 	"logs": {"target"},
+	// query's golden is commons-db's own query kind's schema: telltale's
+	// takes the same params, plus the host target every telltale kind has,
+	// and its provider, the same type, is marked one JSON value for the CLI.
+	"query": {"target", "provider"},
 }
 
 // schemaProperties reads a params schema as its JSON properties, so two

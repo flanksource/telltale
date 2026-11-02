@@ -100,7 +100,7 @@ var _ = Describe("a default connection", func() {
 			Expect(refusal("spec:\n    connections: "+connections+"\n"+planCache, opened)).To(MatchError(ContainSubstring(message)))
 		},
 		Entry("none of the type", "[{name: orders, type: postgres}]", nil,
-			"/spec/collect/sqlserver/planCache/0/connection: names no connection and spec.connections holds no sql_server connection"),
+			"/spec/collect/sqlserver/planCache/0/connection: names no connection, and spec.connections has no sql_server connection to default to: name one, or add one to spec.connections"),
 		Entry("two of the type, naming both", "[{name: a, type: sql_server}, {name: b, type: sql_server}]", nil,
 			"connection://a, connection://b are each a default sql_server connection"),
 		Entry("a reference with no store to tell its type", "[connection://checkout-sqlserver]", nil,

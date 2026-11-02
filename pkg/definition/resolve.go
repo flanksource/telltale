@@ -35,6 +35,11 @@ func (e *ValidationError) add(pointer string, err error) {
 	}
 }
 
+// refuses reports whether pointer is already refused.
+func (e *ValidationError) refuses(pointer string) bool {
+	return slices.ContainsFunc(e.Fields, func(field telltale.FieldError) bool { return field.InstancePath == pointer })
+}
+
 func (e *ValidationError) err() error {
 	if len(e.Fields) == 0 {
 		return nil
@@ -95,7 +100,7 @@ func resolve(def *TraceDefinition, options Options) (*Resolved, *ValidationError
 		}
 		byName[at.Name] = *at
 		if carrier, ok := at.Entry.(connectionEntry); ok {
-			refusals.add(at.Pointer()+"/connection", defaults.fill(carrier.connection(*at)))
+			refusals.add(at.Pointer()+"/connection", defaults.fill(carrier.connection(*at), def.adhoc))
 		}
 	}
 	return &Resolved{Definition: copied, Entries: entries}, refusals
@@ -168,8 +173,9 @@ func connectionDefaults(refs []ConnectionRef, connections *store.Store, refusals
 }
 
 // fill gives an entry that names no connection the one default of its type,
-// refusing none or several.
-func (s connectionSet) fill(slot connectionSlot) error {
+// refusing none or several. An ad-hoc entry has no defaults to take, so it is
+// asked for its own.
+func (s connectionSet) fill(slot connectionSlot, adhoc bool) error {
 	if *slot.field != "" || slot.optional || slot.connType == "" {
 		return nil
 	}
@@ -191,5 +197,8 @@ func (s connectionSet) fill(slot connectionSlot) error {
 	case len(unknown) > 0:
 		return fmt.Errorf("names no connection, and without a connection store the type of %s is unknown; name one", strings.Join(unknown, ", "))
 	}
-	return fmt.Errorf("names no connection and spec.connections holds no %s connection", slot.connType)
+	if adhoc {
+		return fmt.Errorf("names no connection: set it to a %s connection, such as connection://<name>", slot.connType)
+	}
+	return fmt.Errorf("names no connection, and spec.connections has no %s connection to default to: name one, or add one to spec.connections", slot.connType)
 }

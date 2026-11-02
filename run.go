@@ -63,7 +63,9 @@ func Start(ctx context.Context, options StartOptions) (*Run, error) {
 		return nil, err
 	}
 	startedAt := time.Now()
-	host, err := traces.Open(traces.OpenOptions{DataDir: options.DataDir, RunID: traces.RunID(startedAt), Connections: options.Connections})
+	host, err := traces.Open(traces.OpenOptions{
+		DataDir: options.DataDir, RunID: traces.RunID(startedAt), Connections: options.Connections, RunConnections: options.RunConnections,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -130,10 +132,10 @@ func (r *Run) Wait() (*Result, error) {
 func (r *Run) Info() RunInfo {
 	select {
 	case <-r.done:
-		if r.err != nil {
+		if r.result == nil {
 			return RunInfo{
 				RunID: r.ID(), Dir: r.Dir(), Status: StatusUnfinished, Command: r.options.Command, PID: r.options.PID,
-				StartedAt: r.startedAt, Unavailable: r.err.Error(),
+				StartedAt: r.startedAt, Unavailable: r.err.Error(), Definition: r.options.Definition,
 			}
 		}
 		return resultInfo(r.result)
@@ -145,7 +147,7 @@ func (r *Run) Info() RunInfo {
 	}
 	info := RunInfo{
 		RunID: r.ID(), Dir: r.Dir(), Status: StatusRunning, Command: r.options.Command, PID: r.options.PID, StartedAt: r.startedAt,
-		Captures: captures, Process: r.processRefs(), CheckpointErrors: r.checkpoints.failed(),
+		Captures: captures, Process: r.processRefs(), CheckpointErrors: r.checkpoints.failed(), Definition: r.options.Definition,
 	}
 	if r.process != nil {
 		info.Live = &LiveRun{Sessions: r.process.Sessions()}
@@ -236,7 +238,7 @@ func (r *Run) start() error {
 func (r *Run) arm() (map[string]string, error) {
 	env := map[string]string{}
 	for _, spec := range r.specs {
-		capture, err := r.host.Start(traces.StartOptions{Kind: spec.Kind, Params: spec.Params})
+		capture, err := r.host.Start(traces.StartOptions{Kind: spec.Kind, Params: spec.Params, Labels: spec.Labels})
 		if err != nil {
 			return nil, err
 		}
@@ -305,16 +307,20 @@ func (r *Run) wait() {
 	}
 	result := &Result{
 		RunID: r.ID(), Dir: r.Dir(), Command: r.options.Command, PID: r.options.PID, StartedAt: r.startedAt, EndedAt: time.Now(),
-		ExitCode: exitCode, Process: r.processRefs(),
+		ExitCode: exitCode, Process: r.processRefs(), Definition: r.options.Definition,
 	}
 	if err == nil {
 		result.Captures, err = r.summarize(context.Background())
 		result.CheckpointErrors = r.checkpoints.failed()
 	}
-	if err = errors.Join(err, r.close()); err == nil {
-		err = writeManifest(result)
+	if err = errors.Join(err, r.close()); err != nil {
+		result.Error = err.Error()
 	}
-	if err == nil {
+	// A run that could not end cleanly still records that it ended, and why,
+	// rather than leaving its running manifest behind.
+	if manifestErr := writeManifest(result); manifestErr != nil {
+		err = errors.Join(err, manifestErr)
+	} else {
 		r.result = result
 	}
 	r.err = err

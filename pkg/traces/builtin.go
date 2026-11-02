@@ -1,6 +1,9 @@
 package traces
 
 import (
+	"encoding/json"
+	"fmt"
+
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/goprof"
 	"github.com/flanksource/telltale/pkg/tracing/groups"
@@ -65,6 +68,11 @@ func init() {
 				{Args: "--every 10s -- ./server", Says: "dump the server's stacks every 10 seconds"},
 				{Args: "--pid 1234 --duration 5s", Says: "dump process 1234's stacks once as the run stops"},
 			},
+			Readable: gopsReadable(func(checkpoint json.RawMessage) (bool, error) {
+				var params stacks.CheckpointParams
+				err := json.Unmarshal(checkpoint, &params)
+				return params.Transport == stacks.TransportGops, err
+			}),
 			New: func(deps KindDeps) tracing.TracePlugin { return stacks.NewKind(nil, deps.Dumpers) },
 		},
 		{
@@ -78,6 +86,11 @@ func init() {
 				{Args: "--every 30s -- ./server", Says: "read the server's heap every 30 seconds"},
 				{Args: "--pid 1234 --duration 1m --every 15s", Says: "read process 1234's heap every 15 seconds for a minute"},
 			},
+			Readable: gopsReadable(func(checkpoint json.RawMessage) (bool, error) {
+				var params goprof.CheckpointParams
+				err := json.Unmarshal(checkpoint, &params)
+				return params.Source == goprof.SourceGops, err
+			}),
 			New: func(KindDeps) tracing.TracePlugin { return goprof.NewKind(goprof.Addresses{Gops: stacks.GopsAddress}) },
 		},
 		{
@@ -106,5 +119,22 @@ func init() {
 		},
 	} {
 		MustRegister(registration)
+	}
+}
+
+// gopsReadable refuses a process without a gops agent when its checkpoint
+// params, as readsGops tells, read over one: the agent's port file is what a
+// gops reading dials, so a process without one could never be read.
+func gopsReadable(readsGops func(checkpoint json.RawMessage) (bool, error)) func(int, json.RawMessage) error {
+	return func(pid int, checkpoint json.RawMessage) error {
+		gops, err := readsGops(checkpoint)
+		if err != nil {
+			return fmt.Errorf("checkpoint params: %w", err)
+		}
+		if !gops {
+			return nil
+		}
+		_, err = stacks.GopsPort(pid)
+		return err
 	}
 }

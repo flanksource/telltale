@@ -175,7 +175,7 @@ describe("runs started over the API", () => {
     const response = await start({ traces: { sql_deadlock: { enabled: true, from: "2026-10-28T12:00:00Z", to: "2026-10-28T11:00:00Z" } } });
     expect(response.status).toBe(400);
     const refused = await response.json() as { errors: { instancePath: string }[] };
-    expect(refused.errors.map(field => field.instancePath)).toEqual(["/traces/sql_deadlock"]);
+    expect(refused.errors.map(field => field.instancePath).sort()).toEqual(["/traces/sql_deadlock", "/traces/sql_deadlock/connection"]);
   });
 
   it("serves the start form", async () => {

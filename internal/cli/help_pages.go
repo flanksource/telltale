@@ -9,7 +9,7 @@ import (
 
 	flagmeta "github.com/flanksource/clicky/flags"
 	"github.com/flanksource/clicky/rpc"
-	"github.com/flanksource/telltale"
+	"github.com/flanksource/telltale/pkg/definition"
 	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/tracing/target"
 	"github.com/spf13/cobra"
@@ -53,7 +53,8 @@ func runHelp(cmd *cobra.Command) helpText {
 	h := newHelp("Trace a command, or a running process, with one trace kind.").
 		section("Usage").
 		command("telltale run <kind> [flags] -- command [args...]", "start the command and trace it").
-		command("telltale run <kind> [flags] --pid PID", "attach to a running process until Ctrl+C, --duration, or it exits")
+		command("telltale run <kind> [flags] --pid PID", "attach to a running process until Ctrl+C, --duration, or it exits").
+		command("telltale run --definition <name|file.yaml> [flags] [-- command [args...] | --pid PID]", "arm a trace definition's captures; neither command nor pid is a host run")
 	width := kindNameWidth()
 	for _, entry := range targets {
 		h = h.section(entry.title).paragraph(entry.says)
@@ -64,8 +65,12 @@ func runHelp(cmd *cobra.Command) helpText {
 		}
 	}
 	h = h.section("Presets").paragraph("Named runs of several kinds, each its own command:")
-	for _, preset := range telltale.Presets() {
-		h = h.term("telltale "+preset.Name, preset.Summary, width)
+	builtins, err := definition.Builtins()
+	if err != nil {
+		panic(err)
+	}
+	for _, def := range builtins {
+		h = h.term("telltale "+def.Name, def.Summary(), width)
 	}
 	return h.section("Examples").
 		command("telltale run http --seam proxy --mode mitm -- curl -sS https://example.com", "decrypt and record a request").
@@ -177,33 +182,38 @@ func paramSummary(schema *rpc.OpenAPISchema, prefix string) []string {
 	return params
 }
 
-func presetHelp(cmd *cobra.Command, preset telltale.Preset) helpText {
-	h := newHelp(preset.Summary+".").
-		section("Description").paragraph(preset.Description).
+func presetHelp(cmd *cobra.Command, def *definition.TraceDefinition) helpText {
+	h := newHelp(def.Summary()+".").
+		section("Description").paragraph(def.Spec.Description).
 		section("Usage").
-		command("telltale "+preset.Name+" [flags] PID", "attach to a running process until Ctrl+C, --duration, or it exits").
-		command("telltale "+preset.Name+" [flags] -- command [args...]", "start the command and trace it").
+		command("telltale "+def.Name+" [flags] PID", "attach to a running process until Ctrl+C, --duration, or it exits").
+		command("telltale "+def.Name+" [flags] -- command [args...]", "start the command and trace it").
 		section("Arms")
-	if len(preset.Traces) == 0 {
+	entries := definition.Walk(&def.Spec)
+	if len(entries) == 0 {
 		h = h.paragraph("The run's own process trace: its tree, samples and stacks.")
 	}
 	width := kindNameWidth()
-	for _, spec := range preset.Traces {
-		registration, err := traces.Registered(spec.Kind)
+	for _, entry := range entries {
+		registration, err := traces.Registered(entry.Kind)
 		if err != nil {
 			panic(err)
 		}
-		h = h.term(spec.Kind, registration.Summary, width)
+		h = h.term(entry.Kind, registration.Summary, width)
 	}
-	if preset.Tree.Facets {
+	if def.Tree().Facets {
 		h = h.paragraph("Every process's open files, sockets, ports, connections and environment.")
 	}
-	if preset.Every > 0 {
-		h = h.paragraph(fmt.Sprintf("Checkpoints are read every %s unless --every says otherwise.", preset.Every))
+	if def.Spec.Every != "" {
+		h = h.paragraph(fmt.Sprintf("Checkpoints are read every %s unless --every says otherwise.", def.Spec.Every))
+	}
+	examples, err := def.Examples()
+	if err != nil {
+		panic(err)
 	}
 	h = h.section("Examples")
-	for _, example := range preset.Examples {
-		h = h.command("telltale "+preset.Name+" "+example.Args, example.Says)
+	for _, example := range examples {
+		h = h.command("telltale "+def.Name+" "+example.Args, example.Says)
 	}
 	return h.section("See also").
 		command("telltale run --help", "every trace kind, one at a time").

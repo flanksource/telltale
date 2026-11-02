@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/flanksource/commons-db/connection/crd"
 	"github.com/flanksource/commons-db/connection/store"
 	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/tracing"
@@ -26,6 +27,9 @@ type TraceSpec struct {
 	// Checkpoint are the checkpoint params the run reads the capture with;
 	// nil is its kind's registered ones (traces.Registration.Checkpoint).
 	Checkpoint json.RawMessage
+	// Labels are what the capture's session is labelled with, such as the
+	// definition entry it compiles (definition.LabelEntry).
+	Labels map[string]string
 }
 
 // ParseTraceSpec reads kind or kind:{json params}.
@@ -91,6 +95,25 @@ type StartOptions struct {
 	// as sql_xevent's connection; nil answers none (OpenConnections is
 	// telltale's own).
 	Connections *store.Store
+	// RunConnections are connections this run alone defines, such as a trace
+	// definition's inline ones, layered over Connections for its captures
+	// (traces.OpenOptions.RunConnections).
+	RunConnections []crd.Connection
+	// Definition is the trace definition the captures were compiled from,
+	// recorded on the run; nil for captures asked for one by one.
+	Definition *DefinitionRef
+}
+
+// DefinitionRef is the trace definition a run was started from, as it was
+// then: a later edit of the definition never rewrites a recorded run.
+type DefinitionRef struct {
+	Name string `json:"name"`
+	// ResourceVersion is the hash of the definition's file, empty for one
+	// read from no file.
+	ResourceVersion string `json:"resourceVersion,omitempty"`
+	// Spec is the definition's spec as the run resolved it: every entry
+	// named and given its default connection.
+	Spec json.RawMessage `json:"spec"`
 }
 
 // Result is what a finished run recorded, kept in its store as ManifestFile.
@@ -108,6 +131,11 @@ type Result struct {
 	// CheckpointErrors are the checkpoints that failed, such as a dump of a
 	// process that had exited; a run with any failed.
 	CheckpointErrors []string `json:"checkpointErrors,omitempty"`
+	// Definition is the trace definition the run was started from.
+	Definition *DefinitionRef `json:"definition,omitempty"`
+	// Error is why the run could not end cleanly, such as a capture that
+	// failed to stop or summarize; a run with one failed.
+	Error string `json:"error,omitempty"`
 }
 
 // CaptureResult is one capture's stream and, once the run finished, its

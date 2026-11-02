@@ -21,6 +21,11 @@ tasks:
       - pnpm typecheck
       - pnpm --filter @flanksource/telltale-webapp build{{if .LOCAL_UI}} --mode local-ui{{end}}
 
+  generate:
+    desc: Write the TraceDefinition CRD reflected from pkg/definition to crds/
+    cmds:
+      - go run ./hack/crd
+
   binary:
     desc: Compile the binary with existing embedded assets
     cmds:

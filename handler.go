@@ -35,6 +35,9 @@ type HandlerOptions struct {
 	// Connections answer the connection references of the runs it starts,
 	// and are what it lists at <prefix>/connections.
 	Connections *store.Store
+	// Definitions are the trace definitions it serves at
+	// <prefix>/definitions and arms each run it starts with.
+	Definitions Definitions
 }
 
 // RunsList is the runs a Handler lists, newest first.
@@ -62,6 +65,7 @@ type StartForm struct {
 //	POST   <prefix>                 start a run: a StartRequest JSON body, from the server's own origin
 //	GET    <prefix>/start           the start form (StartForm)
 //	GET    <prefix>/connections     the connections its runs can name (ConnectionInfo), of ?type alone
+//	*      <prefix>/definitions/... the trace definitions (HandlerOptions.Definitions); a write only from its own origin
 //	DELETE <prefix>/<run id>        stop a run this process is running
 //	*      <prefix>/<run id>/...    the run's store (traceserve.Handler): live from its
 //	                                running captures, else reopened read-only
@@ -89,6 +93,9 @@ func NewHandler(options HandlerOptions) (*Handler, error) {
 	if options.Connections == nil {
 		return nil, fmt.Errorf("trace handler: a connection store is required, such as OpenConnections()")
 	}
+	if options.Definitions == nil {
+		return nil, fmt.Errorf("trace handler: trace definitions are required, such as definition.NewService")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Handler{options: options, ctx: ctx, cancel: cancel, opened: map[string]openedStore{}, started: map[string]*Run{}}, nil
 }
@@ -104,6 +111,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case prefix + "/connections":
 		h.serveConnections(w, r)
+		return
+	}
+	if r.URL.Path == prefix+"/definitions" || strings.HasPrefix(r.URL.Path, prefix+"/definitions/") {
+		h.serveDefinitions(w, r)
 		return
 	}
 	runID, rest, _ := strings.Cut(strings.TrimPrefix(r.URL.Path, prefix+"/"), "/")
@@ -239,7 +250,7 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, rootError("decode start request: "+err.Error()))
 		return
 	}
-	options, err := request.Options(h.options.DataDir)
+	options, err := request.Options(StartOptions{DataDir: h.options.DataDir, Connections: h.options.Connections}, h.options.Definitions)
 	var invalid *ValidationError
 	if errors.As(err, &invalid) {
 		writeJSON(w, http.StatusBadRequest, invalid)
@@ -249,7 +260,6 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	options.Connections = h.options.Connections
 	run, err := Start(h.ctx, options)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, rootError(err.Error()))
@@ -257,6 +267,18 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 	}
 	h.track(run)
 	writeJSON(w, http.StatusCreated, h.mounted(run.Info()))
+}
+
+// serveDefinitions hands the definitions routes to HandlerOptions.Definitions,
+// refusing a write from another origin as a start is refused.
+func (h *Handler) serveDefinitions(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		if err := sameOrigin(r); err != nil {
+			http.Error(w, err.Error(), http.StatusForbidden)
+			return
+		}
+	}
+	http.StripPrefix(h.options.Prefix, h.options.Definitions).ServeHTTP(w, r)
 }
 
 // rootError refuses a start request as a whole, such as a capture that could

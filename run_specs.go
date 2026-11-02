@@ -83,6 +83,11 @@ func aimedSpecs(options StartOptions) ([]aimedSpec, error) {
 				return nil, fmt.Errorf("trace %s checkpoint params: %w", spec.Kind, err)
 			}
 		}
+		if registration.Readable != nil && armed.checkpoint != nil && resolved.Seam == target.Process && resolved.PID != 0 {
+			if err := registration.Readable(resolved.PID, armed.checkpoint); err != nil {
+				return nil, fmt.Errorf("trace %s: %w", spec.Kind, err)
+			}
+		}
 		specs = append(specs, armed)
 	}
 	return specs, nil

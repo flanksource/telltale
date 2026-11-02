@@ -3,7 +3,9 @@ package telltale_test
 import (
 	"encoding/json"
 
+	"github.com/flanksource/commons-db/connection/store"
 	"github.com/flanksource/telltale"
+	"github.com/flanksource/telltale/pkg/definition"
 	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/tracing/httpproxy"
 	"github.com/flanksource/telltale/pkg/tracing/pgproxy"
@@ -50,19 +52,57 @@ var _ = Describe("the start form", func() {
 })
 
 var _ = Describe("a start request", func() {
-	It("runs its command with sh -c in the server's working directory, recording into the data dir, arming the enabled kinds with their params", func() {
+	var (
+		base        telltale.StartOptions
+		definitions telltale.Definitions
+	)
+
+	BeforeEach(func() {
+		connections, err := store.New(store.Layer{Name: store.LayerCWD, Dir: GinkgoT().TempDir()})
+		Expect(err).ToNot(HaveOccurred())
+		base = telltale.StartOptions{DataDir: "/cache/telltale", Connections: connections}
+		definitions, err = definition.NewService(definition.NewStore(nil), connections)
+		Expect(err).ToNot(HaveOccurred())
+	})
+
+	It("runs its command with sh -c, arming its enabled kinds as the entries of an inline definition", func() {
 		options, err := telltale.StartRequest{
 			Command: "curl -sS example.com", Tree: traces.TreeOptions{Facets: true},
 			Traces: map[string]json.RawMessage{
 				httpproxy.Kind: json.RawMessage(`{"enabled":true,"mode":"mitm","target":{"seam":"proxy"}}`),
 				pgproxy.Kind:   json.RawMessage(`{"enabled":false,"connection":""}`),
 			},
-		}.Options("/cache/telltale")
+		}.Options(base, definitions)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(options).To(Equal(telltale.StartOptions{
-			DataDir: "/cache/telltale", Command: []string{"sh", "-c", "curl -sS example.com"}, Tree: traces.TreeOptions{Facets: true},
-			TraceRoot: telltale.TraceRootCommand,
-			Traces:    []telltale.TraceSpec{{Kind: httpproxy.Kind, Params: json.RawMessage(`{"mode":"mitm","target":{"seam":"proxy"}}`)}},
+		Expect(options.Command).To(Equal([]string{"sh", "-c", "curl -sS example.com"}))
+		Expect(options.Tree).To(Equal(traces.TreeOptions{Facets: true}))
+		Expect(options.TraceRoot).To(Equal(telltale.TraceRootCommand))
+		Expect(options.Definition).To(BeNil(), "an ad-hoc start was started from no stored definition")
+		Expect(options.Traces).To(HaveExactElements(And(
+			HaveField("Kind", httpproxy.Kind),
+			HaveField("Params", MatchJSON(`{"mode":"mitm","target":{"seam":"proxy"}}`)),
+			HaveField("Labels", map[string]string{definition.LabelEntry: "adhoc-proxy-http", definition.LabelDefinition: definition.InlineName}),
+		)))
+	})
+
+	It("arms a host kind no start form offers, as a host run", func() {
+		options, err := telltale.StartRequest{Traces: map[string]json.RawMessage{
+			"prometheus": json.RawMessage(`{"enabled":true,"endpoints":["http://127.0.0.1:9100/metrics"]}`),
+		}}.Options(base, definitions)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(options.Command).To(BeEmpty())
+		Expect(options.Traces).To(HaveExactElements(HaveField("Labels", HaveKeyWithValue(definition.LabelEntry, "adhoc-collect-prometheus-scrape"))))
+	})
+
+	It("asks an ad-hoc capture that names no connection for one in its own params", func() {
+		_, err := telltale.StartRequest{Traces: map[string]json.RawMessage{
+			"sql_deadlock": json.RawMessage(`{"enabled":true}`),
+		}}.Options(base, definitions)
+		var invalid *telltale.ValidationError
+		Expect(err).To(BeAssignableToTypeOf(invalid))
+		Expect(err.(*telltale.ValidationError).Fields).To(ConsistOf(telltale.FieldError{
+			InstancePath: "/traces/sql_deadlock/connection",
+			Message:      "names no connection: set it to a sql_server connection, such as connection://<name>",
 		}))
 	})
 
@@ -74,14 +114,14 @@ var _ = Describe("a start request", func() {
 				"process_tree": json.RawMessage(`{"enabled":true}`),
 				pgproxy.Kind:   json.RawMessage(`[]`),
 			},
-		}.Options("/cache/telltale")
+		}.Options(base, definitions)
 		var invalid *telltale.ValidationError
 		Expect(err).To(BeAssignableToTypeOf(invalid))
 		Expect(err.(*telltale.ValidationError).Fields).To(ConsistOf(
 			telltale.FieldError{InstancePath: "/command", Message: "a command is required"},
-			And(HaveField("InstancePath", "/traces/"+httpproxy.Kind), HaveField("Message", ContainSubstring(`mode "sideways"`))),
+			And(HaveField("InstancePath", HavePrefix("/traces/"+httpproxy.Kind)), HaveField("Message", ContainSubstring(`mode "sideways"`))),
 			And(HaveField("InstancePath", "/traces/"+pgproxy.Kind), HaveField("Message", ContainSubstring("want an object"))),
-			And(HaveField("InstancePath", "/traces/process_tree"), HaveField("Message", ContainSubstring("not a kind a run arms"))),
+			And(HaveField("InstancePath", "/traces/process_tree"), HaveField("Message", ContainSubstring("no trace definition list arms process_tree"))),
 		))
 	})
 })

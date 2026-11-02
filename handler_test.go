@@ -12,6 +12,7 @@ import (
 
 	"github.com/flanksource/commons-db/connection/store"
 	"github.com/flanksource/telltale"
+	"github.com/flanksource/telltale/pkg/definition"
 	"github.com/flanksource/telltale/pkg/tracing/httpproxy"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -23,13 +24,16 @@ var _ = Describe("the runs handler", func() {
 	var handler *telltale.Handler
 	var dataDir, connectionsDir string
 	var connections *store.Store
+	var definitions *definition.Service
 
 	BeforeEach(func() {
 		dataDir, connectionsDir = GinkgoT().TempDir(), GinkgoT().TempDir()
 		var err error
 		connections, err = store.New(store.Layer{Name: store.LayerCWD, Dir: connectionsDir})
 		Expect(err).ToNot(HaveOccurred())
-		handler, err = telltale.NewHandler(telltale.HandlerOptions{DataDir: dataDir, Prefix: prefix, Connections: connections})
+		definitions, err = definition.NewService(definition.NewStore(nil), connections)
+		Expect(err).ToNot(HaveOccurred())
+		handler, err = telltale.NewHandler(telltale.HandlerOptions{DataDir: dataDir, Prefix: prefix, Connections: connections, Definitions: definitions})
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(func() { Expect(handler.Close()).To(Succeed()) })
 	})
@@ -54,11 +58,20 @@ var _ = Describe("the runs handler", func() {
 		return runs
 	}
 
-	It("refuses a mount without a data dir, a rooted prefix or a connection store", func() {
-		_, err := telltale.NewHandler(telltale.HandlerOptions{DataDir: dataDir, Prefix: "api/traces/", Connections: connections})
+	It("refuses a mount without a data dir, a rooted prefix, a connection store or trace definitions", func() {
+		_, err := telltale.NewHandler(telltale.HandlerOptions{DataDir: dataDir, Prefix: "api/traces/", Connections: connections, Definitions: definitions})
 		Expect(err).To(MatchError(ContainSubstring("prefix like /api/traces")))
-		_, err = telltale.NewHandler(telltale.HandlerOptions{DataDir: dataDir, Prefix: prefix})
+		_, err = telltale.NewHandler(telltale.HandlerOptions{DataDir: dataDir, Prefix: prefix, Definitions: definitions})
 		Expect(err).To(MatchError(ContainSubstring("a connection store is required")))
+		_, err = telltale.NewHandler(telltale.HandlerOptions{DataDir: dataDir, Prefix: prefix, Connections: connections})
+		Expect(err).To(MatchError(ContainSubstring("trace definitions are required")))
+	})
+
+	It("refuses a definition write from another origin", func() {
+		request := httptest.NewRequest(http.MethodDelete, prefix+"/definitions/probe?layer=global", nil)
+		request.Header.Set("Origin", "https://elsewhere.example")
+		status, _ := serve(request)
+		Expect(status).To(Equal(http.StatusForbidden))
 	})
 
 	It("lists the connections its runs can name, by type, without their URLs or credentials", func() {

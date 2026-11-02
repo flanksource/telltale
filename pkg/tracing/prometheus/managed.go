@@ -76,21 +76,40 @@ func NewManaged(dataDir string) *Managed { return &Managed{dataDir: dataDir} }
 
 // Server is the run's Prometheus, started on the run's first call.
 func (m *Managed) Server(ctx context.Context) (Server, error) {
+	held, paths, err := m.hold(ctx)
+	if err != nil {
+		return Server{}, err
+	}
+	return Server{URL: held.instance.Connection.URL, Job: Job, FileSDDir: paths.FileSD}, nil
+}
+
+// Connection is the run's Prometheus as the read-only connection its samples
+// are queried through, started on the run's first call as Server is, so a run
+// that only queries it holds it too.
+func (m *Managed) Connection(ctx context.Context) (*models.Connection, error) {
+	held, paths, err := m.hold(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return managedConnection(held.instance.Connection, paths), nil
+}
+
+func (m *Managed) hold(ctx context.Context) (*lease, ManagedPaths, error) {
 	if m.dataDir == "" {
-		return Server{}, errors.New("a managed prometheus lives in telltale's data dir, and none is set")
+		return nil, ManagedPaths{}, errors.New("a managed prometheus lives in telltale's data dir, and none is set")
 	}
 	paths, err := Paths(m.dataDir)
 	if err != nil {
-		return Server{}, err
+		return nil, ManagedPaths{}, err
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.held == nil {
 		if m.held, err = acquire(ctx, paths); err != nil {
-			return Server{}, err
+			return nil, ManagedPaths{}, err
 		}
 	}
-	return Server{URL: m.held.instance.Connection.URL, Job: Job, FileSDDir: paths.FileSD}, nil
+	return m.held, paths, nil
 }
 
 // Release ends the run's hold on its Prometheus, stopping a Prometheus this
@@ -181,10 +200,24 @@ func ManagedConnection(ctx context.Context, dataDir string) (*models.Connection,
 	if err != nil {
 		return nil, fmt.Errorf("read the managed prometheus state in %s: %w", paths.State, err)
 	}
-	connection := instance.Connection
-	connection.ID = uuid.NewSHA1(uuid.NameSpaceURL, []byte("telltale://managed/prometheus/"+paths.State))
+	return managedConnection(instance.Connection, paths), nil
+}
+
+func managedConnection(connection models.Connection, paths ManagedPaths) *models.Connection {
+	connection.ID = ManagedConnectionID(paths)
 	connection.Name, connection.Namespace = ConnectionName, ""
 	connection.Source = filepath.Join(paths.State, service, "state.yaml")
 	connection.ReadOnly, connection.Virtual = true, true
-	return &connection, nil
+	return &connection
+}
+
+// ManagedConnectionID is the id of the managed connection kept at paths.
+func ManagedConnectionID(paths ManagedPaths) uuid.UUID {
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("telltale://managed/prometheus/"+paths.State))
+}
+
+// NamesManaged reports whether reference names the managed connection kept at
+// paths: by its id, its name or connection://<name>.
+func NamesManaged(paths ManagedPaths, reference string) bool {
+	return reference == ManagedConnectionID(paths).String() || reference == ConnectionName || reference == "connection://"+ConnectionName
 }

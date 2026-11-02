@@ -65,6 +65,10 @@ type RunInfo struct {
 	// Standing marks a standing store served as a pseudo-run: continuous, with
 	// no start or end.
 	Standing bool `json:"standing,omitempty"`
+	// Definition is the trace definition the run was started from.
+	Definition *DefinitionRef `json:"definition,omitempty"`
+	// Error is why a failed run could not end cleanly.
+	Error string `json:"error,omitempty"`
 }
 
 // LiveRun is what a running run offers beyond its stored streams.
@@ -74,7 +78,7 @@ type LiveRun struct {
 
 func resultInfo(result *Result) RunInfo {
 	status := StatusSucceeded
-	if result.ExitCode != 0 || len(result.CheckpointErrors) > 0 {
+	if result.ExitCode != 0 || len(result.CheckpointErrors) > 0 || result.Error != "" {
 		status = StatusFailed
 	}
 	exitCode := &result.ExitCode
@@ -84,7 +88,7 @@ func resultInfo(result *Result) RunInfo {
 	return RunInfo{
 		RunID: result.RunID, Dir: result.Dir, Status: status, Command: result.Command, PID: result.PID, StartedAt: result.StartedAt,
 		EndedAt: result.EndedAt, ExitCode: exitCode, Captures: result.Captures, Process: result.Process,
-		CheckpointErrors: result.CheckpointErrors,
+		CheckpointErrors: result.CheckpointErrors, Definition: result.Definition, Error: result.Error,
 	}
 }
 
