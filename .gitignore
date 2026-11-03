@@ -18,3 +18,4 @@ sdk/java/.gradle/
 sdk/java/build/
 pkg/agentinstall/java/assets/*
 !pkg/agentinstall/java/assets/.gitkeep
+/docs/plans/
