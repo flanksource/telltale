@@ -128,7 +128,7 @@ describe("trace search", () => {
     renderPage();
     fireEvent.click(await screen.findByRole("link", { name: /POST \/orders/ }));
     expect(await screen.findByText("charge")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Inspect charge" }));
+    fireEvent.click(screen.getByRole("button", { name: /charge.*40 ms/ }));
     expect(await screen.findByText("http.status_code")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "OpenTelemetry metadata" }));
     fireEvent.click(screen.getByRole("button", { name: "Expand value" }));
