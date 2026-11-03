@@ -39,7 +39,7 @@ jobs:
         with:
           node-version-file: .node-version
           cache: pnpm
-      - uses: flanksource/deps@v1.0.49
+      - uses: flanksource/deps@v1.0.50
         with:
           tools: |
             task
