@@ -5,7 +5,7 @@ import (
 	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/tracing/goprof"
 	"github.com/flanksource/telltale/pkg/tracing/httpproxy"
-	"github.com/flanksource/telltale/pkg/tracing/process"
+	"github.com/flanksource/telltale/pkg/tracing/processcapture"
 	"github.com/flanksource/telltale/pkg/tracing/target"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -51,7 +51,7 @@ var _ = Describe("a kind's params as flags", func() {
 
 	It("shows the supported seam but does not offer unimplemented agent targeting", func() {
 		flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
-		_, err := bindParamFlags(flags, kindSchema(process.SamplesKind))
+		_, err := bindParamFlags(flags, kindSchema(processcapture.Kind))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(flags.Lookup("seam").Usage).To(ContainSubstring("process"))
 		Expect(flags.Lookup("agent")).To(BeNil())
@@ -59,20 +59,20 @@ var _ = Describe("a kind's params as flags", func() {
 		Expect(flags.Lookup("wait")).To(BeNil())
 	})
 	It("names the selector flag when its value is malformed", func() {
-		schema := kindSchema(process.SamplesKind)
+		schema := kindSchema(processcapture.Kind)
 		schema.Properties["target"].Extensions["x-telltale-seams"] = []target.Seam{target.Agent, target.Process}
 		_, err := parsed(schema, "--selector", "invalid")
 		Expect(err).To(MatchError(ContainSubstring("--selector:")))
 	})
 	It("keeps a run PID separate from an explicit agent", func() {
-		schema := kindSchema(process.SamplesKind)
+		schema := kindSchema(processcapture.Kind)
 		schema.Properties["target"].Extensions["x-telltale-seams"] = []target.Seam{target.Agent, target.Process}
 		params, err := parsed(schema, "--pid", "123", "--agent", "worker")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(params).To(MatchJSON(`{"target":{"agent":"worker"}}`))
 	})
 	It("passes mutation consent in the common target", func() {
-		schema := kindSchema(process.SamplesKind)
+		schema := kindSchema(processcapture.Kind)
 		schema.Properties["target"].Extensions["x-telltale-seams"] = []target.Seam{target.Agent, target.Process}
 		params, err := parsed(schema, "--allow-mutation")
 		Expect(err).NotTo(HaveOccurred())
@@ -101,8 +101,8 @@ var _ = Describe("a kind's params as flags", func() {
 		Entry("a choice and a list", httpproxy.Kind, []string{"--mode", "mitm", "--hosts", "a.example,b.example"}, `{"mode": "mitm", "hosts": ["a.example", "b.example"]}`),
 		Entry("a repeated list flag", httpproxy.Kind, []string{"--redact", "X-One", "--redact", "X-Two"}, `{"redact": ["X-One", "X-Two"]}`),
 		Entry("a boolean and an integer", "sql", []string{"--params", "--max-statements", "10"}, `{"params": true, "maxStatements": 10}`),
-		Entry("an object's params, nested", process.TreeKind, []string{"--environment-keys", "PATH", "--interval", "2s"}, `{"environment": {"keys": ["PATH"]}, "interval": "2s"}`),
-		Entry("a run PID and an embedded struct's params", process.SamplesKind, []string{"--pid", "7", "--facets", "ports"}, `{"facets": ["ports"]}`),
+		Entry("an object's params, nested", processcapture.Kind, []string{"--environment-keys", "PATH", "--interval", "2s"}, `{"environment": {"keys": ["PATH"]}, "interval": "2s"}`),
+		Entry("a run PID and an embedded struct's params", processcapture.Kind, []string{"--pid", "7", "--facets", "sockets"}, `{"facets": ["sockets"]}`),
 	)
 
 	It("refuses a value outside a param's choices, naming its flag and the choices", func() {

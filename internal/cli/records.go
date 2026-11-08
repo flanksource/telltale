@@ -28,11 +28,11 @@ func newRecordsCommand() *cobra.Command {
 --filter uses profile column grammar, e.g. pid=123 or rssBytes=>=1048576. --where uses CEL with a row binding, e.g. row.cpuPercent != null && row.cpuPercent > 10. --limit applies after CEL; --all reads every matching row. A continuation cursor is printed to stderr when more rows remain.
 
 --stats aggregates all matching rows unless --limit is explicitly set. Nulls are skipped. Percentiles use nearest rank, exact through 8192 values per column/group, then an 8192-value reservoir; approximate=true identifies sampling. At most 1024 groups, 64 columns, and 1024 column/group pairs are allowed (64 MiB of reservoir values). --group-by alone counts rows. --view runs a named kind view over the seq window; row filters and time bounds require --stats instead.`,
-		Example: `  telltale records process_samples --json
-  telltale records process_samples --since 2h --filter 'rssBytes=>=1048576' --where 'row.cpuPercent > 10' --all
-  telltale records process_samples --run run-2026-10-28T09-00-00Z --follow --format ndjson
-  telltale records process_samples --stats cpuPercent,rssBytes --group-by pid
-  telltale records process_samples --group-by pid --format csv
+		Example: `  telltale records process --json
+  telltale records process --result metrics --since 2h --filter 'rssBytes=>=1048576' --where 'row.cpuPercent > 10' --all
+  telltale records process --result facets --run <run-id> --follow --format ndjson
+  telltale records process --result metrics --stats cpuPercent,rssBytes --group-by entity
+  telltale records process --result metrics --group-by entity --format csv
   telltale records spans --run receiver --filter service=checkout --limit 5
   telltale records spans --run receiver --stats durationMs --group-by operation
   telltale records spans --run receiver --follow
@@ -102,6 +102,7 @@ func newRecordsCommand() *cobra.Command {
 	f := cmd.Flags()
 	bindDataDir(f, &scope.DataDir)
 	f.StringVar(&scope.Run, "run", "", "Run id (default: newest containing the kind)")
+	f.StringVar(&scope.Result, "result", "", "Named result table, e.g. process --result metrics or --result facets")
 	f.StringSliceVar(&scope.Runs, "runs", nil, "Comma-separated run ids")
 	f.StringVar(&since, "since", "", "Run-start cutoff and default row-time start: duration or RFC3339")
 	f.StringVar(&from, "from", "", "Inclusive row-time start (RFC3339); overrides --since's row window")

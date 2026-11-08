@@ -2,13 +2,16 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/flanksource/clicky"
 	"github.com/flanksource/clicky/api"
 	"github.com/flanksource/telltale"
+	"github.com/flanksource/telltale/internal/server"
 	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/traces/read"
 	"github.com/flanksource/telltale/pkg/tracing"
@@ -31,7 +34,7 @@ func (f *runFlags) bind(cmd *cobra.Command, checkpointed bool) {
 	if checkpointed {
 		cmd.Flags().DurationVar(&f.options.Every, "every", 0, "Read the checkpointed captures this often, e.g. 10s")
 	}
-	cmd.Flags().Bool("follow", false, "Print each capture's rows while recording")
+	bindFollow(cmd)
 }
 
 // newRunCommand is `run` with one subcommand per registered trace kind, each
@@ -129,8 +132,25 @@ func newRunKindCommand(registration traces.Registration, plugin tracing.TracePlu
 // runTraced starts a run with start, waits for it and prints what it
 // recorded; a command that failed or a checkpoint that did is an error.
 func runTraced(cmd *cobra.Command, options telltale.StartOptions, start func(context.Context, telltale.StartOptions) (*telltale.Run, error)) error {
+	follow, tui, ui, sort, err := followOptions(cmd)
+	if err != nil {
+		return err
+	}
+	format := clicky.Flags.ResolveFormat()
+	if tui && format == "ndjson" {
+		return fmt.Errorf("--tui cannot combine with ndjson")
+	}
+	if follow && format != "ndjson" && format != "pretty" && format != "ansi" {
+		return fmt.Errorf("follow supports ndjson, ansi or pretty output")
+	}
 	if options.Stdin == nil && options.Stdout == nil && options.Stderr == nil && options.PID == 0 {
 		options.Stdin, options.Stdout, options.Stderr = cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr()
+		if follow && format == "ndjson" {
+			options.Stdout = cmd.ErrOrStderr()
+		}
+	}
+	if tui {
+		options.Stdin, options.Stdout, options.Stderr = nil, nil, nil
 	}
 	connections, err := telltale.OpenConnections()
 	if err != nil {
@@ -141,18 +161,49 @@ func runTraced(cmd *cobra.Command, options telltale.StartOptions, start func(con
 	if err != nil {
 		return err
 	}
+	var viewer *server.Viewer
+	if ui {
+		viewer, err = openRunViewer(cmd, server.ViewerOptions{DataDir: options.DataDir, RunIDs: []string{started.ID()}})
+		if err != nil {
+			return errors.Join(err, started.Stop())
+		}
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = viewer.Close(ctx)
+		}()
+	}
 	switch {
 	case options.PID != 0:
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Tracing pid %d into %s; Ctrl+C stops\n", options.PID, started.Dir()) // a lost notice loses nothing recorded
 	case len(options.Command) == 0:
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Recording the host into %s; Ctrl+C stops\n", started.Dir())
 	}
-	follow := cmd.Flags().Lookup("follow") != nil && cmd.Flags().Lookup("follow").Value.String() == "true"
-	result, err := read.Wait(cmd.Context(), started, follow, recordPrinter(cmd))
+	var result *telltale.Result
+	if tui {
+		result, err = showTraceTUI(cmd.Context(), started, sort)
+	} else {
+		result, err = read.Wait(cmd.Context(), started, follow, func(record read.Record) error { return printTraceRecord(cmd, record) })
+	}
 	if err != nil {
 		return err
 	}
-	clicky.MustPrint(result)
+	if follow {
+		output, err := clicky.Format(result, clicky.FormatOptions{Format: "pretty"})
+		if err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(cmd.ErrOrStderr(), output); err != nil {
+			return err
+		}
+	} else {
+		clicky.MustPrint(result)
+	}
+	if viewer != nil {
+		if err := waitViewer(viewer); err != nil {
+			return err
+		}
+	}
 	switch {
 	case result.ExitCode != 0:
 		return fmt.Errorf("%s exited with code %d", options.Command[0], result.ExitCode)

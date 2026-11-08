@@ -74,7 +74,7 @@ func runHelp(cmd *cobra.Command) helpText {
 	}
 	return h.section("Examples").
 		command("telltale run http --seam proxy --mode mitm -- curl -sS https://example.com", "decrypt and record a request").
-		command("telltale run process_samples --pid 1234 --facets ports --duration 1m", "sample a running process for a minute").
+		command("telltale run process --pid 1234 --facets sockets --duration 1m", "sample a running process for a minute").
 		command("telltale run stacks --every 10s -- ./server", "dump a server's stacks every 10 seconds").
 		section("See also").
 		command("telltale run <kind> --help", "a kind's params, exports and examples").

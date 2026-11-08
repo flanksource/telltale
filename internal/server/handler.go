@@ -63,7 +63,7 @@ func routes(options HandlerOptions, ui http.Handler) (http.Handler, error) {
 	}
 	api := http.NewServeMux()
 	rpc.NewSwaggerServer(&rpc.ServeConfig{Version: options.Version}, options.Root,
-		&rpc.OpenAPIConfig{Title: "Telltale", Version: options.Version, Extensions: []func(*rpc.OpenAPISpec){addRulesPaths, connections.AddConnectionsOpenAPI, addConnectionPaths, addOtelPaths, addReceiverPath}}).RegisterRoutes(route.NewRouter(api))
+		&rpc.OpenAPIConfig{Title: "Telltale", Version: options.Version, Extensions: []func(*rpc.OpenAPISpec){addRulesPaths, connections.AddConnectionsOpenAPI, addConnectionPaths, addOtelPaths, addReceiverPath, addFeedPaths}}).RegisterRoutes(route.NewRouter(api))
 	root := http.NewServeMux()
 	if options.OTLP == nil {
 		options.OTLP = http.NotFoundHandler()
@@ -85,6 +85,8 @@ func routes(options HandlerOptions, ui http.Handler) (http.Handler, error) {
 	root.Handle(TracesMount, options.Traces)
 	root.Handle(TracesMount+"/", options.Traces)
 	root.Handle("GET "+TracesMount+"/{run}/traces/{kind}/records", records.Handler(options.DataDir))
+	root.Handle("GET "+TracesMount+"/{run}/records", records.FeedHandler(options.DataDir))
+	root.Handle("GET "+TracesMount+"/{run}/process/groups", records.ProcessGroupsHandler(options.DataDir))
 	root.Handle(TopMount, options.Top)
 	root.Handle(TopProcessesPath, options.Top)
 	root.Handle(TopFacetsPath, options.Top)

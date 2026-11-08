@@ -3,11 +3,14 @@ package topui
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/flanksource/gavel/sdk/status"
 	"github.com/flanksource/telltale/pkg/tracing/groups"
 	"github.com/flanksource/telltale/pkg/tracing/process"
 	. "github.com/onsi/ginkgo/v2"
@@ -123,8 +126,8 @@ var _ = Describe("Model", func() {
 	newModel := func(width, height int) Model {
 		GinkgoHelper()
 		source = &fakeSource{keeps: true, processes: map[string][]groups.ProcessSample{
-			"11": {{PID: 1101, Name: "gavel", Command: "gavel test ./...", Usage: groups.Usage{Processes: 1, CPUPercent: percent(30)}}},
-			"12": {{PID: 1201, Name: "node", Command: "node vitest", Usage: groups.Usage{Processes: 1, CPUPercent: percent(5)}}},
+			"11": {{Key: "1101@1", PID: 1101, Name: "gavel", Command: "gavel test ./...", Usage: groups.Usage{Processes: 1, CPUPercent: percent(30)}}},
+			"12": {{Key: "1201@1", PID: 1201, Name: "node", Command: "node vitest", Usage: groups.Usage{Processes: 1, CPUPercent: percent(5)}}},
 		}}
 		reopened = nil
 		m := New(context.Background(), Options{
@@ -195,14 +198,110 @@ var _ = Describe("Model", func() {
 		Expect(shown(m)).To(HaveLen(5))
 	})
 
-	It("lists the processes of the selected group and those under it, busiest first", func() {
-		m := press(newModel(160, 40), "enter")
+	It("lists the processes of the selected group and those under it, busiest first, in the pane f opens", func() {
+		m := press(newModel(160, 40), "f")
 		processes, kept := m.selectedProcesses()
 
 		Expect(kept).To(BeTrue())
 		Expect(processes).To(HaveLen(2))
 		Expect(processes[0].PID).To(Equal(1101))
-		Expect(m.render()).To(ContainSubstring("gavel test ./..."))
+		screen := m.render()
+		Expect(screen).To(ContainSubstring("gavel test ./..."))
+		Expect(screen).To(ContainSubstring("── claude · 2 processes ─"))
+		Expect(screen).NotTo(ContainSubstring("─…"), "the pane's rule fits the width")
+	})
+
+	It("lists a group's member processes in the tree on enter, nested by parent, a detached one under the group", func() {
+		m := newModel(200, 40)
+		frame := *m.raw
+		frame.Groups = append([]groups.GroupSample(nil), frame.Groups...)
+		frame.Groups[2].PID = 1200
+		source.processes["12"] = []groups.ProcessSample{
+			{Key: "1200@1", PID: 1200, PPID: 1100, Command: "/usr/local/bin/vitest run", Usage: groups.Usage{Processes: 1}},
+			{Key: "1201@1", PID: 1201, PPID: 1200, Command: "/opt/node/bin/node worker.js", Usage: groups.Usage{Processes: 1, CPUPercent: percent(4)}},
+			{Key: "1202@1", PID: 1202, PPID: 1201, Command: "/opt/node/bin/node esbuild", Usage: groups.Usage{Processes: 1}},
+			{Key: "1203@1", PID: 1203, PPID: 1, Command: "/Applications/Acme.app/Contents/MacOS/Acme Helper (Renderer) --type=renderer", Usage: groups.Usage{Processes: 1}},
+		}
+		next, _ := m.Update(frameMsg{frame: frame, ok: true})
+		m = press(next.(Model), "down", "down", "enter")
+		Expect(m.selected).To(Equal("12"))
+
+		var tree []string
+		for _, r := range m.rows() {
+			if r.process != nil {
+				tree = append(tree, fmt.Sprintf("%d:%d:%t", r.process.PID, r.depth, r.detached))
+			}
+		}
+		Expect(tree).To(Equal([]string{"1201:2:false", "1202:3:false", "1203:2:true"}), "the anchor is the group's own row")
+		Expect(m.render()).To(SatisfyAll(
+			ContainSubstring("1201 node worker.js"),
+			ContainSubstring("↰ 1203 Acme Helper (Renderer) --type=renderer"),
+		))
+		Expect(m.detail).To(BeFalse(), "enter lists processes in the tree, not the pane")
+
+		m = press(m, "enter")
+		Expect(slices.ContainsFunc(m.rows(), func(r row) bool { return r.process != nil })).To(BeFalse())
+	})
+
+	It("chooses a process row's process for x", func() {
+		m := press(newModel(200, 40), "down", "enter", "down")
+		Expect(m.rows()[m.selectedIndex(m.rows())].process).NotTo(BeNil())
+		Expect(m.processKey).To(Equal("1101@1"), "selecting the row chooses its process")
+		processes, _ := m.selectedProcesses()
+		Expect(processes).To(ConsistOf(HaveField("PID", 1101)))
+	})
+
+	It("nests a gavel's task groups and running tasks under it, and the process a task runs under its task", func() {
+		frame := testFrame
+		frame.Groups = append([]groups.GroupSample(nil), testFrame.Groups...)
+		frame.Groups[1].SkipAncestry, frame.Groups[1].PID = true, 1100
+		frame.Groups[1].Gavel = &status.Status{
+			Groups:  []status.Group{{Name: "Running linters", Kind: status.GroupLint, Summary: status.Summary{Total: 7, Passed: 2, Failed: 1, Running: 4}}},
+			Running: []status.Item{{Name: "golangci-lint run ./...", Group: "Running linters", PID: 1102, Started: frame.SampledAt.Add(-42 * time.Second)}},
+			Slots:   []status.Lease{{Pool: "global", Limit: 4, Index: 1, State: status.LeaseHeld, Since: frame.SampledAt.Add(-time.Minute), Command: "golangci-lint run ./..."}},
+		}
+		frame.Slots = []groups.SlotPool{{Name: "global", Limit: 4, Held: 1}}
+		m := newModel(200, 40)
+		source.processes["11"] = append(source.processes["11"],
+			groups.ProcessSample{Key: "1102@1", PID: 1102, PPID: 1101, Name: "golangci-lint", Command: "/opt/bin/golangci-lint run ./...", Usage: groups.Usage{Processes: 1, CPUPercent: percent(80)}})
+		next, _ := m.Update(frameMsg{frame: frame, ok: true})
+		m = next.(Model)
+
+		Expect(strings.Split(m.render(), "\n")[headerLines-1]).To(ContainSubstring("SLT gavel global [██░░░░░░] 1/4"))
+		depths := map[string]int{}
+		for _, r := range m.rows() {
+			depths[r.key] = r.depth
+		}
+		Expect(depths).To(HaveKeyWithValue("11", 1))
+		Expect(depths).To(HaveKeyWithValue("11/gavel/lint", 2))
+		Expect(depths).To(HaveKeyWithValue("11/gavel/lint/0", 3))
+		// 2 passed → 2 cells █, 1 failed → 1 ▓, 4 running → the other 5 ▒.
+		Expect(m.render()).To(SatisfyAll(
+			ContainSubstring("gavel  ●global"),
+			ContainSubstring("    ▾ lint [██▓▒▒▒▒▒] 3/7 ✗1"),
+			ContainSubstring("      ▶ golangci-lint run ./... 42s"),
+		))
+
+		m = press(m, "down", "enter")
+		Expect(m.selected).To(Equal("11"))
+		Expect(depths).NotTo(HaveKey("proc:1102@1"))
+		for _, r := range m.rows() {
+			depths[r.key] = r.depth
+		}
+		Expect(depths).To(HaveKeyWithValue("proc:1102@1", 4), "the task's process nests under its task row")
+		Expect(depths).To(HaveKeyWithValue("proc:1101@1", 2))
+		Expect(m.render()).NotTo(ContainSubstring("3/7 done"), "the pane no longer repeats the progress")
+
+		m.selected = "11/gavel/lint"
+		m = press(m, "left")
+		Expect(slices.ContainsFunc(m.rows(), func(r row) bool { return r.key == "11/gavel/lint/0" })).To(BeFalse(), "← folds the lint row's tasks")
+	})
+
+	It("refuses to list processes in the tree from a recording", func() {
+		m := newModel(160, 40)
+		source.keeps = false
+		m = press(m, "enter")
+		Expect(m.status).To(ContainSubstring("A recording keeps each group's use"))
 	})
 
 	It("reads from a new source with a flipped toggle, closing the old one", func() {

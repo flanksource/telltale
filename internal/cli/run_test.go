@@ -125,12 +125,12 @@ var _ = Describe("telltale run <kind>", func() {
 			_ = target.Wait()
 		})
 		dataDir := GinkgoT().TempDir()
-		_, stderr, err := execute("run", "process_samples", "--data-dir", dataDir, "--pid", strconv.Itoa(target.Process.Pid), "--duration", "1s")
+		_, stderr, err := execute("run", "process", "--data-dir", dataDir, "--pid", strconv.Itoa(target.Process.Pid), "--duration", "1s")
 		Expect(err).ToNot(HaveOccurred(), stderr)
 		Expect(stderr).To(ContainSubstring("Tracing pid " + strconv.Itoa(target.Process.Pid)))
 		result := manifest(dataDir)
 		Expect(result.PID).To(Equal(target.Process.Pid))
-		Expect(result.Captures).To(ConsistOf(HaveField("Kind", "process_samples")))
+		Expect(result.Captures).To(ConsistOf(HaveField("Kind", "process")))
 	})
 
 	It("runs goprof and stacks against a child through the agent seam", func() {
@@ -156,7 +156,7 @@ var _ = Describe("telltale run <kind>", func() {
 		Expect(manifest(dataDir).PID).To(Equal(os.Getpid()))
 	},
 		Entry("self", "http", []string{"--seam", "self", "--features", "http"}),
-		Entry("host", "process_groups", nil),
+		Entry("host", "process", []string{"--seam", "host"}),
 	)
 	DescribeTable("reports the same refusal for CLI and library runs", func(kind string, args []string, options telltale.StartOptions) {
 		_, _, cliErr := execute(append([]string{"run", kind}, args...)...)
@@ -171,11 +171,11 @@ var _ = Describe("telltale run <kind>", func() {
 		Entry("a command and PID", "stacks", []string{"--pid", strconv.Itoa(os.Getpid()), "--", "true"}, telltale.StartOptions{PID: os.Getpid(), Command: []string{"true"}}),
 	)
 	It("shows supported seams and run attachment in help", func() {
-		page := help("run", "process_groups")
+		page := help("run", "process")
 		Expect(page).To(ContainSubstring("--pid PID"))
-		Expect(page).To(ContainSubstring("supported seams: [host]"))
+		Expect(page).To(ContainSubstring("Supported seams: process, host"))
 		Expect(page).NotTo(ContainSubstring("--agent"))
-		Expect(help("run", "process_samples")).To(ContainSubstring("--seam process"))
+		Expect(page).To(ContainSubstring("--seam string"))
 	})
 })
 

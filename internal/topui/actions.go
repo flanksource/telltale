@@ -23,6 +23,19 @@ func (m Model) cpuHog(cpu *float64) bool {
 	return cpu != nil && m.frame != nil && m.frame.Host != nil && m.frame.Host.Cores > 0 && *cpu > 25*float64(m.frame.Host.Cores)
 }
 
+func (m Model) hogLabel(usage groups.Usage) string {
+	if m.frame == nil {
+		return ""
+	}
+	if label := usage.Hogs.Label(m.frame.SampledAt); label != "" {
+		return label
+	}
+	if m.cpuHog(usage.CPUPercent) {
+		return "CPU hog"
+	}
+	return ""
+}
+
 func (m *Model) cycleProcess(key string) {
 	processes, _ := m.selectedProcesses()
 	if len(processes) == 0 {

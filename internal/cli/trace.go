@@ -13,7 +13,7 @@ import (
 
 func newTraceCommand() *cobra.Command {
 	trace := &cobra.Command{Use: "trace", Short: "Record what a command does"}
-	trace.AddCommand(newTraceRunCommand(), newTraceListCommand())
+	trace.AddCommand(newTraceRunCommand(), newTraceListCommand(), newTraceReplayCommand())
 	return trace
 }
 
@@ -38,7 +38,7 @@ func newTraceRunCommand() *cobra.Command {
 	bindDataDir(run.Flags(), &options.DataDir)
 	run.Flags().DurationVar(&options.Duration, "duration", 0, "Stop the command after this long, e.g. 30s")
 	run.Flags().DurationVar(&options.Every, "every", 0, "Read the checkpointed captures this often, e.g. 10s")
-	run.Flags().Bool("follow", false, "Print each capture's rows while recording")
+	bindFollow(run)
 	setHelp(run, func(cmd *cobra.Command) api.Text { return traceRunHelp(cmd).Text })
 	return run
 }
