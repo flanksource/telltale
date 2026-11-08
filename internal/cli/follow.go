@@ -4,15 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/flanksource/clicky/rpc"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/flanksource/clicky/rpc"
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/internal/server"
+	"github.com/flanksource/telltale/internal/shutdown"
 	"github.com/flanksource/telltale/internal/traceui"
 	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/traces/read"
@@ -47,6 +46,9 @@ func followOptions(cmd *cobra.Command) (bool, bool, bool, string, error) {
 	if sort != "seq" && sort != "timestamp" {
 		return false, false, false, "", fmt.Errorf("unknown record sort %q", sort)
 	}
+	if (tui || ui) && !cmd.Flags().Changed("sort") {
+		sort = "timestamp"
+	}
 	if tui && (!term.IsTerminal(int(os.Stdin.Fd())) || !term.IsTerminal(int(os.Stdout.Fd()))) {
 		return false, false, false, "", errors.New("--tui requires a terminal")
 	}
@@ -62,6 +64,9 @@ func openRunViewer(cmd *cobra.Command, options server.ViewerOptions) (*server.Vi
 	if err != nil {
 		return nil, err
 	}
+	if !cmd.Flags().Changed("sort") {
+		order = "timestamp"
+	}
 	viewer.URL += "&feedSort=" + order
 	if _, err := fmt.Fprintln(cmd.ErrOrStderr(), viewer.URL); err != nil {
 		return nil, err
@@ -75,9 +80,7 @@ func openRunViewer(cmd *cobra.Command, options server.ViewerOptions) (*server.Vi
 	return viewer, nil
 }
 
-func waitViewer(viewer *server.Viewer) error {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+func waitViewer(ctx context.Context, viewer *server.Viewer) error {
 	<-ctx.Done()
 	closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -98,6 +101,11 @@ func showTraceTUI(ctx context.Context, run *telltale.Run, sort string) (_ *tellt
 	feedCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
 	program := tea.NewProgram(traceui.New(feedCtx, traceui.Options{Refs: refs, Runs: []telltale.RunInfo{info}, Sort: sort}), tea.WithContext(ctx))
+	restore, err := shutdown.Terminal(ctx)
+	if err != nil {
+		return nil, errors.Join(err, run.Stop())
+	}
+	defer restore()
 	go func() {
 		select {
 		case <-run.Done():
@@ -107,7 +115,8 @@ func showTraceTUI(ctx context.Context, run *telltale.Run, sort string) (_ *tellt
 		}
 	}()
 	final, runErr := program.Run()
-	err = runErr
+	restore()
+	err = errors.Join(runErr, shutdown.Request(ctx))
 	if model, ok := final.(traceui.Model); ok {
 		err = errors.Join(err, model.Err())
 	}

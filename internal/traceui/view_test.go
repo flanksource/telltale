@@ -37,7 +37,7 @@ var _ = Describe("styled trace view", func() {
 		model.width, model.height = 180, 20
 		loaded := model.load()().(pageMsg)
 		Expect(loaded.err).NotTo(HaveOccurred())
-		Expect(loaded.columns).NotTo(BeEmpty())
+		Expect(loaded.page.Rows).To(HaveLen(1))
 		updated, _ := model.Update(loaded)
 		text := strings.Join(strings.Fields(ansi.Strip(updated.(Model).View().Content)), " ")
 		Expect(text).To(ContainSubstring("http #1 GET"))

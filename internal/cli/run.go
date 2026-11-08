@@ -200,7 +200,7 @@ func runTraced(cmd *cobra.Command, options telltale.StartOptions, start func(con
 		clicky.MustPrint(result)
 	}
 	if viewer != nil {
-		if err := waitViewer(viewer); err != nil {
+		if err := waitViewer(cmd.Context(), viewer); err != nil {
 			return err
 		}
 	}

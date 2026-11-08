@@ -70,6 +70,23 @@ func StartViewer(options ViewerOptions) (*Viewer, error) {
 		}
 		feed.ServeHTTP(w, r)
 	})
+	processes := records.ProcessesHandler(options.DataDir)
+	mux.HandleFunc("GET /api/traces/{run}/processes", func(w http.ResponseWriter, r *http.Request) {
+		if !allowed[r.PathValue("run")] {
+			http.NotFound(w, r)
+			return
+		}
+		processes.ServeHTTP(w, r)
+	})
+	native := records.Handler(options.DataDir)
+	mux.Handle("GET /api/traces/{run}/api/v1/traces/{kind}/{operation}", viewerNative(options.DataDir, allowed))
+	mux.HandleFunc("GET /api/traces/{run}/traces/{kind}/records", func(w http.ResponseWriter, r *http.Request) {
+		if !allowed[r.PathValue("run")] {
+			http.NotFound(w, r)
+			return
+		}
+		native.ServeHTTP(w, r)
+	})
 	mux.HandleFunc("GET /api/traces", func(w http.ResponseWriter, r *http.Request) {
 		runs := []telltale.MountedRun{}
 		for _, id := range options.RunIDs {

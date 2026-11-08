@@ -86,6 +86,7 @@ func routes(options HandlerOptions, ui http.Handler) (http.Handler, error) {
 	root.Handle(TracesMount+"/", options.Traces)
 	root.Handle("GET "+TracesMount+"/{run}/traces/{kind}/records", records.Handler(options.DataDir))
 	root.Handle("GET "+TracesMount+"/{run}/records", records.FeedHandler(options.DataDir))
+	root.Handle("GET "+TracesMount+"/{run}/processes", records.ProcessesHandler(options.DataDir))
 	root.Handle("GET "+TracesMount+"/{run}/process/groups", records.ProcessGroupsHandler(options.DataDir))
 	root.Handle(TopMount, options.Top)
 	root.Handle(TopProcessesPath, options.Top)

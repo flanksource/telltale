@@ -55,6 +55,7 @@ func (m Model) View() tea.View {
 		tabLine = "‹ " + strings.Join(names[m.active:], " ") + " ›"
 	}
 	lines := []string{titleStyle.Render(title), tabLine}
+	lines = append(lines, m.processLines(width, height)...)
 	monitor := strings.TrimSpace(t.monitor)
 	if monitor == "" {
 		monitor = "Waiting for " + t.name + "…"
@@ -102,7 +103,7 @@ func (m Model) View() tea.View {
 		lines = append(lines, "")
 	}
 	lines = append(lines, detail...)
-	footer := "q quit · tab/shift+tab kind · ↑↓ scroll · space pause · n/p page · s sort · enter detail · r refresh · [/] run"
+	footer := "q quit · tab kind · ↑↓ events · e exited · alt+↑↓ processes · space pause · n/p page · enter detail · s sort · [/] run"
 	lines = append(lines, mutedStyle.Render(footer))
 	if len(lines) > height {
 		lines = append(lines[:height-1], mutedStyle.Render(footer))

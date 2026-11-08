@@ -6,9 +6,9 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/pkg/traces/read"
+	"github.com/flanksource/telltale/pkg/tracing/processcapture"
 )
 
 type Options struct {
@@ -27,7 +27,6 @@ type tab struct {
 	paused, detail     bool
 	monitor, output    string
 	watermarks         []int64
-	columns            []query.ColumnDef
 	following          bool
 	outputOffset       int64
 	browse             bool
@@ -38,7 +37,6 @@ type pageMsg struct {
 	page            read.FeedResult
 	monitor, output string
 	watermarks      []int64
-	columns         []query.ColumnDef
 	err             error
 }
 type End struct {
@@ -55,6 +53,10 @@ type Model struct {
 	ended, loading                         bool
 	err                                    error
 	saved                                  map[int]runState
+	processes                              read.ProcessSnapshot
+	processLoading, showExited             bool
+	processGeneration, processOffset       int
+	processError                           error
 }
 
 type runState struct {
@@ -64,9 +66,9 @@ type runState struct {
 
 func New(ctx context.Context, options Options) Model {
 	if options.Sort == "" {
-		options.Sort = "seq"
+		options.Sort = "timestamp"
 	}
-	m := Model{ctx: ctx, options: options, ended: options.Replay, saved: map[int]runState{}}
+	m := Model{ctx: ctx, options: options, ended: options.Replay, processLoading: true, saved: map[int]runState{}}
 	m.buildTabs()
 	return m
 }
@@ -75,7 +77,7 @@ func tick() tea.Cmd {
 	return tea.Tick(time.Second, func(time.Time) tea.Msg { return tickMsg{} })
 }
 
-func (m Model) Init() tea.Cmd { return tea.Batch(m.load(), tick()) }
+func (m Model) Init() tea.Cmd { return tea.Batch(m.load(), m.loadProcesses(), tick()) }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch value := msg.(type) {
@@ -92,13 +94,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		m.generation++
-		return m, m.load()
+		m.processGeneration++
+		return m, tea.Batch(m.load(), m.loadProcesses())
 	case tickMsg:
-		if m.loading || m.tabs[m.active].paused {
-			return m, tick()
+		commands := []tea.Cmd{tick()}
+		if !m.processLoading && !m.ended {
+			m.processLoading = true
+			commands = append(commands, m.loadProcesses())
+		}
+		if m.loading || m.ended || m.tabs[m.active].paused {
+			return m, tea.Batch(commands...)
 		}
 		m.loading = true
-		return m, tea.Batch(m.load(), tick())
+		return m, tea.Batch(append(commands, m.load())...)
+	case processMsg:
+		if value.generation != m.processGeneration {
+			return m, nil
+		}
+		m.processLoading, m.processError = false, value.err
+		if value.err == nil {
+			m.processes = value.snapshot
+		}
 	case pageMsg:
 		if value.generation != m.generation {
 			return m, nil
@@ -111,9 +127,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t := &m.tabs[m.active]
 		if !t.paused {
 			t.page, t.monitor, t.output, t.watermarks = value.page, value.monitor, value.output, value.watermarks
-			t.columns = value.columns
 			if t.file == "" {
-				t.selected = min(t.selected, max(0, len(t.page.Rows)-1))
+				if t.following {
+					t.selected = max(0, len(t.page.Rows)-1)
+				} else {
+					t.selected = min(t.selected, max(0, len(t.page.Rows)-1))
+				}
 			}
 		}
 	case tea.KeyPressMsg:
@@ -127,6 +146,16 @@ func (m Model) key(key string) (tea.Model, tea.Cmd) {
 	switch key {
 	case "q", "ctrl+c":
 		return m, tea.Quit
+	case "e":
+		m.showExited = !m.showExited
+		m.processOffset = 0
+		return m, nil
+	case "alt+up":
+		m.processOffset = max(0, m.processOffset-1)
+		return m, nil
+	case "alt+down":
+		m.processOffset = min(max(0, len(m.visibleProcesses())-1), m.processOffset+1)
+		return m, nil
 	case "tab", "shift+tab":
 		delta := 1
 		if key == "shift+tab" {
@@ -148,6 +177,11 @@ func (m Model) key(key string) (tea.Model, tea.Cmd) {
 		} else {
 			m.buildTabs()
 		}
+		m.processGeneration++
+		m.generation++
+		m.loading, m.processLoading = true, true
+		m.processes, m.processError, m.processOffset = read.ProcessSnapshot{}, nil, 0
+		return m, tea.Batch(m.load(), m.loadProcesses())
 	case "down", "j", "pgdown":
 		t.following = false
 		step := 1
@@ -252,20 +286,24 @@ func (m Model) key(key string) (tea.Model, tea.Cmd) {
 func (m Model) Err() error { return m.err }
 
 func (m *Model) buildTabs() {
-	m.tabs = nil
+	m.tabs = []tab{{name: "All events", following: !m.options.Replay}}
 	names := []string{}
 	for _, ref := range m.options.Refs {
 		if len(m.options.Runs) > 0 && ref.RunID != m.options.Runs[m.run].RunID {
 			continue
 		}
 		owner, _ := ref.Runtime.Kinds.ResultOf(ref.Kind)
+		if owner == processcapture.Kind {
+			continue
+		}
+		m.tabs[0].refs = append(m.tabs[0].refs, ref)
 		if !slices.Contains(names, owner) {
 			names = append(names, owner)
 		}
 	}
 	slices.Sort(names)
 	for _, name := range names {
-		t := tab{name: name}
+		t := tab{name: name, following: !m.options.Replay}
 		for _, ref := range m.options.Refs {
 			owner, _ := ref.Runtime.Kinds.ResultOf(ref.Kind)
 			if owner == name && (len(m.options.Runs) == 0 || ref.RunID == m.options.Runs[m.run].RunID) {

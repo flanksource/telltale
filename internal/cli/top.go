@@ -6,13 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/flanksource/clicky"
 	"github.com/flanksource/telltale"
+	"github.com/flanksource/telltale/internal/shutdown"
 	"github.com/flanksource/telltale/internal/topui"
 	"github.com/flanksource/telltale/pkg/tracing/groups"
 	"github.com/flanksource/telltale/pkg/tracing/process"
@@ -88,8 +87,7 @@ func (f topFlags) run(cmd *cobra.Command) error {
 			return err
 		}
 	}
-	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	ctx := cmd.Context()
 	if f.record {
 		return f.recordRun(ctx)
 	}
@@ -228,7 +226,14 @@ func ended(done <-chan struct{}) bool {
 func (f topFlags) show(ctx context.Context, options topui.Options) error {
 	options.GroupBy = groups.GroupBy(f.groupBy)
 	model := topui.New(ctx, options)
+	restore, err := shutdown.Terminal(ctx)
+	if err != nil {
+		return err
+	}
+	defer restore()
 	final, err := tea.NewProgram(model, tea.WithContext(ctx)).Run()
+	restore()
+	shutdownErr := shutdown.Request(ctx)
 	if last, ok := final.(topui.Model); ok {
 		last.Close()
 		if err == nil {
@@ -236,7 +241,7 @@ func (f topFlags) show(ctx context.Context, options topui.Options) error {
 		}
 	}
 	if errors.Is(err, tea.ErrProgramKilled) && ctx.Err() != nil {
-		return nil
+		return shutdownErr
 	}
-	return err
+	return errors.Join(err, shutdownErr)
 }

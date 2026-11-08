@@ -39,14 +39,18 @@ var _ = Describe("trace replay viewer", func() {
 		Expect(json.NewDecoder(response.Body).Decode(&listed)).To(Succeed())
 		Expect(response.Body.Close()).To(Succeed())
 		Expect(listed.Runs).To(HaveExactElements(HaveField("RunID", ids[0]), HaveField("RunID", ids[1])))
-		for _, path := range []string{"/api/traces/unselected/records", "/api/traces/start", "/api/v1/trace/run"} {
+		for _, path := range []string{"/api/traces/unselected/records", "/api/traces/unselected/processes", "/api/traces/unselected/api/v1/traces/process/export", "/api/traces/first/api/v1/traces/process/start", "/api/traces/start", "/api/v1/trace/run"} {
 			response, err := http.Get(base + path)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(response.StatusCode).To(Equal(http.StatusNotFound), path)
 			Expect(response.Body.Close()).To(Succeed())
 		}
 		for _, id := range ids[:2] {
-			response, err := http.Get(base + "/api/traces/" + id + "/records")
+			response, err := http.Get(base + "/api/traces/" + id + "/processes")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(response.StatusCode).To(Equal(http.StatusOK))
+			Expect(response.Body.Close()).To(Succeed())
+			response, err = http.Get(base + "/api/traces/" + id + "/records")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(response.StatusCode).To(Equal(http.StatusOK))
 			Expect(response.Body.Close()).To(Succeed())

@@ -25,6 +25,8 @@ var targets = []struct {
 		"The command is started with the variables the capture exports. They cannot attach to a running process."},
 	{target.Process, "Kinds that observe a process tree",
 		"They observe telltale's own tree, which holds the command, or the process --pid attaches to."},
+	{target.Agent, "Kinds read through an agent",
+		"They arm a probe in a process that embeds a telltale agent: the process --pid names, or the connected agents --selector matches."},
 	{target.Self, "Kinds that record telltale itself",
 		"They record telltale's own sources while the run lasts, nothing of the command."},
 	{target.Host, "Kinds that observe the whole host",

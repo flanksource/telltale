@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/flanksource/clicky"
 	"github.com/flanksource/telltale/internal/server"
+	"github.com/flanksource/telltale/internal/shutdown"
 	"github.com/flanksource/telltale/internal/traceui"
 	"github.com/flanksource/telltale/pkg/traces/read"
 	"github.com/spf13/cobra"
@@ -51,10 +52,17 @@ func newTraceReplayCommand() *cobra.Command {
 				if err != nil {
 					return err
 				}
-				return waitViewer(viewer)
+				return waitViewer(cmd.Context(), viewer)
 			}
 			if tui {
+				restore, err := shutdown.Terminal(cmd.Context())
+				if err != nil {
+					return err
+				}
+				defer restore()
 				final, err := tea.NewProgram(traceui.New(cmd.Context(), traceui.Options{Refs: selected.Refs, Runs: selected.Runs, Sort: order, Replay: true}), tea.WithContext(cmd.Context())).Run()
+				restore()
+				err = errors.Join(err, shutdown.Request(cmd.Context()))
 				if model, ok := final.(traceui.Model); ok {
 					err = errors.Join(err, model.Err())
 				}

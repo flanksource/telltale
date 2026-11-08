@@ -10,11 +10,8 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/flanksource/commons-db/query"
-	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/pkg/traces/read"
-	"github.com/flanksource/telltale/pkg/tracing/processcapture"
 )
 
 func (m Model) load() tea.Cmd {
@@ -28,47 +25,11 @@ func (m Model) load() tea.Cmd {
 			return result
 		}
 		refs := slices.Clone(t.refs)
-		identities := map[string]query.Row{}
-		if t.name == processcapture.Kind {
-			refs = nil
-			for _, ref := range t.refs {
-				switch ref.Kind {
-				case processcapture.MetricsTable:
-					refs = append(refs, ref)
-				case processcapture.Kind:
-					if err := ref.Runtime.Read(m.ctx, ref.TraceRef, func(_ int64, row recordstore.Row) error {
-						key, ok := row["key"].(string)
-						if !ok {
-							return fmt.Errorf("process identity has no key")
-						}
-						identities[key] = query.Row(row)
-						return nil
-					}); err != nil {
-						result.err = err
-						return result
-					}
-				}
-			}
-			result.columns = []query.ColumnDef{{Name: "pid", Label: "PID"}, {Name: "name", Label: "Process"}, {Name: "cpuPercent", Label: "CPU %"}, {Name: "rssBytes", Label: "RSS"}, {Name: "openFiles", Label: "Files"}, {Name: "receivingSockets", Label: "Listeners"}, {Name: "connectionsIn", Label: "Peers in"}, {Name: "connectionsOut", Label: "Peers out"}, {Name: "connectionsUnknown", Label: "Peers ?"}}
-		}
-		var observations int64
 		for _, ref := range refs {
-			plugin, ok := ref.Runtime.Kinds.Get(ref.Kind)
+			_, ok := ref.Runtime.Kinds.Get(ref.Kind)
 			if !ok {
 				result.err = fmt.Errorf("unknown trace kind %s", ref.Kind)
 				return result
-			}
-			schema, err := plugin.Schema(ref.Kind)
-			if err != nil {
-				result.err = err
-				return result
-			}
-			if len(result.columns) == 0 {
-				for _, column := range schema.Columns {
-					if !column.Hidden && column.Type != "json" {
-						result.columns = append(result.columns, column)
-					}
-				}
 			}
 			meta, err := ref.Runtime.Results.Backend.Meta(m.ctx, ref.Stream)
 			if err != nil {
@@ -76,12 +37,9 @@ func (m Model) load() tea.Cmd {
 				return result
 			}
 			result.watermarks = append(result.watermarks, meta.HighSeq)
-			observations += meta.Total
 		}
 		result.monitor = t.monitor
-		if t.name == processcapture.Kind {
-			result.monitor = fmt.Sprintf("%d processes · %d numeric observations · resource counts from committed deltas", len(identities), observations)
-		} else if !slices.Equal(t.watermarks, result.watermarks) || t.monitor == "" {
+		if !slices.Equal(t.watermarks, result.watermarks) || t.monitor == "" {
 			result.monitor = ""
 			for _, ref := range t.refs {
 				summary, err := ref.Runtime.Summarize(m.ctx, ref.TraceRef)
@@ -98,18 +56,6 @@ func (m Model) load() tea.Cmd {
 			}
 		}
 		result.page, result.err = read.FeedPage(m.ctx, refs, read.FeedQuery{Sort: m.options.Sort, Query: read.Query{Cursor: t.cursor}})
-		if t.name == processcapture.Kind && result.err == nil {
-			for i := range result.page.Rows {
-				row := &result.page.Rows[i]
-				key, _ := row.Record["entity"].(string)
-				identity, ok := identities[key]
-				if !ok {
-					result.err = fmt.Errorf("metrics reference unknown process %q", key)
-					return result
-				}
-				row.Record["name"], row.Record["pid"] = identity["name"], identity["pid"]
-			}
-		}
 		return result
 	}
 }
