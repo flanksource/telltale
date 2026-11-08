@@ -31,6 +31,8 @@ var _ = Describe("styled trace records", func() {
 		{"sql_plancache", query.Row{"sql": "SELECT id FROM orders", "executions": 4, "avgElapsedMs": 12.0, "database": "checkout"}, []string{"SELECT id FROM orders", "4", "checkout"}},
 		{"sql_deadlock", query.Row{"database": "checkout", "victims": 1, "participants": 2, "victimStatement": "UPDATE orders SET total = 1"}, []string{"deadlock", "checkout", "UPDATE orders"}},
 		{"exec", query.Row{"name": "git", "args": []string{"status"}, "exitCode": 0}, []string{"git", "status"}},
+		{"entity", query.Row{"entity": "widget", "verb": "update", "targetId": "w-1", "surface": "http", "durationMs": 12.0, "error": "update rejected"}, []string{"widget", "update", "w-1", "http", "update rejected"}},
+		{"task", query.Row{"phase": "status", "name": "deploy api", "status": "running", "progress": 2, "maxValue": 5}, []string{"status", "deploy api", "running", "2/5"}},
 		{"terminal", query.Row{"kind": "r", "width": 120, "height": 40}, []string{"resize", "120", "40"}},
 		{"llm", query.Row{"phase": "response", "model": "example-model", "usage": map[string]any{"inputTokens": 12, "outputTokens": 3}, "cost": 0.004}, []string{"response", "example-model", "12", "3", "$0.004"}},
 		{"logs", query.Row{"severity": "error", "logger": "checkout", "message": "payment declined"}, []string{"ERROR", "checkout", "payment declined"}},

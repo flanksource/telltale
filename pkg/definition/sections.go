@@ -5,7 +5,9 @@ import "github.com/flanksource/telltale/pkg/traces"
 // Each typed list carries the kind it compiles to in its telltale tag
 // (kind=<id>), and may fix the seam (seam=<seam>) or the logs backend
 // (backend=<provider>). A group's tag gives the seam its lists are aimed at
-// unless a list fixes its own. The tags are read by the walker (walk.go);
+// unless a list fixes its own. A preset group (preset) gathers lists of kinds
+// other groups also arm, so an ad-hoc capture lands in it only when no other
+// list takes it. The tags are read by the walker (walk.go);
 // the field's json name is the path segment and the default-name part.
 
 // Proxy are the proxies a command is routed through, each on its own port
@@ -40,6 +42,7 @@ type InstrumentSQLServer struct {
 // runtime or the servers it reaches.
 type Collect struct {
 	Go         CollectGo         `json:"go,omitzero" clicky:"title=Go" telltale:"seam=process"`
+	Clicky     CollectClicky     `json:"clicky,omitzero" clicky:"title=Clicky" telltale:"seam=agent,preset"`
 	Process    CollectProcess    `json:"process,omitzero" clicky:"title=Process" telltale:"seam=process"`
 	Logs       CollectLogs       `json:"logs,omitzero" clicky:"title=Logs" telltale:"seam=host"`
 	Query      CollectQuery      `json:"query,omitzero" clicky:"title=Query" telltale:"seam=host"`
@@ -61,6 +64,19 @@ type CollectGo struct {
 	LLM   []LLMProbe     `json:"llm,omitempty" clicky:"title=LLM calls" telltale:"kind=llm,seam=agent"`
 	Logs  []LogsProbe    `json:"logs,omitempty" clicky:"title=Logs" telltale:"kind=logs,seam=agent"`
 	Spans []SpansProbe   `json:"spans,omitempty" clicky:"title=Spans" telltale:"kind=spans,seam=agent"`
+}
+
+// CollectClicky reads the probes github.com/flanksource/clicky/telltale
+// registers in a clicky process: its executions, entity operations, tasks,
+// commons HTTP and commons logs, and the SDK's Go profiles. The agent is the run's pid's, or the one an
+// entry names.
+type CollectClicky struct {
+	Exec   []ExecProbe    `json:"exec,omitempty" clicky:"title=Executions" telltale:"kind=exec"`
+	Entity []EntityProbe  `json:"entity,omitempty" clicky:"title=Entity operations" telltale:"kind=entity"`
+	Task   []TaskProbe    `json:"task,omitempty" clicky:"title=Tasks" telltale:"kind=task"`
+	HTTP   []HTTPProbe    `json:"http,omitempty" clicky:"title=HTTP" telltale:"kind=http"`
+	Logs   []LogsProbe    `json:"logs,omitempty" clicky:"title=Logs" telltale:"kind=logs"`
+	PProf  []CollectPProf `json:"pprof,omitempty" clicky:"title=pprof,desc=Heap cpu allocs or goroutine profiles read through the agent at each checkpoint" telltale:"kind=goprof"`
 }
 
 // CollectProcess reads the execution's process tree.

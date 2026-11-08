@@ -69,6 +69,9 @@ func placeCapture(spec *Spec, capture telltale.RequestedCapture) (Located, error
 		}
 		matches = append(matches, at)
 	}
+	if own := slices.DeleteFunc(slices.Clone(matches), func(at Located) bool { return at.Preset }); len(own) > 0 {
+		matches = own
+	}
 	switch {
 	case len(tried) == 0:
 		return Located{}, unarmable(capture)
@@ -192,6 +195,12 @@ func fieldByJSON(value reflect.Value, name string) reflect.Value {
 // inline takes the exec kind's name glob, which decodes as the entry's name.
 func (p *ExecProbe) inline(map[string]any) error {
 	p.Executable, p.Name = p.Name, ""
+	return nil
+}
+
+// inline takes the task kind's name glob, which decodes as the entry's name.
+func (p *TaskProbe) inline(map[string]any) error {
+	p.TaskName, p.Name = p.Name, ""
 	return nil
 }
 

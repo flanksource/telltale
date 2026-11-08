@@ -61,6 +61,22 @@ spec:
         - minLevel: warn
       spans:
         - {}
+    clicky:
+      exec:
+        - executable: git
+      entity:
+        - entity: widget
+          errorsOnly: true
+      task:
+        - taskName: "deploy *"
+          progressIntervalMs: 5000
+      http:
+        - features: [http]
+      logs:
+        - minLevel: warn
+      pprof:
+        - source: pprof
+          profile: goroutine
     process:
       tree:
         facets: true

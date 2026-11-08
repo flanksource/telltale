@@ -63,7 +63,7 @@ var _ = Describe("the built-in definitions", func() {
 	It("each have the summary, description and examples their command's help shows", func() {
 		defs, err := definition.Builtins()
 		Expect(err).ToNot(HaveOccurred())
-		Expect(defs).To(HaveExactElements(HaveField("Name", "gops"), HaveField("Name", "ps")))
+		Expect(defs).To(HaveExactElements(HaveField("Name", "clicky"), HaveField("Name", "gops"), HaveField("Name", "ps")))
 		for _, def := range defs {
 			Expect(def.Summary()).ToNot(Equal(def.Spec.Description), def.Name)
 			Expect(def.Spec.Description).ToNot(BeEmpty(), def.Name)

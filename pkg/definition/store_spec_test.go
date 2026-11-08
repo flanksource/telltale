@@ -48,6 +48,7 @@ var _ = Describe("the definition store", func() {
 				HaveField("Definition.Spec.Collect.Prometheus.Scrape", HaveExactElements(HaveField("Endpoints", ConsistOf("http://cwd:8080/metrics"))))),
 			And(HaveField("Name", "ps"), HaveField("Layer", datadir.ConfigGlobal)),
 			And(HaveField("Name", "gops"), HaveField("Layer", definition.LayerBuiltin)),
+			And(HaveField("Name", "clicky"), HaveField("Layer", definition.LayerBuiltin)),
 		))
 	})
 

@@ -115,6 +115,24 @@ var _ = Describe("run records route", func() {
 		Expect(json.Unmarshal(body, &result)).To(Succeed(), string(body))
 		return result
 	}
+	It("adds styled presentation only when requested and permits excluding an unarmed kind", func() {
+		appendRows(1)
+		endpoint := server.URL + "/api/traces/run-http/records?excludeKind=process&presentation=ansi&limit=1"
+		response, err := server.Client().Get(endpoint)
+		Expect(err).NotTo(HaveOccurred())
+		body, err := io.ReadAll(response.Body)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(response.Body.Close()).To(Succeed())
+		Expect(response.StatusCode).To(Equal(http.StatusOK), string(body))
+		var result struct {
+			Rows []struct {
+				ANSI string `json:"ansi"`
+			} `json:"rows"`
+		}
+		Expect(json.Unmarshal(body, &result)).To(Succeed())
+		Expect(result.Rows).To(HaveLen(1))
+		Expect(result.Rows[0].ANSI).To(ContainSubstring("worker"))
+	})
 	It("resumes a unified SSE feed after the last record without replaying it", func() {
 		appendRows(1, 2)
 		_, err := capture.Stop(context.Background())

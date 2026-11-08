@@ -166,7 +166,7 @@ func (collector) Checkpoint(ctx dbcontext.Context, _ Params, _ tracing.Emitter[I
 func NewKind(sampler *process.Sampler, options KindOptions) *tracing.Handler[Params, Identity] {
 	return tracing.NewHandler[Params, Identity](collector{sampler: sampler, options: options}, tracing.Capabilities{Live: true}, target.Process, target.Host).WithResults(
 		tracing.NewResultTable("facets", recordresults.ResultType[FacetEvent]{Title: "Process facets", TimeColumn: "observedAt", Follow: true, Indexes: []recordstore.IndexDef{{Columns: []string{"process", "facet", "entity", "tick"}}}}),
-		tracing.NewResultTable("metrics", recordresults.ResultType[MetricRow]{Title: "Process metrics", TimeColumn: "observedAt", Dynamic: true, Follow: true, Indexes: []recordstore.IndexDef{{Columns: []string{"entity", "observedAt"}}}}),
+		tracing.NewResultTable("metrics", recordresults.ResultType[MetricRow]{Title: "Process metrics", TimeColumn: "observedAt", Dynamic: true, Follow: true, Indexes: []recordstore.IndexDef{{Columns: []string{"entity", "observedAt"}}}, Views: []recordresults.ResultView{latestMetricsView()}}),
 	)
 }
 

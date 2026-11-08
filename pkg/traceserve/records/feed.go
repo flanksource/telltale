@@ -33,11 +33,15 @@ func FeedHandler(dataDir string) http.Handler {
 		values := r.URL.Query()
 		for key := range values {
 			switch key {
-			case "kind", "stream", "limit", "sort", "cursor", "follow", "format", "resume", "from", "until":
+			case "kind", "excludeKind", "presentation", "stream", "limit", "sort", "cursor", "follow", "format", "resume", "from", "until":
 			default:
 				http.Error(w, "unknown feed parameter: "+key, http.StatusBadRequest)
 				return
 			}
+		}
+		if presentation := values.Get("presentation"); presentation != "" && presentation != "ansi" {
+			http.Error(w, "unknown feed presentation", http.StatusBadRequest)
+			return
 		}
 		q := read.FeedQuery{Sort: values.Get("sort"), Query: read.Query{Cursor: values.Get("cursor")}}
 		if q.Sort != "" && q.Sort != "seq" && q.Sort != "timestamp" {
@@ -85,7 +89,7 @@ func FeedHandler(dataDir string) http.Handler {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(page); err != nil {
+		if err := json.NewEncoder(w).Encode(presentFeedPage(page, values.Get("presentation"))); err != nil {
 			panic(http.ErrAbortHandler)
 		}
 	})
@@ -97,8 +101,16 @@ func selectFeed(dataDir, id string) (*read.Selection, error) {
 
 func filterFeed(refs []read.Ref, r *http.Request) ([]read.Ref, error) {
 	selected := []read.Ref{}
+	if excluded := r.URL.Query().Get("excludeKind"); excluded != "" && len(refs) > 0 {
+		if _, ok := refs[0].Runtime.Kinds.Get(excluded); !ok {
+			return nil, fmt.Errorf("unknown excluded capture kind %q", excluded)
+		}
+	}
 	for _, ref := range refs {
 		owner, _ := ref.Runtime.Kinds.ResultOf(ref.Kind)
+		if excluded := r.URL.Query().Get("excludeKind"); excluded != "" && (ref.Kind == excluded || owner == excluded) {
+			continue
+		}
 		if kind := r.URL.Query().Get("kind"); kind != "" && ref.Kind != kind && owner != kind {
 			continue
 		}
@@ -107,7 +119,7 @@ func filterFeed(refs []read.Ref, r *http.Request) ([]read.Ref, error) {
 		}
 		selected = append(selected, ref)
 	}
-	if len(selected) == 0 && len(refs) != 0 {
+	if len(selected) == 0 && len(refs) != 0 && (r.URL.Query().Get("kind") != "" || r.URL.Query().Get("stream") != "") {
 		return nil, fmt.Errorf("capture selection is not armed by this run")
 	}
 	return selected, nil
@@ -161,7 +173,7 @@ func streamFeed(w http.ResponseWriter, r *http.Request, refs []read.Ref, q read.
 		return
 	}
 	err := read.Feed(r.Context(), refs, q, func(record read.Record) error {
-		data, err := json.Marshal(record)
+		data, err := json.Marshal(presentFeedRecord(record, r.URL.Query().Get("presentation")))
 		if err != nil {
 			return err
 		}

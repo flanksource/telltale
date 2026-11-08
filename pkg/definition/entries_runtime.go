@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/flanksource/telltale/pkg/tracing/entity"
 	"github.com/flanksource/telltale/pkg/tracing/exec"
 	"github.com/flanksource/telltale/pkg/tracing/goprof"
 	tracehttp "github.com/flanksource/telltale/pkg/tracing/http"
@@ -14,6 +15,7 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing/spans"
 	tracesql "github.com/flanksource/telltale/pkg/tracing/sql"
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
+	"github.com/flanksource/telltale/pkg/tracing/task"
 	"github.com/flanksource/telltale/pkg/tracing/terminal"
 )
 
@@ -178,6 +180,29 @@ type ExecProbe struct {
 
 func (p *ExecProbe) options(Located) (any, any, error) {
 	return exec.Options{Name: p.Executable, TailBytes: p.TailBytes}, nil, nil
+}
+
+// EntityProbe records the entity operations a clicky agent runs.
+type EntityProbe struct {
+	Named
+	Agent
+	entity.Options
+}
+
+func (p *EntityProbe) options(Located) (any, any, error) { return p.Options, nil, nil }
+
+// TaskProbe records the tasks a clicky agent runs. TaskName is the task
+// kind's name glob, renamed so it does not take the entry's name.
+type TaskProbe struct {
+	Named
+	Agent
+	TaskName           string `json:"taskName,omitempty" clicky:"title=Task name,desc=Task name glob"`
+	Group              string `json:"group,omitempty" clicky:"title=Group,desc=Parent group name glob"`
+	ProgressIntervalMs int    `json:"progressIntervalMs,omitempty" clicky:"title=Progress interval,desc=Minimum milliseconds between progress records of a task"`
+}
+
+func (p *TaskProbe) options(Located) (any, any, error) {
+	return task.Options{Name: p.TaskName, Group: p.Group, ProgressIntervalMs: p.ProgressIntervalMs}, nil, nil
 }
 
 // LLMProbe records the provider calls an agent or telltale makes.

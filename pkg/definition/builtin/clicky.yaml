@@ -1,0 +1,31 @@
+apiVersion: telltale.flanksource.com/v1alpha1
+kind: TraceDefinition
+metadata:
+  name: clicky
+  annotations:
+    telltale.flanksource.com/summary: Record a clicky process's executions, entity operations, tasks, HTTP, logs and heap through its telltale agent
+    telltale.flanksource.com/examples: |
+      1234 # record process 1234 until Ctrl+C
+      1234 --duration 1m # record it for a minute
+      1234 --every 5s # read its heap every 5 seconds
+spec:
+  description: >-
+    Arms every probe github.com/flanksource/clicky/telltale registers in a clicky process: the commands it runs, its entity
+    operations, its tasks' transitions and progress, its commons HTTP exchanges and its commons logs. The process must run
+    the agent (telltale.Start, or the auto import with TELLTALE_AGENT=1); a process without one is refused. Its heap
+    profile is read through the agent every 30s and as the run stops.
+  every: 30s
+  collect:
+    clicky:
+      exec:
+        - {}
+      entity:
+        - {}
+      task:
+        - {}
+      http:
+        - features: [http]
+      logs:
+        - {}
+      pprof:
+        - profile: heap
