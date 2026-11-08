@@ -154,6 +154,9 @@ func Rows(ctx context.Context, refs []Ref, q Query) iter.Seq2[query.Row, error] 
 				yield(nil, err)
 				return
 			}
+			if q.seqOrder {
+				p.Order = query.Order{{Column: "seq", Unique: true}}
+			}
 			params, err := q.params(ref, p)
 			if err != nil {
 				yield(nil, err)

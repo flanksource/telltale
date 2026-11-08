@@ -23,6 +23,7 @@ import (
 func TestRead(t *testing.T) { RegisterFailHandler(Fail); RunSpecs(t, "Trace read") }
 
 type reading struct {
+	Kind  string    `json:"kind,omitempty"`
 	At    time.Time `json:"at"`
 	Value float64   `json:"value" filter:"range"`
 	Label string    `json:"label" filter:"text"`

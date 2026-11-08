@@ -21,7 +21,7 @@ func registrationNames() []string {
 }
 
 var _ = Describe("the trace kind registry", func() {
-	builtins := []string{"goprof", "http", "process_samples", "process_tree", "sql", "stacks", "terminal"}
+	builtins := []string{"goprof", "http", "process", "sql", "stacks", "terminal"}
 	valid := func(name string) traces.Registration {
 		return traces.Registration{
 			Name: name, Title: "Registered for a test", Summary: "Records nothing", Seams: []target.Seam{target.Self}, DefaultSeam: target.Self,
@@ -43,13 +43,16 @@ var _ = Describe("the trace kind registry", func() {
 
 	It("registers the supported seam and default for each builtin", func() {
 		for kind, seam := range map[string]target.Seam{
-			"process_tree": target.Process, "process_samples": target.Process,
-			"stacks": target.Process, "goprof": target.Process,
-			"process_groups": target.Host, "http": target.Self, "sql": target.Self, "terminal": target.Self,
+			"process": target.Process,
+			"stacks":  target.Process, "goprof": target.Process,
+			"http": target.Self, "sql": target.Self, "terminal": target.Self,
 		} {
 			registration, err := traces.Registered(kind)
 			Expect(err).NotTo(HaveOccurred())
 			seams := []target.Seam{seam}
+			if kind == "process" {
+				seams = append(seams, target.Host)
+			}
 			if kind == "stacks" || kind == "goprof" {
 				seams = append(seams, target.Agent, target.Self)
 			}
@@ -63,7 +66,7 @@ var _ = Describe("the trace kind registry", func() {
 	It("rejects an unsupported seam before starting a capture", func() {
 		kinds, err := traces.Kinds()
 		Expect(err).NotTo(HaveOccurred())
-		err = traces.Validate(kinds, "process_tree", []byte(`{"target":{"seam":"proxy"}}`))
+		err = traces.Validate(kinds, "process", []byte(`{"target":{"seam":"proxy"}}`))
 		Expect(err).To(MatchError(ContainSubstring("unsupported seam")))
 		Expect(err).To(MatchError(ContainSubstring("process")))
 	})

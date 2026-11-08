@@ -18,6 +18,7 @@ import (
 	"github.com/flanksource/telltale/pkg/traceserve"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/process"
+	"github.com/flanksource/telltale/pkg/tracing/processcapture"
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -117,7 +118,7 @@ var _ = Describe("process trace", func() {
 		host := openHost(GinkgoT().TempDir())
 		trace := startTrace(host, traces.ProcessTraceOptions{RootPID: root})
 		refs := trace.Refs()
-		Expect([]string{refs.Tree.Kind, refs.Samples.Kind, refs.Stacks.Kind}).To(Equal([]string{process.TreeKind, process.SamplesKind, stacks.Kind}))
+		Expect([]string{refs.Tree.Kind, refs.Samples.Kind, refs.Facets.Kind, refs.Stacks.Kind}).To(Equal([]string{processcapture.Kind, processcapture.MetricsTable, processcapture.FacetsTable, stacks.Kind}))
 		store := serveHost(host)
 
 		Eventually(func() map[string]map[string]any { return byCommand(store.records(refs.Tree)) }).WithTimeout(5 * time.Second).
@@ -125,7 +126,7 @@ var _ = Describe("process trace", func() {
 		sleep := byCommand(store.records(refs.Tree))["sleep 30"]
 		Expect(sleep).To(HaveKeyWithValue("environment", BeNil()))
 		Eventually(func() []map[string]any { return store.records(refs.Samples) }).WithTimeout(5 * time.Second).
-			Should(ContainElement(HaveKeyWithValue("key", sleep["key"])))
+			Should(ContainElement(HaveKeyWithValue("entity", sleep["key"])))
 		Expect(store.records(refs.Samples)).To(HaveEach(HaveKeyWithValue("openFiles", BeNil())))
 	})
 
@@ -137,11 +138,10 @@ var _ = Describe("process trace", func() {
 
 		Eventually(func() map[string]map[string]any { return byCommand(store.records(trace.Refs().Tree)) }).WithTimeout(5 * time.Second).
 			Should(HaveKeyWithValue("sleep 30", HaveKeyWithValue("environment", HaveKeyWithValue("TELLTALE_TRACE_PROBE", "1"))))
-		Eventually(func() []map[string]any { return store.records(trace.Refs().Samples) }).WithTimeout(5 * time.Second).
-			Should(ContainElement(And(
-				HaveKeyWithValue("openFiles", BeNumerically(">", 0)), HaveKeyWithValue("openFileList", Not(BeEmpty())),
-				HaveKeyWithValue("sockets", Not(BeNil())), HaveKeyWithValue("ports", Not(BeNil())), HaveKeyWithValue("connections", Not(BeNil())),
-			)))
+		Eventually(func() []map[string]any { return store.records(trace.Refs().Samples) }).WithTimeout(5*time.Second).
+			Should(ContainElement(And(HaveKeyWithValue("openFiles", BeNumerically(">", 0)), HaveKeyWithValue("receivingSockets", Not(BeNil())), HaveKeyWithValue("connectionsUnknown", Not(BeNil())))))
+		Expect(store.records(trace.Refs().Samples)).To(HaveEach(Not(HaveKey("openFileList"))))
+		Expect(store.records(trace.Refs().Facets)).To(ContainElement(And(HaveKeyWithValue("facet", "files"), HaveKeyWithValue("operation", "added"), HaveKey("resource"))))
 	})
 
 	It("reads only the environment its tree options name onto each process, arming no facet", func() {

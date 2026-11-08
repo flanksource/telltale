@@ -10,23 +10,23 @@ import (
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/process"
+	"github.com/flanksource/telltale/pkg/tracing/processcapture"
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
 	"github.com/flanksource/telltale/pkg/tracing/target"
 )
 
-// ProcessTrace is the run-scope capture of the process kinds over one root:
-// its tree, its samples and its stacks, the streams the Processes tab reads
-// through the query mount.
+// ProcessTrace captures a root's identities, metrics and resource changes,
+// with independent stack checkpoints.
 type ProcessTrace struct {
 	host     *Host
 	interval time.Duration
 	tree     *Capture
-	samples  *Capture
 	stacks   *Capture
 }
 
 // ProcessTraceOptions choose what a process trace reads.
 type ProcessTraceOptions struct {
+	Capture *Capture
 	// RootPID is the process whose tree is traced.
 	RootPID int
 	// Interval is how often the tree is sampled; zero is a second.
@@ -35,10 +35,9 @@ type ProcessTraceOptions struct {
 	Tree TreeOptions
 }
 
-// TreeOptions choose what the run-wide process tree reads of each process:
-// the same environment params a process_tree capture takes, and the facets.
+// TreeOptions choose the environment and resource facets read by the process capture.
 type TreeOptions struct {
-	// Facets arms every process_samples facet and, unless Environment narrows
+	// Facets arms every process facet and, unless Environment narrows
 	// it, reads each process's whole environment onto its node, as a run
 	// watched in a UI does.
 	Facets bool `json:"facets,omitempty" clicky:"title=Process facets,desc=Read every process's open files sockets and environment into the process tree"`
@@ -52,6 +51,7 @@ type TreeOptions struct {
 type ProcessRefs struct {
 	Tree    tracing.TraceRef `json:"tree"`
 	Samples tracing.TraceRef `json:"samples"`
+	Facets  tracing.TraceRef `json:"facets"`
 	Stacks  tracing.TraceRef `json:"stacks"`
 }
 
@@ -70,26 +70,32 @@ func (h *Host) StartProcessTrace(options ProcessTraceOptions) (*ProcessTrace, er
 	if options.Interval == 0 {
 		options.Interval = time.Second
 	}
-	root, interval := target.Target{PID: options.RootPID}, process.Options{Interval: options.Interval.String()}
-	tree := process.TreeParams{TreeOptions: process.TreeOptions{Options: interval}, Target: root}
-	samples := process.SampleParams{SampleOptions: process.SampleOptions{Options: interval}, Target: root}
+	params := processcapture.Params{Options: processcapture.Options{Options: process.Options{Interval: options.Interval.String()}}, Target: target.Target{PID: options.RootPID}}
 	if options.Tree.Facets {
-		tree.Environment, samples.Facets = &process.EnvironmentParams{}, process.Facets
+		params.Environment, params.Facets = &process.EnvironmentParams{}, []string{processcapture.Files, processcapture.Sockets, "connections"}
 	}
 	if options.Tree.Environment != nil {
-		tree.Environment = options.Tree.Environment
+		params.Environment = options.Tree.Environment
 	}
 	trace := &ProcessTrace{host: h, interval: options.Interval}
+	if options.Capture != nil {
+		if options.Capture.host != h || options.Capture.Kind() != processcapture.Kind {
+			return nil, fmt.Errorf("process trace requires a process capture from the same host")
+		}
+		trace.tree = options.Capture
+	}
 	var err error
 	for _, start := range []struct {
 		capture **Capture
 		kind    string
 		params  any
 	}{
-		{&trace.tree, process.TreeKind, tree},
-		{&trace.samples, process.SamplesKind, samples},
+		{&trace.tree, processcapture.Kind, params},
 		{&trace.stacks, stacks.Kind, stacks.Params{Target: target.Target{PID: options.RootPID}}},
 	} {
+		if *start.capture != nil {
+			continue
+		}
 		if *start.capture, err = h.startWith(start.kind, start.params); err != nil {
 			return nil, errors.Join(err, trace.Stop(context.Background()))
 		}
@@ -110,13 +116,13 @@ func (p *ProcessTrace) Interval() time.Duration { return p.interval }
 
 // Refs are the whole tree, samples and stacks streams.
 func (p *ProcessTrace) Refs() ProcessRefs {
-	return ProcessRefs{Tree: p.tree.Ref(0, 0), Samples: p.samples.Ref(0, 0), Stacks: p.stacks.Ref(0, 0)}
+	return ProcessRefs{Tree: p.tree.Ref(0, 0), Samples: tracing.TraceRef{Kind: processcapture.MetricsTable, Stream: p.tree.Stream() + "-metrics"}, Facets: tracing.TraceRef{Kind: processcapture.FacetsTable, Stream: p.tree.Stream() + "-facets"}, Stacks: p.stacks.Ref(0, 0)}
 }
 
 // Sessions are the captures' sessions.
 func (p *ProcessTrace) Sessions() ProcessSessions {
 	return ProcessSessions{
-		Tree: p.tree.managed.Session().ID(), Samples: p.samples.managed.Session().ID(), Stacks: p.stacks.managed.Session().ID(),
+		Tree: p.tree.managed.Session().ID(), Samples: p.tree.managed.Session().ID(), Stacks: p.stacks.managed.Session().ID(),
 	}
 }
 
@@ -146,7 +152,7 @@ func (p *ProcessTrace) CheckpointStacks(ctx context.Context, params stacks.Check
 // Stop ends the captures; their streams stay in the run's store.
 func (p *ProcessTrace) Stop(ctx context.Context) error {
 	var errs []error
-	for _, capture := range []*Capture{p.tree, p.samples, p.stacks} {
+	for _, capture := range []*Capture{p.tree, p.stacks} {
 		if capture != nil {
 			_, err := capture.Stop(ctx)
 			errs = append(errs, err)

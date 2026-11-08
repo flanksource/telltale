@@ -25,7 +25,7 @@ func ParseRequest(dataDir string, values url.Values) (scope Scope, q Query, aggr
 	if err != nil {
 		return
 	}
-	scope = Scope{DataDir: dataDir, Run: values.Get("run"), Runs: requestList(values["runs"])}
+	scope = Scope{DataDir: dataDir, Run: values.Get("run"), Runs: requestList(values["runs"]), Result: values.Get("result")}
 	q = Query{Filters: values["filter"], Search: values.Get("q"), Where: values.Get("where"), Cursor: values.Get("cursor")}
 	aggregate = Aggregate{Columns: requestList(values["stats"]), GroupBy: values.Get("groupBy"), View: values.Get("view")}
 	if err = parseRequestTimes(values, &scope, &q); err != nil {

@@ -18,6 +18,7 @@ type Scope struct {
 	Run     string
 	Runs    []string
 	Since   time.Time
+	Result  string
 }
 
 type Ref struct {
@@ -27,9 +28,13 @@ type Ref struct {
 }
 
 type Selection struct {
+	Runs    []telltale.RunInfo
 	Refs    []Ref
 	closers []func() error
 }
+
+// AddCloser transfers the lifetime of a constituent selection to this one.
+func (s *Selection) AddCloser(close func() error) { s.closers = append(s.closers, close) }
 
 func (s *Selection) Close() error {
 	var errs []error
@@ -48,6 +53,7 @@ type Query struct {
 	Cursor          string
 	All             bool
 	NextCursor      func(string) `json:"-"`
+	seqOrder        bool
 }
 
 func Resolve(kind string, scope Scope) (_ *Selection, err error) {
@@ -57,6 +63,14 @@ func Resolve(kind string, scope Scope) (_ *Selection, err error) {
 	}
 	if _, err := traces.Lookup(kinds, kind); err != nil {
 		return nil, err
+	}
+	if scope.Result != "" {
+		storage := kind + "_" + scope.Result
+		owner, result := kinds.ResultOf(storage)
+		if owner != kind || result == "" {
+			return nil, fmt.Errorf("kind %s has no result %q", kind, scope.Result)
+		}
+		kind = storage
 	}
 	if scope.Run != "" && len(scope.Runs) > 0 {
 		return nil, fmt.Errorf("--run and --runs are mutually exclusive")
@@ -74,7 +88,8 @@ func Resolve(kind string, scope Scope) (_ *Selection, err error) {
 		if !scope.Since.IsZero() {
 			limit = 0
 		}
-		runs, err = telltale.List(telltale.ListOptions{DataDir: scope.DataDir, Kind: kind, Since: scope.Since, Limit: limit})
+		owner, _ := kinds.ResultOf(kind)
+		runs, err = telltale.List(telltale.ListOptions{DataDir: scope.DataDir, Kind: owner, Since: scope.Since, Limit: limit})
 		if err != nil {
 			return nil, err
 		}
@@ -105,25 +120,27 @@ func Resolve(kind string, scope Scope) (_ *Selection, err error) {
 		}
 	}()
 	for _, run := range runs {
-		var refs []tracing.TraceRef
-		for _, capture := range run.Captures {
-			if capture.Kind == kind {
-				refs = append(refs, capture.Ref)
-			}
-		}
-		if len(refs) == 0 {
-			return nil, fmt.Errorf("run %s has no %s capture", run.RunID, kind)
+		if run.Unavailable != "" {
+			return nil, fmt.Errorf("read %s: %s", run.RunID, run.Unavailable)
 		}
 		runtime, closeStore, err := telltale.Reopen(scope.DataDir, run.RunID)
 		if err != nil {
 			return nil, err
 		}
 		selected.closers = append(selected.closers, closeStore)
+		refs, err := RunRefs(run, runtime)
+		if err != nil {
+			return nil, err
+		}
+		found := false
 		for _, ref := range refs {
-			if err := ref.Validate(); err != nil {
-				return nil, err
+			if ref.Kind == kind {
+				selected.Refs = append(selected.Refs, ref)
+				found = true
 			}
-			selected.Refs = append(selected.Refs, Ref{RunID: run.RunID, Runtime: runtime, TraceRef: ref})
+		}
+		if !found {
+			return nil, fmt.Errorf("run %s has no %s capture", run.RunID, kind)
 		}
 	}
 	return selected, nil

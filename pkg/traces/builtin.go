@@ -6,10 +6,9 @@ import (
 
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/goprof"
-	"github.com/flanksource/telltale/pkg/tracing/groups"
 	"github.com/flanksource/telltale/pkg/tracing/httpproxy"
 	"github.com/flanksource/telltale/pkg/tracing/pgproxy"
-	"github.com/flanksource/telltale/pkg/tracing/process"
+	"github.com/flanksource/telltale/pkg/tracing/processcapture"
 	tracesql "github.com/flanksource/telltale/pkg/tracing/sql"
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
 	"github.com/flanksource/telltale/pkg/tracing/target"
@@ -23,40 +22,16 @@ import (
 func init() {
 	for _, registration := range []Registration{
 		{
-			Name: process.TreeKind, Title: "Process tree", Seams: []target.Seam{target.Process}, DefaultSeam: target.Process,
-			Summary: "Record every process of a tree as it starts, changes and exits",
-			Description: "Follows the process tree under its root: telltale's own tree, which holds the command, or the process --pid attaches to. " +
-				"Every run records this tree already; arm it again for another interval or to read each process's environment.",
+			Name: processcapture.Kind, Title: "Processes", Seams: []target.Seam{target.Process, target.Host}, DefaultSeam: target.Process,
+			Summary:     "Record process identities, resource changes and numeric metrics",
+			Description: "Follows a process tree or the host. Stores startup metadata, environment and grouping tags once, files and receiving sockets as added/removed events, and numeric metrics in a separate wide table. TCP connections are unique peers per process, with inferred or unknown direction.",
 			Examples: []Example{
 				{Args: "--environment-prefixes AWS_ -- make deploy", Says: "record the tree with each process's AWS_ variables"},
 				{Args: "--pid 1234 --duration 30s", Says: "follow process 1234's tree for 30 seconds"},
 			},
 			New: func(deps KindDeps) tracing.TracePlugin {
-				return process.NewTreeKind(deps.Sampler, process.TreeKindOptions{Dumpers: deps.Dumpers})
+				return processcapture.NewKind(deps.Sampler, processcapture.KindOptions{Dumpers: deps.Dumpers})
 			},
-		},
-		{
-			Name: process.SamplesKind, Title: "Process samples", Seams: []target.Seam{target.Process}, DefaultSeam: target.Process,
-			Summary: "Sample the CPU, memory, disk IO and open descriptors of every process of a tree",
-			Description: "Samples each process under its root at every interval: telltale's own tree, which holds the command, or the process --pid attaches to. " +
-				"Facets add each process's open files, sockets, listening ports or connections, read with lsof.",
-			Examples: []Example{
-				{Args: "--facets ports,connections -- ./server", Says: "sample the server and the ports and connections it opens"},
-				{Args: "--seam process --pid 1234 --interval 250ms --duration 1m", Says: "sample process 1234's tree four times a second for a minute"},
-			},
-			New: func(deps KindDeps) tracing.TracePlugin { return process.NewSamplesKind(deps.Sampler) },
-		},
-		{
-			Name: groups.Kind, Title: "Process groups", Seams: []target.Seam{target.Host}, DefaultSeam: target.Host,
-			Summary: "Record the CPU, memory, disk, sockets and network of each tool's processes on the host",
-			Description: "Sorts every process on the host into the tool that owns it — claude, codex, cmux, gavel, go test, vitest, agent-browser, chrome and more — " +
-				"as a tree of groups, each with its working directory, checkout, agent session and cmux workspace, and records what each group and those under it use. " +
-				"Rules come from the built-in catalog and groups.yaml in ./.telltale, else the global config dir. Network bytes are read with nettop on darwin only when asked for, as it costs over a core.",
-			Examples: []Example{
-				{Args: "--duration 10m", Says: "record every tool's groups for ten minutes"},
-				{Args: "--groups claude,vitest --net", Says: "record claude sessions and vitest runs with their network bytes"},
-			},
-			New: func(deps KindDeps) tracing.TracePlugin { return groups.NewKind(deps.Sampler) },
 		},
 		{
 			Name: stacks.Kind, Title: "Stacks", Seams: []target.Seam{target.Process, target.Agent, target.Self}, DefaultSeam: target.Process,
