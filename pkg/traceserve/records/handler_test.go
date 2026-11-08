@@ -90,6 +90,7 @@ var _ = Describe("run records route", func() {
 		Expect(os.WriteFile(filepath.Join(host.Dir(), telltale.ManifestFile), data, 0o600)).To(Succeed())
 		mux := http.NewServeMux()
 		mux.Handle("GET /api/traces/{run}/traces/{kind}/records", records.Handler(dir))
+		mux.Handle("GET /api/traces/{run}/records", records.FeedHandler(dir))
 		server = httptest.NewServer(mux)
 		DeferCleanup(server.Close)
 		path = server.URL + "/api/traces/run-http/traces/" + fixtureKind + "/records"
@@ -114,6 +115,66 @@ var _ = Describe("run records route", func() {
 		Expect(json.Unmarshal(body, &result)).To(Succeed(), string(body))
 		return result
 	}
+	It("resumes a unified SSE feed after the last record without replaying it", func() {
+		appendRows(1, 2)
+		_, err := capture.Stop(context.Background())
+		Expect(err).NotTo(HaveOccurred())
+		endpoint := server.URL + "/api/traces/run-http/records?follow=1"
+		response, err := server.Client().Get(endpoint)
+		Expect(err).NotTo(HaveOccurred())
+		scanner := bufio.NewScanner(response.Body)
+		last := ""
+		count := 0
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, "id: ") {
+				last = strings.TrimPrefix(line, "id: ")
+			}
+			if strings.HasPrefix(line, "data: ") && line != "data: {}" {
+				count++
+			}
+		}
+		Expect(scanner.Err()).NotTo(HaveOccurred())
+		Expect(response.Body.Close()).To(Succeed())
+		Expect(count).To(Equal(2))
+		Expect(last).NotTo(BeEmpty())
+		request, err := http.NewRequest(http.MethodGet, endpoint, nil)
+		Expect(err).NotTo(HaveOccurred())
+		request.Header.Set("Last-Event-ID", last)
+		response, err = server.Client().Do(request)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(response.Body.Close)
+		body, err := io.ReadAll(response.Body)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(body)).To(Equal("event: end\ndata: {}\n\n"))
+	})
+
+	It("serves the unified feed with native payloads and resumable sequence pages", func() {
+		appendRows(2, 1)
+		response, err := server.Client().Get(server.URL + "/api/traces/run-http/records?limit=1")
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(response.Body.Close)
+		Expect(response.StatusCode).To(Equal(http.StatusOK))
+		var result struct {
+			Rows []struct {
+				Kind   string    `json:"kind"`
+				Seq    int64     `json:"seq"`
+				Record query.Row `json:"record"`
+			}
+			NextCursor string `json:"nextCursor"`
+		}
+		Expect(json.NewDecoder(response.Body).Decode(&result)).To(Succeed())
+		Expect(result.Rows).To(HaveLen(1))
+		Expect(result.Rows[0].Seq).To(Equal(int64(1)))
+		Expect(result.Rows[0].Kind).To(Equal(fixtureKind))
+		Expect(result.Rows[0].Record).To(HaveKeyWithValue("value", float64(2)))
+		Expect(result.NextCursor).NotTo(BeEmpty())
+		response, err = server.Client().Get(server.URL + "/api/traces/run-http/records?sort=timestamp&cursor=" + url.QueryEscape(result.NextCursor))
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(response.Body.Close)
+		Expect(response.StatusCode).To(Equal(http.StatusBadRequest))
+	})
+
 	It("pages in profile order and applies repeated filters, time, seq, search and CEL before limit", func() {
 		appendRows(0, 1, 2, 3)
 		first := get(url.Values{"limit": {"2"}})
@@ -269,7 +330,7 @@ var _ = Describe("run records route", func() {
 	})
 	It("reads and follows an in-process live run until it finishes", func() {
 		dir := GinkgoT().TempDir()
-		run, err := telltale.Start(context.Background(), telltale.StartOptions{DataDir: dir, PID: os.Getpid(), Duration: time.Second, Traces: []telltale.TraceSpec{{Kind: "process_samples"}}})
+		run, err := telltale.Start(context.Background(), telltale.StartOptions{DataDir: dir, PID: os.Getpid(), Duration: time.Second, Traces: []telltale.TraceSpec{{Kind: "process"}}})
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() { Expect(run.Stop()).To(Succeed()); _, err := run.Wait(); Expect(err).NotTo(HaveOccurred()) })
 		mux := http.NewServeMux()
@@ -278,7 +339,7 @@ var _ = Describe("run records route", func() {
 		DeferCleanup(liveServer.Close)
 		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 		defer cancel()
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, liveServer.URL+"/api/traces/"+run.ID()+"/traces/process_samples/records?follow=1", nil)
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, liveServer.URL+"/api/traces/"+run.ID()+"/traces/process/records?result=metrics&follow=1", nil)
 		Expect(err).NotTo(HaveOccurred())
 		response, err := liveServer.Client().Do(request)
 		Expect(err).NotTo(HaveOccurred())

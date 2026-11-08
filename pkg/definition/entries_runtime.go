@@ -10,7 +10,7 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing/jfr"
 	"github.com/flanksource/telltale/pkg/tracing/llm"
 	"github.com/flanksource/telltale/pkg/tracing/logs"
-	"github.com/flanksource/telltale/pkg/tracing/process"
+	"github.com/flanksource/telltale/pkg/tracing/processcapture"
 	"github.com/flanksource/telltale/pkg/tracing/spans"
 	tracesql "github.com/flanksource/telltale/pkg/tracing/sql"
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
@@ -113,10 +113,10 @@ func (*NativeStacks) options(Located) (any, any, error) {
 // Resources samples every process of the tree.
 type Resources struct {
 	Named
-	process.SampleOptions
+	processcapture.Options
 }
 
-func (r *Resources) options(Located) (any, any, error) { return r.SampleOptions, nil, nil }
+func (r *Resources) options(Located) (any, any, error) { return r.Options, nil, nil }
 
 // FlightRecorder starts a JFR recording in a JVM.
 type FlightRecorder struct {

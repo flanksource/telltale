@@ -69,7 +69,7 @@ type CollectProcess struct {
 	// is one object, not a capture list, and absent reads no facets.
 	Tree         *traces.TreeOptions `json:"tree,omitempty" clicky:"title=Process tree,desc=What the run-wide process tree reads of each process"`
 	NativeStacks []NativeStacks      `json:"nativeStacks,omitempty" clicky:"title=Native stacks,desc=Thread stacks of any process: sample (darwin) eu-stack or gdb (linux)" telltale:"kind=stacks"`
-	Resources    []Resources         `json:"resources,omitempty" clicky:"title=Resources,desc=CPU memory disk IO and descriptors of every process" telltale:"kind=process_samples"`
+	Resources    []Resources         `json:"resources,omitempty" clicky:"title=Processes,desc=Startup metadata resource changes and metrics" telltale:"kind=process"`
 }
 
 // CollectLogs reads log sources outside the process, by the backend that
@@ -101,7 +101,7 @@ type CollectQuery struct {
 }
 
 type CollectHost struct {
-	ProcessGroups []ProcessGroups `json:"processGroups,omitempty" clicky:"title=Process groups" telltale:"kind=process_groups"`
+	Processes []Resources `json:"processes,omitempty" clicky:"title=Processes" telltale:"kind=process"`
 }
 
 type CollectPrometheus struct {

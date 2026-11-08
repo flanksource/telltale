@@ -69,7 +69,7 @@ spec:
         - {}
       resources:
         - interval: 1s
-          facets: [ports]
+          facets: [sockets]
     logs:
       kubernetes:
         - namespace: checkout
@@ -125,8 +125,8 @@ spec:
           params: {namespace: checkout}
           every: 30s
     host:
-      processGroups:
-        - groups: [claude]
+      processes:
+        - facets: [files, sockets, connections]
     prometheus:
       scrape:
         - endpoints: [http://localhost:8080/metrics]

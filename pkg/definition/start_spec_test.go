@@ -16,7 +16,7 @@ import (
 	"github.com/flanksource/telltale/pkg/definition"
 	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/tracing/goprof"
-	"github.com/flanksource/telltale/pkg/tracing/process"
+	"github.com/flanksource/telltale/pkg/tracing/processcapture"
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
 	"github.com/flanksource/telltale/pkg/tracing/tracingtest"
 )
@@ -79,7 +79,7 @@ var _ = Describe("the built-in definitions", func() {
 		result, err := run.Wait()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result.PID).To(Equal(target.Process.Pid))
-		Expect(result.Process.Tree.Kind).To(Equal(process.TreeKind))
+		Expect(result.Process.Tree.Kind).To(Equal(processcapture.Kind))
 		Expect(result.CheckpointErrors).To(BeEmpty())
 	})
 

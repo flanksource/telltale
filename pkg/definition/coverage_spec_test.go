@@ -12,7 +12,6 @@ import (
 
 	"github.com/flanksource/telltale/pkg/definition"
 	"github.com/flanksource/telltale/pkg/traces"
-	"github.com/flanksource/telltale/pkg/tracing/process"
 )
 
 // path is a list's path, section.group.type.
@@ -41,9 +40,7 @@ var _ = Describe("the typed lists", func() {
 	lists := definition.Lists()
 
 	It("map every registered kind to a list", func() {
-		// collect.process.tree configures the run-wide process tree, which
-		// every command or pid run records, rather than arming a capture.
-		covered := map[string]bool{process.TreeKind: true}
+		covered := map[string]bool{}
 		for _, at := range lists {
 			covered[at.Kind] = true
 		}

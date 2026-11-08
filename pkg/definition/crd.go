@@ -58,7 +58,7 @@ func structural(node map[string]any, path string) (map[string]any, error) {
 	if ref, ok := node["$ref"]; ok {
 		return nil, fmt.Errorf("schema %s refers to %v: the reflector inlines every type, so a $ref is a schema the CRD cannot carry", path, ref)
 	}
-	if node["description"] == dynamicValue || strings.HasPrefix(fmt.Sprint(node["description"]), "Recursive reference to ") {
+	if len(node) == 0 || node["description"] == dynamicValue || strings.HasPrefix(fmt.Sprint(node["description"]), "Recursive reference to ") {
 		return map[string]any{"x-kubernetes-preserve-unknown-fields": true}, nil
 	}
 	out := map[string]any{}

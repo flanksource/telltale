@@ -69,20 +69,12 @@ func Open(options OpenOptions) (*tracing.Runtime, func() error, error) {
 // A shared SQLite backend retains the first opener's resolver. Fill it before
 // opening the backend so concurrent registries cannot see half its catalog.
 func storeSchemas(kinds *tracing.Kinds) (*recordstore.Schemas, error) {
-	infos, err := kinds.List()
+	definitions, err := kinds.Schemas()
 	if err != nil {
 		return nil, err
 	}
 	schemas := recordstore.NewSchemas()
-	for _, info := range infos {
-		plugin, ok := kinds.Get(info.Name)
-		if !ok {
-			return nil, fmt.Errorf("trace kind %q disappeared from catalog", info.Name)
-		}
-		schema, err := plugin.Schema(info.Name)
-		if err != nil {
-			return nil, err
-		}
+	for _, schema := range definitions {
 		if err := schemas.Register(schema.Kind, schema.Columns, schema.Options); err != nil {
 			return nil, err
 		}

@@ -4,7 +4,6 @@ import (
 	"errors"
 
 	"github.com/flanksource/commons-db/models"
-	"github.com/flanksource/telltale/pkg/tracing/groups"
 	"github.com/flanksource/telltale/pkg/tracing/logs"
 	"github.com/flanksource/telltale/pkg/tracing/opensearch"
 	"github.com/flanksource/telltale/pkg/tracing/prometheus"
@@ -14,14 +13,6 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing/sqlserver/xetrace"
 	"github.com/flanksource/telltale/pkg/tracing/sqlserver/xevent"
 )
-
-// ProcessGroups records what each tool's processes on the host use.
-type ProcessGroups struct {
-	Named
-	groups.Options
-}
-
-func (p *ProcessGroups) options(Located) (any, any, error) { return p.Options, nil, nil }
 
 // Scrape scrapes Prometheus endpoints into the managed Prometheus.
 type Scrape struct {
