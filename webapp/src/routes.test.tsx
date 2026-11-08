@@ -11,7 +11,7 @@ afterEach(() => vi.unstubAllGlobals());
 
 // The pages load lazily; load them once up front so no test waits on the first import.
 beforeAll(async () => {
-  await Promise.all([import("./Status"), import("./top/TopPage"), import("./top/ProcessPage"), import("./traces/TracesPage")]);
+  await Promise.all([import("./overview/OverviewPage"), import("./top/TopPage"), import("./top/ProcessPage"), import("./traces/TracesPage")]);
 }, 30000);
 
 describe("matchRoute", () => {
@@ -47,6 +47,9 @@ function serve() {
     if (url.startsWith("/api/top/facets")) return Promise.resolve(new Response("pid 123: not listed at the latest tick", { status: 404 }));
     if (url.startsWith("/api/top")) return Promise.resolve(json(sampleFrame()));
     if (url === "/health") return Promise.resolve(json({ status: "healthy", version: "test" }));
+    if (url === "/api/otel/form") return Promise.resolve(json({ schema: {}, defaults: { source: "records", lookback: "1h", limit: 100, minSpans: 2 } }));
+    if (url === "/api/otel/sources") return Promise.resolve(json([{ id: "records", name: "Recorded traces", type: "records" }]));
+    if (url.startsWith("/api/otel?")) return Promise.resolve(json({ traces: [], total: 0, services: [], rootOperations: [], attributes: [] }));
     if (url === "/api/traces/definitions") return Promise.resolve(json([]));
     if (url.startsWith("/api/traces")) return Promise.resolve(json({ runs: [] }));
     return Promise.resolve(new Response("", { status: 404 }));
@@ -87,11 +90,12 @@ describe("AppRoutes", () => {
     expect(await screen.findByRole("row", { name: /^claude/ })).toBeInTheDocument();
   });
 
-  it("renders the status and trace runs at /", async () => {
+  it("brings OpenTelemetry traces and recorded runs together at /", async () => {
     serve();
     renderAt("/");
-    expect(await screen.findByText("Backend connection")).toBeInTheDocument();
-    expect(await screen.findByText("Trace runs")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Overview" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "OpenTelemetry traces" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Recorded runs" })).toBeInTheDocument();
     expect(screen.queryByText("Process groups")).not.toBeInTheDocument();
   });
 
@@ -113,6 +117,26 @@ describe("AppRoutes", () => {
 });
 
 describe("App", () => {
+  it("places a recorded run's navigation and controls in the AppShell slots", async () => {
+    window.history.replaceState(null, "", "/?run=recorded-build");
+    const fetchMock = serve();
+    const fallback = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((url: string) => {
+      if (url === "/api/traces") return Promise.resolve(json({ runs: [{ runId: "recorded-build", mount: "/api/traces/recorded-build", dir: "/recorded-build", status: "succeeded", command: ["make", "build"], exitCode: 0, captures: [] }] }));
+      if (url.endsWith("/processes")) return Promise.resolve(json({ armed: true, rows: [] }));
+      if (url.includes("/records?")) return Promise.resolve(json({ rows: [], nextCursor: "" }));
+      return fallback(url);
+    });
+    render(<ThemeProvider><DensityProvider><QueryClientProvider client={new QueryClient()}><App /></QueryClientProvider></DensityProvider></ThemeProvider>);
+    const navigation = await screen.findByRole("heading", { name: "Recorded trace run" });
+    expect(navigation.closest('[data-slot="app-shell-nav"]')).not.toBeNull();
+    expect(screen.getByRole("link", { name: "Back to overview" }).closest("header")).not.toBeNull();
+    const usage = await screen.findByRole("region", { name: "Process usage" });
+    expect(usage.closest('[data-slot="app-shell-body-header"]')).not.toBeNull();
+    expect(screen.getByText(/exited with code 0/).closest('[data-slot="app-shell-body-actions"]')).not.toBeNull();
+    expect(screen.getByRole("main").querySelector("h1")).toBeNull();
+  });
+
   it.each(["/otel", "/otel/73748978474d62e1e4f6e744a3c5f605"])("shows the trace title in the AppShell navbar at %s", async pathname => {
     window.history.replaceState(null, "", pathname);
     serve();
@@ -136,6 +160,6 @@ describe("App", () => {
     expect(screen.getAllByRole("link", { name: "Overview" })[0]).not.toHaveClass("bg-sidebar-accent");
     fireEvent.click(screen.getAllByRole("link", { name: "Overview" })[0]!);
     expect(window.location.pathname).toBe("/");
-    expect(await screen.findByText("Backend connection")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Overview" })).toBeInTheDocument();
   });
 });

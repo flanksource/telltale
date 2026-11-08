@@ -73,6 +73,8 @@ function serve(status: TracesStatus, started: Response = json(running, 201), lis
     if (init?.method === "DELETE") return Promise.resolve(new Response(null, { status: 202 }));
     if (url.endsWith("/traces/kinds")) return Promise.resolve(json([{ name: "http", title: "HTTP traffic", exportFormats: [{ name: "har", ext: "har", mime: "application/json" }] }]));
     if (url.includes("/seq?")) return Promise.resolve(json({ seq: 0 }));
+    if (url.endsWith("/processes")) return Promise.resolve(json({ armed: false, rows: [] }));
+    if (url.includes("/export?")) return Promise.resolve(new Response(""));
     if (url.includes("/records?")) return Promise.resolve(json({ rows: [], nextCursor: "" }));
     return Promise.resolve(new Response("", { status: 404 }));
   });
@@ -95,9 +97,9 @@ describe("trace runs", () => {
     const fetchMock = serve({ runs: [finished, other] });
     renderPage();
     expect(await screen.findByRole("combobox", { name: "Run" })).toHaveValue(other.runId);
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`${other.mount}/records?sort=seq&limit=100`, expect.anything()));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`${other.mount}/records?sort=timestamp&excludeKind=process&presentation=ansi&limit=100`, expect.anything()));
     fireEvent.change(screen.getByRole("combobox", { name: "Run" }), { target: { value: runId } });
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`${mount}/records?sort=seq&limit=100`, expect.anything()));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`${mount}/records?sort=timestamp&excludeKind=process&presentation=ansi&limit=100`, expect.anything()));
     expect(new URLSearchParams(window.location.search).get("run")).toBe(runId);
     expect(screen.queryByText("New run")).not.toBeInTheDocument();
   });
@@ -105,7 +107,7 @@ describe("trace runs", () => {
     const fetchMock = serve({ runs: [{ ...finished, command: undefined, process: undefined, captures: [{ kind, ref: { kind, stream: "connection-or-agent", toSeq: 2 }, summary: { count: 2 } }] }] });
     renderPage();
     expect(await screen.findByText("host run")).toBeInTheDocument();
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`${mount}/records?sort=seq&limit=100`, expect.anything()));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`${mount}/records?sort=timestamp&excludeKind=process&presentation=ansi&limit=100`, expect.anything()));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
@@ -121,7 +123,8 @@ describe("trace runs", () => {
     expect(await screen.findByText("curl https://example.com")).toBeInTheDocument();
     expect(screen.getByText(/exited with code 0/)).toBeInTheDocument();
     expect(screen.getByRole("option", { name: `${runId} (succeeded)` })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "http" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("combobox", { name: "Capture" }));
+    expect(await screen.findByRole("option", { name: "http" })).toBeInTheDocument();
   });
 
   it("names an attached run by its pid and lists the checkpoints that failed", async () => {
@@ -236,6 +239,7 @@ describe("host runs recording process groups", () => {
       if (init?.method === "DELETE") return Promise.resolve(new Response(null, { status: 202 }));
       if (url.endsWith("/traces/kinds")) return Promise.resolve(json([{ name: "process", title: "Processes", exportFormats: [] }]));
       if (url.includes("/seq?")) return Promise.resolve(json({ seq: 4 }));
+      if (url.endsWith("/processes")) return Promise.resolve(json({ armed: true, rows: [] }));
       if (url.includes("/export?")) return Promise.resolve(new Response(rows));
       if (url.includes("/records?")) return Promise.resolve(json({ rows: [], nextCursor: "" }));
       return Promise.resolve(new Response("", { status: 404 }));
@@ -256,6 +260,7 @@ describe("host runs recording process groups", () => {
   it("shows a stopped host run's groups instead of saying it is unavailable", async () => {
     serveGroups([{ ...hostRun, status: "succeeded", captures: [{ kind: "process", ref: { ...groupsRef, toSeq: 4 } }] }]);
     renderPage();
+    fireEvent.click(await screen.findByRole("tab", { name: "Process details" }));
     expect(await screen.findByRole("row", { name: /^claude/ })).toBeInTheDocument();
     expect(screen.getByText("host run")).toBeInTheDocument();
     expect(screen.getByText(/ended/)).toBeInTheDocument();
@@ -281,7 +286,7 @@ describe("starting a run", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/traces", expect.objectContaining({
       method: "POST", body: JSON.stringify({ command: "sleep 60" }),
     })));
-    await waitFor(() => expect(Object.fromEntries(new URLSearchParams(window.location.search))).toEqual({ run: running.runId, feedSort: "seq" }));
+    await waitFor(() => expect(Object.fromEntries(new URLSearchParams(window.location.search))).toEqual({ run: running.runId, feedSort: "timestamp" }));
   });
 
   it("starts a saved definition with only the run's execution fields", async () => {
@@ -296,7 +301,7 @@ describe("starting a run", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/traces", expect.objectContaining({
       method: "POST", body: JSON.stringify({ definition: "checkout", command: "./bin/checkout", duration: "20s" }),
     })));
-    await waitFor(() => expect(Object.fromEntries(new URLSearchParams(window.location.search))).toEqual({ run: running.runId, feedSort: "seq" }));
+    await waitFor(() => expect(Object.fromEntries(new URLSearchParams(window.location.search))).toEqual({ run: running.runId, feedSort: "timestamp" }));
   });
 
   it("shows a failed definition listing and keeps the inline start", async () => {

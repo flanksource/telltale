@@ -2,10 +2,9 @@ import { lazy, Suspense } from "react";
 import { Panel } from "@flanksource/clicky-ui/components";
 import { useRouter } from "@flanksource/clicky-ui/rpc";
 
-const Status = lazy(() => import("./Status"));
+const OverviewPage = lazy(() => import("./overview/OverviewPage"));
 const TopPage = lazy(() => import("./top/TopPage"));
 const ProcessPage = lazy(() => import("./top/ProcessPage"));
-const TracesPage = lazy(() => import("./traces/TracesPage"));
 const ConnectionsPage = lazy(() => import("./workspace/ConnectionsPage"));
 const AgentsPage = lazy(() => import("./workspace/AgentsPage"));
 const ArmPage = lazy(() => import("./workspace/ArmPage"));
@@ -60,24 +59,6 @@ export function matchRoute(pathname: string): Route {
   return { page: "notFound", pathname };
 }
 
-function Overview() {
-  return (
-    <div className="space-y-8">
-      <div className="space-y-3">
-        <h1 className="text-3xl font-semibold tracking-tight">Telltale</h1>
-        <p className="text-muted-foreground">Your workspace is ready.</p>
-      </div>
-      <Panel title="Backend connection">
-        <Suspense fallback={<p role="status">Connecting to the backend…</p>}><Status /></Suspense>
-      </Panel>
-      <Panel title="Trace runs">
-        <Suspense fallback={<p role="status">Loading trace runs…</p>}><TracesPage /></Suspense>
-      </Panel>
-      <a className="text-sm underline underline-offset-4" href="/api/openapi.json">View the OpenAPI specification</a>
-    </div>
-  );
-}
-
 /** The page of the current location. */
 export function AppRoutes() {
   const { pathname, renderLink } = useRouter();
@@ -90,7 +71,7 @@ export function AppRoutes() {
     case "arm": return <Suspense fallback={<p role="status">Loading arming form…</p>}><ArmPage agent={route.agent} probe={route.probe} /></Suspense>;
     case "query": return <Suspense fallback={<p role="status">Loading query workspace…</p>}><QueryPage selected={route.id} /></Suspense>;
     case "records": return <Suspense fallback={<p role="status">Loading result profile…</p>}><RecordsPage run={route.run} kind={route.kind} stream={route.stream} /></Suspense>;
-    case "overview": return <Overview />;
+    case "overview": return <Suspense fallback={<p role="status">Loading overview…</p>}><OverviewPage /></Suspense>;
     case "top": return (
       <Panel title="Process groups">
         <Suspense fallback={<p role="status">Loading process groups…</p>}><TopPage /></Suspense>

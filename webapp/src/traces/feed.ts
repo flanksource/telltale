@@ -11,12 +11,12 @@ export function traceFeedSource(mount: string): Pick<TraceFeedProps, "loadPage" 
   const tokens = new Map<string, string>();
   return {
     loadPage: async (request: TraceFeedRequest, signal: AbortSignal): Promise<TraceFeedPage> => {
-      const response = await fetch(feedUrl(mount, { ...request, limit: "100" }), { signal });
+      const response = await fetch(feedUrl(mount, { ...request, excludeKind: "process", presentation: "ansi", limit: "100" }), { signal });
       if (!response.ok) throw await failure(response, "Read trace feed");
       return response.json() as Promise<TraceFeedPage>;
     },
     follow: ({ kind, onRecord, onError, onEnd }) => {
-      const source = new EventSource(feedUrl(mount, { kind, follow: "1", resume: tokens.get(kind) ?? "" }));
+      const source = new EventSource(feedUrl(mount, { kind, excludeKind: "process", presentation: "ansi", follow: "1", resume: tokens.get(kind) ?? "" }));
       source.onmessage = event => {
         try {
           const record = JSON.parse(event.data) as TraceFeedRecord;

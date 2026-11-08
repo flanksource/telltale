@@ -2,12 +2,9 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Panel } from "@flanksource/clicky-ui/components";
 import { fetchTraceRuns, RUN_STATUSES, stopRun, type RunFilter, type RunStatus, type RunTraces } from "./api";
-import { DEFAULT_VIEW, type GroupsView } from "../top/groups";
-import { processGroupsCapture, RecordedGroups } from "../top/RecordedGroups";
-import { RunProcesses } from "./RunProcesses";
 import { StartRunForm } from "./StartRunForm";
 import { TracesPanel } from "./TracesPanel";
-import { useProcessTrace } from "./useProcessTrace";
+import { RunShellSlot } from "../layout/RunShellSlot";
 
 const LIVE_POLL_MS = 1000;
 
@@ -72,7 +69,7 @@ function RunFilters({ filter, onChange }: { filter: RunFilter; onChange: (next: 
   );
 }
 
-function RunSummary({ run }: { run: RunTraces }) {
+function RunSummary({ run, readOnly = false }: { run: RunTraces; readOnly?: boolean }) {
   const queryClient = useQueryClient();
   const stop = useMutation({
     mutationFn: () => stopRun(run),
@@ -81,7 +78,7 @@ function RunSummary({ run }: { run: RunTraces }) {
   // A host run traces the host, not a command or a pid, and is live while it is running (it has no live sessions).
   const hostRun = !run.standing && !run.pid && !run.command?.length;
   const running = !!run.live || (hostRun && run.status === "running");
-  const command = <code>{run.standing ? "standing store" : run.pid ? `pid ${run.pid}` : hostRun ? "host run" : run.command?.join(" ")}</code>;
+  const command = <code className="break-all whitespace-normal">{run.standing ? "standing store" : run.pid ? `pid ${run.pid}` : hostRun ? "host run" : run.command?.join(" ")}</code>;
   const errors = [...(run.error ? [run.error] : []), ...(run.checkpointErrors ?? [])];
   const failed = errors.length ? (
     <ul role="alert" className="text-sm text-red-700 dark:text-red-400">
@@ -100,55 +97,15 @@ function RunSummary({ run }: { run: RunTraces }) {
     <div className="flex flex-wrap items-center gap-3 text-sm">
       <span role="status" className="rounded bg-blue-100 px-2 py-0.5 text-blue-800 dark:bg-blue-900 dark:text-blue-100">running</span>
       {command}
-      <Button type="button" size="sm" variant="outline" disabled={stop.isPending} onClick={() => stop.mutate()}>Stop</Button>
+      {!readOnly && <Button type="button" size="sm" variant="outline" disabled={stop.isPending} onClick={() => stop.mutate()}>Stop</Button>}
       {stop.error && <span role="alert" className="text-red-700 dark:text-red-400">{stop.error.message}</span>}
     </div>
   );
 }
 
-/** Captures recorded without a local process tree. */
-function HostRunDetail({ run }: { run: RunTraces }) {
-  const [view, setView] = useState<GroupsView>(DEFAULT_VIEW);
-  return (
-    <div className="space-y-6">
-      <RunSummary run={run} />
-      {processGroupsCapture(run) && <Panel title="Process groups"><RecordedGroups run={run} view={view} onViewChange={next => setView(previous => ({ ...previous, ...next }))} /></Panel>}
-      <Panel title="Captures"><TracesPanel run={run} /></Panel>
-    </div>
-  );
-}
-
-function RunDetail({ run }: { run: RunTraces }) {
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [hideExited, setHideExited] = useState(false);
-  const [expandAll, setExpandAll] = useState<boolean | null>(true);
-  const trace = useProcessTrace({
-    mount: run.mount,
-    ...(run.process && !run.unavailable ? { refs: run.process } : {}),
-    ...(run.live ? { sessions: run.live.sessions } : {}),
-    ...(selectedKey ? { selectedKey } : {}),
-    done: !run.live,
-  });
+export function RunDetail({ run, readOnly = false }: { run: RunTraces; readOnly?: boolean }) {
   if (run.unavailable) return <p role="alert">{run.unavailable}</p>;
-  if (!run.process) return <HostRunDetail run={run} />;
-  return (
-    <div className="space-y-6">
-      <RunSummary run={run} />
-      <Panel title="Processes">
-        <RunProcesses
-          className="h-[32rem] min-h-0"
-          trace={trace}
-          selectedKey={selectedKey}
-          onSelect={setSelectedKey}
-          hideExited={hideExited}
-          onHideExitedChange={setHideExited}
-          expandAll={expandAll}
-          onExpandAllChange={setExpandAll}
-        />
-      </Panel>
-      <Panel title="Captures"><TracesPanel run={run} /></Panel>
-    </div>
-  );
+  return <TracesPanel run={run} summary={<RunSummary run={run} readOnly={readOnly} />} />;
 }
 
 function RunList({ state, setState }: { state: PageState; setState: (next: Partial<PageState>) => void }) {
@@ -188,7 +145,7 @@ function RunList({ state, setState }: { state: PageState; setState: (next: Parti
           {runs.map(candidate => <option key={candidate.runId} value={candidate.runId}>{candidate.runId} ({candidate.status})</option>)}
         </select>
       </label>
-      <RunDetail key={`${run.runId}:${run.live || run.status === "running" ? "live" : "stored"}`} run={run} />
+      <RunDetail key={run.runId} run={run} />
     </div>
   );
 }
@@ -201,14 +158,14 @@ function RunViewer({ selected, onSelect }: { selected?: string; onSelect: (id: s
   const runs = result.data.runs;
   const run = runs.find(candidate => candidate.runId === selected) ?? runs[0];
   if (!run) return <p role="alert">The viewer has no trace run.</p>;
-  return <div className="space-y-4">
-    {runs.length > 1 && <label className="flex flex-wrap items-center gap-2 text-sm">
+  return <div className="flex h-full min-h-0 flex-col gap-3">
+    <RunShellSlot name="nav">{runs.length > 1 && <label className="flex flex-wrap items-center gap-2 text-sm">
       Run
       <select className="min-w-0 max-w-full rounded border border-border bg-background px-2 py-1" value={run.runId} onChange={event => onSelect(event.target.value)}>
         {runs.map(candidate => <option key={candidate.runId} value={candidate.runId}>{candidate.runId} ({candidate.status})</option>)}
       </select>
-    </label>}
-    <Panel title={`Trace records · ${run.status}`}><TracesPanel key={run.runId} run={run} /></Panel>
+    </label>}</RunShellSlot>
+    <RunDetail key={run.runId} run={run} readOnly />
   </div>;
 }
 
