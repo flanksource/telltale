@@ -1,0 +1,12 @@
+# exec
+
+import { KindReference } from '../_components/KindReference';
+
+Records Clicky executions observed in Telltale itself or an instrumented agent, including output tails and environment variable names. The default `self` seam observes Telltale; use `agent` for a connected agent.
+
+```sh
+telltale run exec --pid 1234 --name git --duration 1m
+```
+
+`--name` filters executable names with a glob, and `--tail-bytes` limits each output tail (default 4096 bytes). Select an agent with `--pid`, `--agent`, or `--selector`; `--wait` waits for a matching agent. Run `telltale run exec --help` for all options.
+<KindReference kind="exec" />

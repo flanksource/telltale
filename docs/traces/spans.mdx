@@ -1,0 +1,12 @@
+# spans
+
+import { KindReference } from '../_components/KindReference';
+
+Records SDK spans in Telltale or an instrumented agent, or imports span documents from an OpenSearch-backed OpenTelemetry connection using the host seam.
+
+```sh
+telltale run spans --seam host --opensearch-connection traces --opensearch-from now-1h
+```
+
+Use `--opensearch-follow-index` to follow new documents, `--opensearch-to` to bound a window, and `--opensearch-search` for a structured JSON search. For continuous OTLP ingestion without a capture run, see [Receive OpenTelemetry traces](/otlp-receiver). The [web workspace](/web-ui) can search and inspect recorded spans.
+<KindReference kind="spans" />

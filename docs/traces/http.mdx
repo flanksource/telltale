@@ -1,0 +1,12 @@
+# http
+
+import { KindReference } from '../_components/KindReference';
+
+Records HTTP exchanges from Telltale, an instrumented agent, or a local proxy. The default seam is `self`; choose `proxy` to route a command through the capture.
+
+```sh
+telltale run http --seam proxy --mode mitm -- curl -sS https://example.com
+```
+
+`--mode connect` records HTTPS tunnels by host; `mitm` decrypts exchanges using an ephemeral CA exported to the command. `--hosts` and `--paths` filter traffic, `--bodies` limits retained body size, and `--redact` adds headers to redact. The proxy exports standard proxy and CA environment variables; the application must honor them. Run `telltale run http --help` for all options.
+<KindReference kind="http" />

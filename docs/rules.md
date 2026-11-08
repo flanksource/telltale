@@ -94,7 +94,7 @@ timeout: 5s
 
 ## Concurrent browser, test and build jobs
 
-[The concurrency example](../examples/concurrency-rules.yaml) uses `groupBy: host` to detect excessive independent jobs across repositories:
+[The concurrency example](https://github.com/flanksource/telltale/blob/main/examples/concurrency-rules.yaml) uses `groupBy: host` to detect excessive independent jobs across repositories:
 
 | Rule | Allowed concurrent jobs | Counted roots |
 | --- | --- | --- |

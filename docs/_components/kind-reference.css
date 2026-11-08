@@ -1,0 +1,6 @@
+.kind-table { overflow-x: auto; }
+.kind-required { color: #c42b1c; font-weight: 700; margin-left: 0.2rem; }
+.kind-output [role='tablist'] { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--rp-c-divider); }
+.kind-output [role='tab'] { padding: 0.5rem 1rem; border-bottom: 2px solid transparent; cursor: pointer; }
+.kind-output [role='tab'][aria-selected='true'] { color: var(--rp-c-brand); border-color: var(--rp-c-brand); }
+.kind-output [role='tab']:focus-visible { outline: 2px solid var(--rp-c-brand); outline-offset: -2px; }

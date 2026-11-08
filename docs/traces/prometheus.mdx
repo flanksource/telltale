@@ -1,0 +1,12 @@
+# prometheus
+
+import { KindReference } from '../_components/KindReference';
+
+Scrapes metrics endpoints using a managed Prometheus process. Each completed scrape records its endpoint, health, duration, error, and sample count; the metric samples remain in the managed TSDB.
+
+```sh
+telltale run prometheus --endpoints http://localhost:8080/metrics --interval 5s --duration 1m
+```
+
+The first capture downloads and starts Prometheus. `--endpoints` accepts multiple URLs, `--interval` defaults to 15 seconds, `--timeout` bounds a scrape, and `--labels` adds labels to samples. Query samples at the URL shown by the run or through the read-only `telltale-prometheus` connection in the server. Stopping capture stops scraping, but retains samples.
+<KindReference kind="prometheus" />

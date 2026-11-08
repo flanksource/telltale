@@ -1,0 +1,12 @@
+# stacks
+
+import { KindReference } from '../_components/KindReference';
+
+Dumps Go goroutines or, for other processes, threads using the OS sampler. Observe a command, an attached process, or an agent.
+
+```sh
+telltale run stacks --pid 1234 --duration 1m --every 10s
+```
+
+Checkpoints run at `--every` and once when an attached run stops. An attached process remains running after capture. Use `--seam agent` with an agent selector for a connected agent, or `--seam self` for Telltale. Run `telltale run stacks --help` for all options.
+<KindReference kind="stacks" />

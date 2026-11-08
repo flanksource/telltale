@@ -4,7 +4,7 @@
 
 ## SQL Server
 
-Configure a SQL Server connection using the [connection configuration](../README.md) and pass its `connection://name` reference. These captures need neither a local PID nor a command. An empty database filter selects the connection's database; `--databases '*'` selects all databases. Filters accept exact names, `*` wildcards, and `!` exclusions.
+Configure a SQL Server connection using the [connection configuration](https://github.com/flanksource/telltale#connections) and pass its `connection://name` reference. These captures need neither a local PID nor a command. An empty database filter selects the connection's database; `--databases '*'` selects all databases. Filters accept exact names, `*` wildcards, and `!` exclusions.
 
 ```sh
 telltale run sql_xevent --connection connection://orders --session-name diagnostic --min-duration 10ms --duration 30s

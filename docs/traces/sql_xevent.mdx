@@ -1,0 +1,12 @@
+# sql_xevent
+
+import { KindReference } from '../_components/KindReference';
+
+Captures SQL Server Extended Events through a configured connection, either by creating an owned session or reading the existing `system_health` session.
+
+```sh
+telltale run sql_xevent --connection connection://orders --session-name diagnostic --duration 30s
+```
+
+An owned session requires permission to create and alter server event sessions; Telltale drains and drops only its own session. Use `--session system_health` to read the existing session without changing it. Filters include `--events`, `--databases`, `--users`, `--apps`, `--hosts`, `--types`, and `--tables`. See [SQL Server captures](/sqlserver-jvm#sql-server) for permissions and behavior.
+<KindReference kind="sql_xevent" />

@@ -1,0 +1,12 @@
+# sql_deadlock
+
+import { KindReference } from '../_components/KindReference';
+
+Reads SQL Server deadlock graphs from `system_health`, either historically or by following new deadlocks. It uses a configured SQL Server connection and does not require a local process.
+
+```sh
+telltale run sql_deadlock --connection connection://orders --duration 1m --poll 5s
+```
+
+Set `--from` to an RFC 3339 timestamp for a historical read; `--to` is exclusive and defaults to server time. `--databases` filters participants, defaulting to the connected database. Reading requires the appropriate server-state and event-file permissions. See [SQL Server captures](/sqlserver-jvm#sql-server) for retention, shutdown, and permission details.
+<KindReference kind="sql_deadlock" />

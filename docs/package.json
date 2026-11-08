@@ -1,0 +1,15 @@
+{
+  "name": "@flanksource/telltale-docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "rspress dev",
+    "build": "npm run check:catalog && rspress build",
+    "check:catalog": "go -C .. run ./hack/docs-catalog --check",
+    "generate:catalog": "go -C .. run ./hack/docs-catalog",
+    "preview": "rspress preview"
+  },
+  "devDependencies": {
+    "@rspress/core": "2.1.0"
+  }
+}

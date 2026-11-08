@@ -1,0 +1,6464 @@
+[
+  {
+    "name": "exec",
+    "title": "Executions",
+    "capabilities": {
+      "live": true
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Executable name glob"
+        },
+        "tailBytes": {
+          "type": "integer",
+          "format": "int32",
+          "description": "Maximum bytes of each output tail",
+          "default": 4096
+        },
+        "target": {
+          "properties": {
+            "agent": {
+              "type": "string",
+              "title": "Agent",
+              "description": "Agent ID to observe"
+            },
+            "allowMutation": {
+              "type": "boolean",
+              "title": "Allow mutation",
+              "description": "Allow probes to change runtime settings"
+            },
+            "pid": {
+              "type": "integer",
+              "title": "PID",
+              "format": "int32",
+              "description": "Process to observe"
+            },
+            "seam": {
+              "type": "string",
+              "title": "Seam",
+              "description": "How the capture is armed (supported seams: [self agent])",
+              "enum": [
+                "self",
+                "agent"
+              ],
+              "default": "self"
+            },
+            "selector": {
+              "type": "object",
+              "title": "Selector",
+              "description": "Agent resource attributes to match",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "wait": {
+              "type": "boolean",
+              "title": "Wait for agents",
+              "description": "Wait for a matching agent to connect"
+            }
+          },
+          "type": "object",
+          "x-telltale-seams": [
+            "self",
+            "agent"
+          ]
+        }
+      }
+    },
+    "columns": [
+      {
+        "name": "truncated",
+        "label": "Truncated",
+        "type": "json",
+        "filter": {
+          "kind": "terms",
+          "array": true
+        }
+      },
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "args",
+        "type": "json",
+        "filter": {
+          "kind": "terms",
+          "array": true
+        }
+      },
+      {
+        "name": "dir",
+        "type": "string"
+      },
+      {
+        "name": "envKeys",
+        "type": "json",
+        "filter": {
+          "kind": "terms",
+          "array": true
+        }
+      },
+      {
+        "name": "pid",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "startedAt",
+        "type": "datetime",
+        "kind": "timestamp"
+      },
+      {
+        "name": "durationMs",
+        "type": "number"
+      },
+      {
+        "name": "exitCode",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "error",
+        "type": "string"
+      },
+      {
+        "name": "stdoutTail",
+        "type": "string"
+      },
+      {
+        "name": "stderrTail",
+        "type": "string"
+      },
+      {
+        "name": "resource",
+        "type": "json"
+      }
+    ],
+    "exportFormats": [
+      {
+        "name": "ndjson",
+        "ext": "ndjson",
+        "mime": "application/x-ndjson"
+      }
+    ],
+    "flags": [
+      {
+        "name": "agent",
+        "type": "string",
+        "description": "Agent ID to observe",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "allow-mutation",
+        "type": "bool",
+        "description": "Allow probes to change runtime settings",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "data-dir",
+        "type": "string",
+        "description": "Directory holding telltale's trace data (default: $XDG_CACHE_HOME/telltale or the OS cache dir)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "duration",
+        "type": "duration",
+        "description": "Stop the run after this long, e.g. 30s (0 runs until the command exits or Ctrl+C)",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "follow",
+        "type": "bool",
+        "description": "Print every armed capture's records while recording",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "description": "Executable name glob",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "pid",
+        "type": "int",
+        "description": "Process to observe",
+        "default": "0",
+        "required": false
+      },
+      {
+        "name": "seam",
+        "type": "string",
+        "description": "How the capture is armed (supported seams: [self agent]) (one of self, agent)",
+        "default": "self",
+        "required": false
+      },
+      {
+        "name": "selector",
+        "type": "string",
+        "description": "Agent resource attributes to match",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "description": "Record order: seq or timestamp",
+        "default": "seq",
+        "required": false
+      },
+      {
+        "name": "tail-bytes",
+        "type": "int",
+        "description": "Maximum bytes of each output tail",
+        "default": "4096",
+        "required": false
+      },
+      {
+        "name": "tui",
+        "type": "bool",
+        "description": "Follow records in an interactive terminal",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "ui",
+        "type": "bool",
+        "description": "Open this run's traces in a local web viewer; keep serving until Ctrl+C",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "wait",
+        "type": "bool",
+        "description": "Wait for a matching agent to connect",
+        "default": "false",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "goprof",
+    "title": "Go profiles",
+    "capabilities": {
+      "live": true
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "properties": {
+            "agent": {
+              "type": "string",
+              "title": "Agent",
+              "description": "Agent ID to observe"
+            },
+            "allowMutation": {
+              "type": "boolean",
+              "title": "Allow mutation",
+              "description": "Allow probes to change runtime settings"
+            },
+            "pid": {
+              "type": "integer",
+              "title": "PID",
+              "format": "int32",
+              "description": "Process to observe"
+            },
+            "seam": {
+              "type": "string",
+              "title": "Seam",
+              "description": "How the capture is armed (supported seams: [process agent self])",
+              "enum": [
+                "process",
+                "agent",
+                "self"
+              ],
+              "default": "process"
+            },
+            "selector": {
+              "type": "object",
+              "title": "Selector",
+              "description": "Agent resource attributes to match",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "wait": {
+              "type": "boolean",
+              "title": "Wait for agents",
+              "description": "Wait for a matching agent to connect"
+            }
+          },
+          "type": "object",
+          "x-telltale-seams": [
+            "process",
+            "agent",
+            "self"
+          ]
+        }
+      }
+    },
+    "columns": [
+      {
+        "name": "checkpointId",
+        "type": "string",
+        "filter": {
+          "kind": "exact"
+        },
+        "hidden": true
+      },
+      {
+        "name": "takenAt",
+        "label": "Taken",
+        "type": "datetime",
+        "kind": "timestamp"
+      },
+      {
+        "name": "reason",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "source",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "key",
+        "type": "string",
+        "filter": {
+          "kind": "exact"
+        },
+        "hidden": true
+      },
+      {
+        "name": "pid",
+        "label": "PID",
+        "type": "number",
+        "format": "integer",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "profile",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "sampleType",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "unit",
+        "type": "string"
+      },
+      {
+        "name": "value",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "frames",
+        "type": "json",
+        "hidden": true
+      },
+      {
+        "name": "stackHash",
+        "type": "string",
+        "filter": {
+          "kind": "exact"
+        },
+        "hidden": true
+      }
+    ],
+    "exportFormats": [
+      {
+        "name": "ndjson",
+        "ext": "ndjson",
+        "mime": "application/x-ndjson"
+      },
+      {
+        "name": "pprof",
+        "ext": "pb.gz",
+        "mime": "application/octet-stream"
+      }
+    ],
+    "flags": [
+      {
+        "name": "agent",
+        "type": "string",
+        "description": "Agent ID to observe",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "allow-mutation",
+        "type": "bool",
+        "description": "Allow probes to change runtime settings",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "data-dir",
+        "type": "string",
+        "description": "Directory holding telltale's trace data (default: $XDG_CACHE_HOME/telltale or the OS cache dir)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "duration",
+        "type": "duration",
+        "description": "Stop the run after this long, e.g. 30s (0 runs until the command exits or Ctrl+C)",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "every",
+        "type": "duration",
+        "description": "Read the checkpointed captures this often, e.g. 10s",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "follow",
+        "type": "bool",
+        "description": "Print every armed capture's records while recording",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "pid",
+        "type": "int",
+        "description": "Process to observe",
+        "default": "0",
+        "required": false
+      },
+      {
+        "name": "profile",
+        "type": "string",
+        "description": "Go profile read at each checkpoint (one of cpu, heap, allocs, mutex, block, goroutine)",
+        "default": "heap",
+        "required": false
+      },
+      {
+        "name": "seam",
+        "type": "string",
+        "description": "How the capture is armed (supported seams: [process agent self]) (one of process, agent, self)",
+        "default": "process",
+        "required": false
+      },
+      {
+        "name": "seconds",
+        "type": "int",
+        "description": "Duration of a CPU profile window in seconds",
+        "default": "0",
+        "required": false
+      },
+      {
+        "name": "selector",
+        "type": "string",
+        "description": "Agent resource attributes to match",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "description": "Record order: seq or timestamp",
+        "default": "seq",
+        "required": false
+      },
+      {
+        "name": "source",
+        "type": "string",
+        "description": "Process profile source (one of pprof, gops, file)",
+        "default": "gops",
+        "required": false
+      },
+      {
+        "name": "tui",
+        "type": "bool",
+        "description": "Follow records in an interactive terminal",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "ui",
+        "type": "bool",
+        "description": "Open this run's traces in a local web viewer; keep serving until Ctrl+C",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "wait",
+        "type": "bool",
+        "description": "Wait for a matching agent to connect",
+        "default": "false",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "http",
+    "title": "HTTP proxy traffic",
+    "capabilities": {
+      "live": true
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "bodies": {
+          "type": "string",
+          "title": "Bodies",
+          "description": "How much of each body to keep such as 64KiB (at most 4MiB; 0 keeps none)",
+          "default": "256KiB"
+        },
+        "dedupWindow": {
+          "type": "string",
+          "title": "Dedup window",
+          "description": "Store identical exchanges only once within this duration"
+        },
+        "export": {
+          "type": "object",
+          "title": "Export",
+          "description": "Variable names the proxy and its CA are exported under",
+          "properties": {
+            "ca": {
+              "type": "string",
+              "title": "CA variable",
+              "description": "Variable the mitm CA file is exported under instead of SSL_CERT_FILE and the other trust variables"
+            },
+            "noProxy": {
+              "type": "string",
+              "title": "No-proxy variable",
+              "description": "Variable the bypass list is exported under instead of NO_PROXY"
+            },
+            "proxy": {
+              "type": "string",
+              "title": "Proxy variable",
+              "description": "Variable the proxy URL is exported under instead of HTTP(S)_PROXY"
+            }
+          }
+        },
+        "features": {
+          "type": "array",
+          "title": "Features",
+          "description": "HTTP features to observe",
+          "default": [
+            "telltale"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "hosts": {
+          "type": "array",
+          "title": "Hosts",
+          "description": "Host globs without a port to record and decrypt; empty records every host",
+          "items": {
+            "type": "string"
+          }
+        },
+        "listen": {
+          "type": "string",
+          "title": "Listen",
+          "description": "host:port the proxy listens on such as 127.0.0.1:18080; empty takes a free loopback port"
+        },
+        "mode": {
+          "default": "connect",
+          "description": "connect records HTTPS tunnels by host; mitm decrypts and records each exchange",
+          "enum": [
+            "connect",
+            "mitm"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "noProxy": {
+          "type": "array",
+          "title": "No proxy",
+          "description": "host:port addresses the command reaches directly",
+          "items": {
+            "type": "string"
+          }
+        },
+        "paths": {
+          "type": "array",
+          "title": "Paths",
+          "description": "URL path globs to record; empty records every path",
+          "items": {
+            "type": "string"
+          }
+        },
+        "redact": {
+          "type": "array",
+          "title": "Redact headers",
+          "description": "Headers to blank beside the credential headers that are always blanked",
+          "items": {
+            "type": "string"
+          }
+        },
+        "target": {
+          "properties": {
+            "agent": {
+              "type": "string",
+              "title": "Agent",
+              "description": "Agent ID to observe"
+            },
+            "allowMutation": {
+              "type": "boolean",
+              "title": "Allow mutation",
+              "description": "Allow probes to change runtime settings"
+            },
+            "pid": {
+              "type": "integer",
+              "title": "PID",
+              "format": "int32",
+              "description": "Process to observe"
+            },
+            "seam": {
+              "type": "string",
+              "title": "Seam",
+              "description": "How the capture is armed (supported seams: [self agent proxy])",
+              "enum": [
+                "self",
+                "agent",
+                "proxy"
+              ],
+              "default": "self"
+            },
+            "selector": {
+              "type": "object",
+              "title": "Selector",
+              "description": "Agent resource attributes to match",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "wait": {
+              "type": "boolean",
+              "title": "Wait for agents",
+              "description": "Wait for a matching agent to connect"
+            }
+          },
+          "type": "object",
+          "x-telltale-seams": [
+            "self",
+            "agent",
+            "proxy"
+          ]
+        },
+        "upstreamCA": {
+          "type": "string",
+          "title": "Upstream CA file",
+          "description": "PEM file of authorities the proxy trusts beside the system roots under mitm"
+        }
+      }
+    },
+    "columns": [
+      {
+        "name": "truncated",
+        "label": "Truncated",
+        "type": "json",
+        "filter": {
+          "kind": "terms",
+          "array": true
+        }
+      },
+      {
+        "name": "startedDateTime",
+        "type": "string"
+      },
+      {
+        "name": "time",
+        "type": "number"
+      },
+      {
+        "name": "request",
+        "type": "json"
+      },
+      {
+        "name": "response",
+        "type": "json"
+      },
+      {
+        "name": "cache",
+        "type": "json"
+      },
+      {
+        "name": "timings",
+        "type": "json"
+      },
+      {
+        "name": "_id",
+        "type": "string"
+      },
+      {
+        "name": "_pending",
+        "type": "boolean"
+      },
+      {
+        "name": "_error",
+        "type": "string"
+      },
+      {
+        "name": "startedAt",
+        "label": "Started",
+        "type": "datetime",
+        "kind": "timestamp"
+      },
+      {
+        "name": "feature",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "method",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "host",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "url",
+        "label": "URL",
+        "type": "string",
+        "filter": {
+          "kind": "text"
+        }
+      },
+      {
+        "name": "status",
+        "type": "number",
+        "format": "integer",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "durationMs",
+        "label": "Duration",
+        "type": "duration",
+        "unit": "ms"
+      },
+      {
+        "name": "resource",
+        "type": "json"
+      },
+      {
+        "name": "error",
+        "type": "string",
+        "filter": {
+          "kind": "text"
+        }
+      },
+      {
+        "name": "serverIPAddress",
+        "label": "Server IP",
+        "type": "string"
+      },
+      {
+        "name": "tunnelled",
+        "type": "boolean"
+      },
+      {
+        "name": "bytesIn",
+        "label": "Bytes in",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "bytesOut",
+        "label": "Bytes out",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "encoding",
+        "type": "string",
+        "hidden": true
+      },
+      {
+        "name": "comment",
+        "type": "string",
+        "filter": {
+          "kind": "text"
+        }
+      }
+    ],
+    "exportFormats": [
+      {
+        "name": "ndjson",
+        "ext": "ndjson",
+        "mime": "application/x-ndjson"
+      },
+      {
+        "name": "har",
+        "ext": "har",
+        "mime": "application/json"
+      }
+    ],
+    "flags": [
+      {
+        "name": "agent",
+        "type": "string",
+        "description": "Agent ID to observe",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "allow-mutation",
+        "type": "bool",
+        "description": "Allow probes to change runtime settings",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "bodies",
+        "type": "string",
+        "description": "How much of each body to keep such as 64KiB (at most 4MiB; 0 keeps none)",
+        "default": "256KiB",
+        "required": false
+      },
+      {
+        "name": "data-dir",
+        "type": "string",
+        "description": "Directory holding telltale's trace data (default: $XDG_CACHE_HOME/telltale or the OS cache dir)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "dedup-window",
+        "type": "string",
+        "description": "Store identical exchanges only once within this duration",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "duration",
+        "type": "duration",
+        "description": "Stop the run after this long, e.g. 30s (0 runs until the command exits or Ctrl+C)",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "export-ca",
+        "type": "string",
+        "description": "Variable the mitm CA file is exported under instead of SSL_CERT_FILE and the other trust variables",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "export-no-proxy",
+        "type": "string",
+        "description": "Variable the bypass list is exported under instead of NO_PROXY",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "export-proxy",
+        "type": "string",
+        "description": "Variable the proxy URL is exported under instead of HTTP(S)_PROXY",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "features",
+        "type": "stringSlice",
+        "description": "HTTP features to observe",
+        "default": "[telltale]",
+        "required": false
+      },
+      {
+        "name": "follow",
+        "type": "bool",
+        "description": "Print every armed capture's records while recording",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "hosts",
+        "type": "stringSlice",
+        "description": "Host globs without a port to record and decrypt; empty records every host",
+        "default": "[]",
+        "required": false
+      },
+      {
+        "name": "listen",
+        "type": "string",
+        "description": "host:port the proxy listens on such as 127.0.0.1:18080; empty takes a free loopback port",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "mode",
+        "type": "string",
+        "description": "connect records HTTPS tunnels by host; mitm decrypts and records each exchange (one of connect, mitm)",
+        "default": "connect",
+        "required": false
+      },
+      {
+        "name": "no-proxy",
+        "type": "stringSlice",
+        "description": "host:port addresses the command reaches directly",
+        "default": "[]",
+        "required": false
+      },
+      {
+        "name": "paths",
+        "type": "stringSlice",
+        "description": "URL path globs to record; empty records every path",
+        "default": "[]",
+        "required": false
+      },
+      {
+        "name": "pid",
+        "type": "int",
+        "description": "Process to observe",
+        "default": "0",
+        "required": false
+      },
+      {
+        "name": "redact",
+        "type": "stringSlice",
+        "description": "Headers to blank beside the credential headers that are always blanked",
+        "default": "[]",
+        "required": false
+      },
+      {
+        "name": "seam",
+        "type": "string",
+        "description": "How the capture is armed (supported seams: [self agent proxy]) (one of self, agent, proxy)",
+        "default": "self",
+        "required": false
+      },
+      {
+        "name": "selector",
+        "type": "string",
+        "description": "Agent resource attributes to match",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "description": "Record order: seq or timestamp",
+        "default": "seq",
+        "required": false
+      },
+      {
+        "name": "tui",
+        "type": "bool",
+        "description": "Follow records in an interactive terminal",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "ui",
+        "type": "bool",
+        "description": "Open this run's traces in a local web viewer; keep serving until Ctrl+C",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "upstream-ca",
+        "type": "string",
+        "description": "PEM file of authorities the proxy trusts beside the system roots under mitm",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "wait",
+        "type": "bool",
+        "description": "Wait for a matching agent to connect",
+        "default": "false",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "jvm_jfr",
+    "title": "JFR profile samples",
+    "capabilities": {
+      "live": true
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "asyncProfiler": {
+          "type": "string",
+          "title": "Async-profiler executable",
+          "description": "Local asprof executable for process captures"
+        },
+        "engine": {
+          "default": "jfr",
+          "enum": [
+            "jfr",
+            "async-profiler"
+          ],
+          "title": "Engine",
+          "type": "string"
+        },
+        "event": {
+          "enum": [
+            "cpu",
+            "wall",
+            "alloc",
+            "lock"
+          ],
+          "title": "Async-profiler event",
+          "type": "string"
+        },
+        "interval": {
+          "type": "string",
+          "title": "Sampling interval"
+        },
+        "maxStackDepth": {
+          "type": "integer",
+          "title": "Maximum stack depth",
+          "format": "int32",
+          "description": "Keep this many leaf frames; zero keeps all recorded frames"
+        },
+        "settings": {
+          "type": "string",
+          "title": "JFR settings"
+        },
+        "target": {
+          "properties": {
+            "agent": {
+              "type": "string",
+              "title": "Agent",
+              "description": "Agent ID to observe"
+            },
+            "allowMutation": {
+              "type": "boolean",
+              "title": "Allow mutation",
+              "description": "Allow probes to change runtime settings"
+            },
+            "pid": {
+              "type": "integer",
+              "title": "PID",
+              "format": "int32",
+              "description": "Process to observe"
+            },
+            "seam": {
+              "type": "string",
+              "title": "Seam",
+              "description": "How the capture is armed (supported seams: [process agent])",
+              "enum": [
+                "process",
+                "agent"
+              ],
+              "default": "process"
+            },
+            "selector": {
+              "type": "object",
+              "title": "Selector",
+              "description": "Agent resource attributes to match",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "wait": {
+              "type": "boolean",
+              "title": "Wait for agents",
+              "description": "Wait for a matching agent to connect"
+            }
+          },
+          "type": "object",
+          "x-telltale-seams": [
+            "process",
+            "agent"
+          ]
+        },
+        "threads": {
+          "type": "boolean",
+          "title": "Split by thread",
+          "description": "Retain thread identities in decoded samples"
+        }
+      }
+    },
+    "columns": [
+      {
+        "name": "resource",
+        "type": "json"
+      },
+      {
+        "name": "truncated",
+        "label": "Truncated",
+        "type": "json",
+        "filter": {
+          "kind": "terms",
+          "array": true
+        }
+      },
+      {
+        "name": "timestamp",
+        "label": "At",
+        "type": "datetime",
+        "kind": "timestamp"
+      },
+      {
+        "name": "from",
+        "type": "datetime",
+        "hidden": true
+      },
+      {
+        "name": "event",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "thread",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "frame",
+        "label": "Top frame",
+        "type": "string",
+        "filter": {
+          "kind": "text"
+        }
+      },
+      {
+        "name": "stack",
+        "type": "string",
+        "filter": {
+          "kind": "text"
+        },
+        "hidden": true
+      },
+      {
+        "name": "samples",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "value",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "unit",
+        "type": "string"
+      }
+    ],
+    "exportFormats": [
+      {
+        "name": "ndjson",
+        "ext": "ndjson",
+        "mime": "application/x-ndjson"
+      }
+    ],
+    "flags": [
+      {
+        "name": "agent",
+        "type": "string",
+        "description": "Agent ID to observe",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "allow-mutation",
+        "type": "bool",
+        "description": "Allow probes to change runtime settings",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "async-profiler",
+        "type": "string",
+        "description": "Local asprof executable for process captures",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "data-dir",
+        "type": "string",
+        "description": "Directory holding telltale's trace data (default: $XDG_CACHE_HOME/telltale or the OS cache dir)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "duration",
+        "type": "duration",
+        "description": "Stop the run after this long, e.g. 30s (0 runs until the command exits or Ctrl+C)",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "engine",
+        "type": "string",
+        "description": "Engine (one of jfr, async-profiler)",
+        "default": "jfr",
+        "required": false
+      },
+      {
+        "name": "event",
+        "type": "string",
+        "description": "Async-profiler event (one of cpu, wall, alloc, lock)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "every",
+        "type": "duration",
+        "description": "Read the checkpointed captures this often, e.g. 10s",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "follow",
+        "type": "bool",
+        "description": "Print every armed capture's records while recording",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "interval",
+        "type": "string",
+        "description": "Sampling interval",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "max-stack-depth",
+        "type": "int",
+        "description": "Keep this many leaf frames; zero keeps all recorded frames",
+        "default": "0",
+        "required": false
+      },
+      {
+        "name": "pid",
+        "type": "int",
+        "description": "Process to observe",
+        "default": "0",
+        "required": false
+      },
+      {
+        "name": "seam",
+        "type": "string",
+        "description": "How the capture is armed (supported seams: [process agent]) (one of process, agent)",
+        "default": "process",
+        "required": false
+      },
+      {
+        "name": "selector",
+        "type": "string",
+        "description": "Agent resource attributes to match",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "settings",
+        "type": "string",
+        "description": "JFR settings",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "description": "Record order: seq or timestamp",
+        "default": "seq",
+        "required": false
+      },
+      {
+        "name": "threads",
+        "type": "bool",
+        "description": "Retain thread identities in decoded samples",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "tui",
+        "type": "bool",
+        "description": "Follow records in an interactive terminal",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "ui",
+        "type": "bool",
+        "description": "Open this run's traces in a local web viewer; keep serving until Ctrl+C",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "wait",
+        "type": "bool",
+        "description": "Wait for a matching agent to connect",
+        "default": "false",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "llm",
+    "title": "LLM calls",
+    "capabilities": {
+      "live": true
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "includePrompts": {
+          "type": "boolean",
+          "description": "Include prompts"
+        },
+        "includeResponses": {
+          "type": "boolean",
+          "description": "Include responses"
+        },
+        "models": {
+          "type": "string",
+          "description": "Model glob"
+        },
+        "target": {
+          "properties": {
+            "agent": {
+              "type": "string",
+              "title": "Agent",
+              "description": "Agent ID to observe"
+            },
+            "allowMutation": {
+              "type": "boolean",
+              "title": "Allow mutation",
+              "description": "Allow probes to change runtime settings"
+            },
+            "pid": {
+              "type": "integer",
+              "title": "PID",
+              "format": "int32",
+              "description": "Process to observe"
+            },
+            "seam": {
+              "type": "string",
+              "title": "Seam",
+              "description": "How the capture is armed (supported seams: [self agent])",
+              "enum": [
+                "self",
+                "agent"
+              ],
+              "default": "self"
+            },
+            "selector": {
+              "type": "object",
+              "title": "Selector",
+              "description": "Agent resource attributes to match",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "wait": {
+              "type": "boolean",
+              "title": "Wait for agents",
+              "description": "Wait for a matching agent to connect"
+            }
+          },
+          "type": "object",
+          "x-telltale-seams": [
+            "self",
+            "agent"
+          ]
+        }
+      }
+    },
+    "columns": [
+      {
+        "name": "truncated",
+        "label": "Truncated",
+        "type": "json",
+        "filter": {
+          "kind": "terms",
+          "array": true
+        }
+      },
+      {
+        "name": "phase",
+        "type": "string"
+      },
+      {
+        "name": "model",
+        "type": "string"
+      },
+      {
+        "name": "backend",
+        "type": "string"
+      },
+      {
+        "name": "iter",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "prompt",
+        "type": "string"
+      },
+      {
+        "name": "tools",
+        "type": "json"
+      },
+      {
+        "name": "response",
+        "type": "string"
+      },
+      {
+        "name": "usage",
+        "type": "json"
+      },
+      {
+        "name": "cost",
+        "type": "number"
+      },
+      {
+        "name": "durationMs",
+        "type": "number"
+      },
+      {
+        "name": "error",
+        "type": "string"
+      },
+      {
+        "name": "resource",
+        "type": "json"
+      }
+    ],
+    "exportFormats": [
+      {
+        "name": "ndjson",
+        "ext": "ndjson",
+        "mime": "application/x-ndjson"
+      }
+    ],
+    "flags": [
+      {
+        "name": "agent",
+        "type": "string",
+        "description": "Agent ID to observe",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "allow-mutation",
+        "type": "bool",
+        "description": "Allow probes to change runtime settings",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "data-dir",
+        "type": "string",
+        "description": "Directory holding telltale's trace data (default: $XDG_CACHE_HOME/telltale or the OS cache dir)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "duration",
+        "type": "duration",
+        "description": "Stop the run after this long, e.g. 30s (0 runs until the command exits or Ctrl+C)",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "follow",
+        "type": "bool",
+        "description": "Print every armed capture's records while recording",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "include-prompts",
+        "type": "bool",
+        "description": "Include prompts",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "include-responses",
+        "type": "bool",
+        "description": "Include responses",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "models",
+        "type": "string",
+        "description": "Model glob",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "pid",
+        "type": "int",
+        "description": "Process to observe",
+        "default": "0",
+        "required": false
+      },
+      {
+        "name": "seam",
+        "type": "string",
+        "description": "How the capture is armed (supported seams: [self agent]) (one of self, agent)",
+        "default": "self",
+        "required": false
+      },
+      {
+        "name": "selector",
+        "type": "string",
+        "description": "Agent resource attributes to match",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "description": "Record order: seq or timestamp",
+        "default": "seq",
+        "required": false
+      },
+      {
+        "name": "tui",
+        "type": "bool",
+        "description": "Follow records in an interactive terminal",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "ui",
+        "type": "bool",
+        "description": "Open this run's traces in a local web viewer; keep serving until Ctrl+C",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "wait",
+        "type": "bool",
+        "description": "Wait for a matching agent to connect",
+        "default": "false",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "logs",
+    "title": "Logs",
+    "capabilities": {
+      "live": true
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "string"
+        },
+        "connection": {
+          "type": "string"
+        },
+        "container": {
+          "type": "string"
+        },
+        "levels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "match": {
+          "type": "string"
+        },
+        "minLevel": {
+          "type": "string"
+        },
+        "namespace": {
+          "type": "string"
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "description": "Dynamic response value"
+          }
+        },
+        "podSelector": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "properties": {
+            "agent": {
+              "type": "string",
+              "title": "Agent",
+              "description": "Agent ID to observe"
+            },
+            "allowMutation": {
+              "type": "boolean",
+              "title": "Allow mutation",
+              "description": "Allow probes to change runtime settings"
+            },
+            "pid": {
+              "type": "integer",
+              "title": "PID",
+              "format": "int32",
+              "description": "Process to observe"
+            },
+            "seam": {
+              "type": "string",
+              "title": "Seam",
+              "description": "How the capture is armed (supported seams: [self agent host])",
+              "enum": [
+                "self",
+                "agent",
+                "host"
+              ],
+              "default": "self"
+            },
+            "selector": {
+              "type": "object",
+              "title": "Selector",
+              "description": "Agent resource attributes to match",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "wait": {
+              "type": "boolean",
+              "title": "Wait for agents",
+              "description": "Wait for a matching agent to connect"
+            }
+          },
+          "type": "object",
+          "x-telltale-seams": [
+            "self",
+            "agent",
+            "host"
+          ]
+        },
+        "timeField": {
+          "type": "string"
+        }
+      }
+    },
+    "columns": [
+      {
+        "name": "id",
+        "type": "string"
+      },
+      {
+        "name": "firstObserved",
+        "type": "datetime",
+        "kind": "timestamp"
+      },
+      {
+        "name": "lastObserved",
+        "type": "datetime"
+      },
+      {
+        "name": "count",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "message",
+        "type": "string"
+      },
+      {
+        "name": "hash",
+        "type": "string"
+      },
+      {
+        "name": "severity",
+        "type": "string"
+      },
+      {
+        "name": "source",
+        "type": "string"
+      },
+      {
+        "name": "host",
+        "type": "string"
+      },
+      {
+        "name": "labels",
+        "type": "json"
+      },
+      {
+        "name": "logger",
+        "type": "string"
+      },
+      {
+        "name": "traceId",
+        "type": "string"
+      },
+      {
+        "name": "resource",
+        "type": "json"
+      }
+    ],
+    "exportFormats": [
+      {
+        "name": "ndjson",
+        "ext": "ndjson",
+        "mime": "application/x-ndjson"
+      }
+    ],
+    "flags": [
+      {
+        "name": "agent",
+        "type": "string",
+        "description": "Agent ID to observe",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "allow-mutation",
+        "type": "bool",
+        "description": "Allow probes to change runtime settings",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "backend",
+        "type": "string",
+        "description": "",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "connection",
+        "type": "string",
+        "description": "",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "container",
+        "type": "string",
+        "description": "",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "data-dir",
+        "type": "string",
+        "description": "Directory holding telltale's trace data (default: $XDG_CACHE_HOME/telltale or the OS cache dir)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "duration",
+        "type": "duration",
+        "description": "Stop the run after this long, e.g. 30s (0 runs until the command exits or Ctrl+C)",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "follow",
+        "type": "bool",
+        "description": "Print every armed capture's records while recording",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "levels",
+        "type": "stringSlice",
+        "description": " (key=value pairs)",
+        "default": "[]",
+        "required": false
+      },
+      {
+        "name": "match",
+        "type": "string",
+        "description": "",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "min-level",
+        "type": "string",
+        "description": "",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "namespace",
+        "type": "string",
+        "description": "",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "options",
+        "type": "string",
+        "description": " (JSON object)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "pid",
+        "type": "int",
+        "description": "Process to observe",
+        "default": "0",
+        "required": false
+      },
+      {
+        "name": "pod-selector",
+        "type": "string",
+        "description": "",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "query",
+        "type": "string",
+        "description": "",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "seam",
+        "type": "string",
+        "description": "How the capture is armed (supported seams: [self agent host]) (one of self, agent, host)",
+        "default": "self",
+        "required": false
+      },
+      {
+        "name": "selector",
+        "type": "string",
+        "description": "Agent resource attributes to match",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "description": "Record order: seq or timestamp",
+        "default": "seq",
+        "required": false
+      },
+      {
+        "name": "source",
+        "type": "string",
+        "description": "",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "time-field",
+        "type": "string",
+        "description": "",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "tui",
+        "type": "bool",
+        "description": "Follow records in an interactive terminal",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "ui",
+        "type": "bool",
+        "description": "Open this run's traces in a local web viewer; keep serving until Ctrl+C",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "wait",
+        "type": "bool",
+        "description": "Wait for a matching agent to connect",
+        "default": "false",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "process",
+    "title": "Processes",
+    "capabilities": {
+      "live": true
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "catalog": {
+          "type": "string"
+        },
+        "environment": {
+          "type": "object",
+          "properties": {
+            "keys": {
+              "type": "array",
+              "title": "Keys",
+              "description": "Environment variables to read onto each process",
+              "items": {
+                "type": "string"
+              }
+            },
+            "prefixes": {
+              "type": "array",
+              "title": "Prefixes",
+              "description": "Prefixes of the environment variables to read onto each process",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "nullable": true
+        },
+        "facets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "interval": {
+          "type": "string",
+          "title": "Interval",
+          "description": "How often the tree is sampled such as 1s (at least 250ms)"
+        },
+        "net": {
+          "type": "boolean"
+        },
+        "target": {
+          "properties": {
+            "agent": {
+              "type": "string",
+              "title": "Agent",
+              "description": "Agent ID to observe"
+            },
+            "allowMutation": {
+              "type": "boolean",
+              "title": "Allow mutation",
+              "description": "Allow probes to change runtime settings"
+            },
+            "pid": {
+              "type": "integer",
+              "title": "PID",
+              "format": "int32",
+              "description": "Process to observe"
+            },
+            "seam": {
+              "type": "string",
+              "title": "Seam",
+              "description": "How the capture is armed (supported seams: [process host])",
+              "enum": [
+                "process",
+                "host"
+              ],
+              "default": "process"
+            },
+            "selector": {
+              "type": "object",
+              "title": "Selector",
+              "description": "Agent resource attributes to match",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "wait": {
+              "type": "boolean",
+              "title": "Wait for agents",
+              "description": "Wait for a matching agent to connect"
+            }
+          },
+          "type": "object",
+          "x-telltale-seams": [
+            "process",
+            "host"
+          ]
+        }
+      }
+    },
+    "columns": [
+      {
+        "name": "key",
+        "type": "string"
+      },
+      {
+        "name": "parentKey",
+        "type": "string"
+      },
+      {
+        "name": "pid",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "ppid",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "command",
+        "type": "string"
+      },
+      {
+        "name": "cwd",
+        "type": "string"
+      },
+      {
+        "name": "startedAt",
+        "type": "datetime"
+      },
+      {
+        "name": "firstObservedAt",
+        "type": "datetime",
+        "kind": "timestamp"
+      },
+      {
+        "name": "exitedAt",
+        "type": "datetime"
+      },
+      {
+        "name": "environment",
+        "type": "json"
+      },
+      {
+        "name": "tags",
+        "type": "json"
+      },
+      {
+        "name": "environmentError",
+        "type": "string"
+      },
+      {
+        "name": "groups",
+        "type": "json"
+      },
+      {
+        "name": "stackTransports",
+        "type": "json"
+      }
+    ],
+    "results": [
+      {
+        "name": "facets",
+        "columns": [
+          {
+            "name": "process",
+            "type": "string"
+          },
+          {
+            "name": "observedAt",
+            "type": "datetime",
+            "kind": "timestamp"
+          },
+          {
+            "name": "tick",
+            "type": "number",
+            "format": "integer"
+          },
+          {
+            "name": "facet",
+            "type": "string"
+          },
+          {
+            "name": "entity",
+            "type": "string"
+          },
+          {
+            "name": "operation",
+            "type": "string"
+          },
+          {
+            "name": "directionSource",
+            "type": "string"
+          },
+          {
+            "name": "reason",
+            "type": "string"
+          },
+          {
+            "name": "resource",
+            "type": "json"
+          }
+        ]
+      },
+      {
+        "name": "metrics",
+        "columns": [
+          {
+            "name": "entity",
+            "type": "string",
+            "filter": {
+              "kind": "exact"
+            }
+          },
+          {
+            "name": "observedAt",
+            "type": "datetime",
+            "kind": "timestamp"
+          },
+          {
+            "name": "tick",
+            "type": "number",
+            "format": "integer"
+          },
+          {
+            "name": "cpuPercent",
+            "type": "number",
+            "unit": "percent"
+          },
+          {
+            "name": "rssBytes",
+            "type": "number",
+            "format": "integer",
+            "unit": "bytes"
+          },
+          {
+            "name": "memoryPercent",
+            "type": "number",
+            "unit": "percent"
+          },
+          {
+            "name": "diskReadBytes",
+            "type": "number",
+            "format": "integer",
+            "unit": "bytes"
+          },
+          {
+            "name": "diskWriteBytes",
+            "type": "number",
+            "format": "integer",
+            "unit": "bytes"
+          },
+          {
+            "name": "openFiles",
+            "type": "number",
+            "format": "integer"
+          },
+          {
+            "name": "receivingSockets",
+            "type": "number",
+            "format": "integer"
+          },
+          {
+            "name": "connectionsIn",
+            "type": "number",
+            "format": "integer"
+          },
+          {
+            "name": "connectionsOut",
+            "type": "number",
+            "format": "integer"
+          },
+          {
+            "name": "connectionsUnknown",
+            "type": "number",
+            "format": "integer"
+          },
+          {
+            "name": "diskReadBps",
+            "type": "number",
+            "unit": "Bps"
+          },
+          {
+            "name": "diskWriteBps",
+            "type": "number",
+            "unit": "Bps"
+          },
+          {
+            "name": "netRxBps",
+            "type": "number",
+            "unit": "Bps"
+          },
+          {
+            "name": "netTxBps",
+            "type": "number",
+            "unit": "Bps"
+          },
+          {
+            "name": "swapBytes",
+            "type": "number",
+            "format": "integer",
+            "unit": "bytes"
+          },
+          {
+            "name": "compressedBytes",
+            "type": "number",
+            "format": "integer",
+            "unit": "bytes"
+          }
+        ]
+      }
+    ],
+    "exportFormats": [
+      {
+        "name": "ndjson",
+        "ext": "ndjson",
+        "mime": "application/x-ndjson"
+      }
+    ],
+    "flags": [
+      {
+        "name": "catalog",
+        "type": "string",
+        "description": "",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "data-dir",
+        "type": "string",
+        "description": "Directory holding telltale's trace data (default: $XDG_CACHE_HOME/telltale or the OS cache dir)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "duration",
+        "type": "duration",
+        "description": "Stop the run after this long, e.g. 30s (0 runs until the command exits or Ctrl+C)",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "environment-keys",
+        "type": "stringSlice",
+        "description": "Environment variables to read onto each process",
+        "default": "[]",
+        "required": false
+      },
+      {
+        "name": "environment-prefixes",
+        "type": "stringSlice",
+        "description": "Prefixes of the environment variables to read onto each process",
+        "default": "[]",
+        "required": false
+      },
+      {
+        "name": "facets",
+        "type": "stringSlice",
+        "description": "",
+        "default": "[]",
+        "required": false
+      },
+      {
+        "name": "follow",
+        "type": "bool",
+        "description": "Print every armed capture's records while recording",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "interval",
+        "type": "string",
+        "description": "How often the tree is sampled such as 1s (at least 250ms)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "net",
+        "type": "bool",
+        "description": "",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "pid",
+        "type": "int",
+        "description": "Process to observe",
+        "default": "0",
+        "required": false
+      },
+      {
+        "name": "seam",
+        "type": "string",
+        "description": "How the capture is armed (supported seams: [process host]) (one of process, host)",
+        "default": "process",
+        "required": false
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "description": "Record order: seq or timestamp",
+        "default": "seq",
+        "required": false
+      },
+      {
+        "name": "tui",
+        "type": "bool",
+        "description": "Follow records in an interactive terminal",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "ui",
+        "type": "bool",
+        "description": "Open this run's traces in a local web viewer; keep serving until Ctrl+C",
+        "default": "false",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "prometheus",
+    "title": "Prometheus scrapes",
+    "capabilities": {
+      "live": true
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "endpoints": {
+          "type": "array",
+          "title": "Endpoints",
+          "description": "Prometheus metrics URLs to scrape such as http://localhost:8080/metrics",
+          "items": {
+            "type": "string"
+          }
+        },
+        "interval": {
+          "type": "string",
+          "title": "Interval",
+          "description": "How often each endpoint is scraped such as 15s (at least 1s)",
+          "default": "15s"
+        },
+        "labels": {
+          "type": "object",
+          "title": "Labels",
+          "description": "Extra labels every scraped sample is stored with such as env=dev",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "target": {
+          "properties": {
+            "agent": {
+              "type": "string",
+              "title": "Agent",
+              "description": "Agent ID to observe"
+            },
+            "allowMutation": {
+              "type": "boolean",
+              "title": "Allow mutation",
+              "description": "Allow probes to change runtime settings"
+            },
+            "pid": {
+              "type": "integer",
+              "title": "PID",
+              "format": "int32",
+              "description": "Process to observe"
+            },
+            "seam": {
+              "type": "string",
+              "title": "Seam",
+              "description": "How the capture is armed (supported seams: [host])",
+              "enum": [
+                "host"
+              ],
+              "default": "host"
+            },
+            "selector": {
+              "type": "object",
+              "title": "Selector",
+              "description": "Agent resource attributes to match",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "wait": {
+              "type": "boolean",
+              "title": "Wait for agents",
+              "description": "Wait for a matching agent to connect"
+            }
+          },
+          "type": "object",
+          "x-telltale-seams": [
+            "host"
+          ]
+        },
+        "timeout": {
+          "type": "string",
+          "title": "Timeout",
+          "description": "How long one scrape may take such as 5s (at most the interval; default the shorter of 10s and the interval)"
+        }
+      }
+    },
+    "columns": [
+      {
+        "name": "takenAt",
+        "label": "Scraped",
+        "type": "datetime",
+        "kind": "timestamp"
+      },
+      {
+        "name": "endpoint",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "health",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "durationMs",
+        "label": "Duration",
+        "type": "duration",
+        "unit": "ms"
+      },
+      {
+        "name": "samples",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "error",
+        "type": "string"
+      }
+    ],
+    "exportFormats": [
+      {
+        "name": "ndjson",
+        "ext": "ndjson",
+        "mime": "application/x-ndjson"
+      }
+    ],
+    "flags": [
+      {
+        "name": "data-dir",
+        "type": "string",
+        "description": "Directory holding telltale's trace data (default: $XDG_CACHE_HOME/telltale or the OS cache dir)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "duration",
+        "type": "duration",
+        "description": "Stop the run after this long, e.g. 30s (0 runs until the command exits or Ctrl+C)",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "endpoints",
+        "type": "stringSlice",
+        "description": "Prometheus metrics URLs to scrape such as http://localhost:8080/metrics",
+        "default": "[]",
+        "required": false
+      },
+      {
+        "name": "follow",
+        "type": "bool",
+        "description": "Print every armed capture's records while recording",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "interval",
+        "type": "string",
+        "description": "How often each endpoint is scraped such as 15s (at least 1s)",
+        "default": "15s",
+        "required": false
+      },
+      {
+        "name": "labels",
+        "type": "stringSlice",
+        "description": "Extra labels every scraped sample is stored with such as env=dev (key=value pairs)",
+        "default": "[]",
+        "required": false
+      },
+      {
+        "name": "pid",
+        "type": "int",
+        "description": "Process to observe",
+        "default": "0",
+        "required": false
+      },
+      {
+        "name": "seam",
+        "type": "string",
+        "description": "How the capture is armed (supported seams: [host]) (one of host)",
+        "default": "host",
+        "required": false
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "description": "Record order: seq or timestamp",
+        "default": "seq",
+        "required": false
+      },
+      {
+        "name": "timeout",
+        "type": "string",
+        "description": "How long one scrape may take such as 5s (at most the interval; default the shorter of 10s and the interval)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "tui",
+        "type": "bool",
+        "description": "Follow records in an interactive terminal",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "ui",
+        "type": "bool",
+        "description": "Open this run's traces in a local web viewer; keep serving until Ctrl+C",
+        "default": "false",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "query",
+    "title": "Query profile reads",
+    "capabilities": {
+      "historical": true,
+      "follow": true
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "every": {
+          "description": "Re-read the rows written since the last read at this interval; e.g. 15s",
+          "title": "Every",
+          "type": "string",
+          "x-clicky-order": 5
+        },
+        "from": {
+          "description": "Start of the window; a time or date math such as now-1h",
+          "title": "From",
+          "type": "string",
+          "x-clicky-order": 3
+        },
+        "limit": {
+          "description": "Most rows one read keeps; 0 keeps all",
+          "format": "int32",
+          "title": "Limit",
+          "type": "integer",
+          "x-clicky-order": 7
+        },
+        "params": {
+          "additionalProperties": {
+            "type": "object",
+            "description": "Dynamic response value"
+          },
+          "description": "The profile's params by name",
+          "title": "Params",
+          "type": "object",
+          "x-clicky-order": 2
+        },
+        "profile": {
+          "description": "Saved query profile to read",
+          "title": "Profile",
+          "type": "string",
+          "x-clicky-order": 0
+        },
+        "provider": {
+          "type": "object",
+          "title": "Provider",
+          "format": "json",
+          "description": "A provider read in place: its type and connection or query and that provider's typed options",
+          "properties": {
+            "bigquery": {
+              "type": "object",
+              "properties": {
+                "mapping": {
+                  "type": "object",
+                  "properties": {
+                    "host": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "id": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "ignore": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "message": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "severity": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "source": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "timestamp": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "nullable": true
+                },
+                "project": {
+                  "type": "string"
+                }
+              },
+              "nullable": true
+            },
+            "cloudwatchmetrics": {
+              "type": "object",
+              "properties": {
+                "concurrency": {
+                  "type": "integer",
+                  "format": "int32"
+                },
+                "dimensions": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "endpoint": {
+                  "type": "string"
+                },
+                "language": {
+                  "type": "string"
+                },
+                "metrics": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "dimensions": {
+                        "type": "object",
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "namespace": {
+                        "type": "string"
+                      },
+                      "statistic": {
+                        "type": "string"
+                      },
+                      "unit": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name",
+                      "namespace"
+                    ]
+                  }
+                },
+                "namespace": {
+                  "type": "string"
+                },
+                "range": {
+                  "type": "object",
+                  "properties": {
+                    "end": {
+                      "type": "string"
+                    },
+                    "start": {
+                      "type": "string"
+                    },
+                    "step": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "start",
+                    "end",
+                    "step"
+                  ],
+                  "nullable": true
+                },
+                "region": {
+                  "type": "string"
+                },
+                "statistic": {
+                  "type": "string"
+                },
+                "unit": {
+                  "type": "string"
+                }
+              },
+              "nullable": true
+            },
+            "connection": {
+              "type": "string",
+              "title": "Connection"
+            },
+            "http": {
+              "type": "object",
+              "properties": {
+                "body": {
+                  "type": "string"
+                },
+                "jsonpath": {
+                  "type": "string"
+                },
+                "method": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                }
+              },
+              "nullable": true
+            },
+            "jaeger": {
+              "type": "object",
+              "properties": {
+                "end": {
+                  "type": "string"
+                },
+                "limit": {
+                  "type": "string"
+                },
+                "lookback": {
+                  "type": "string"
+                },
+                "maxDuration": {
+                  "type": "string"
+                },
+                "minDuration": {
+                  "type": "string"
+                },
+                "operation": {
+                  "type": "string"
+                },
+                "service": {
+                  "type": "string"
+                },
+                "start": {
+                  "type": "string"
+                },
+                "tags": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                }
+              },
+              "nullable": true
+            },
+            "opensearch": {
+              "type": "object",
+              "properties": {
+                "address": {
+                  "type": "string"
+                },
+                "index": {
+                  "type": "string"
+                },
+                "limit": {
+                  "type": "string"
+                },
+                "pagingMode": {
+                  "type": "string"
+                },
+                "pagingThreshold": {
+                  "type": "integer",
+                  "format": "int32",
+                  "nullable": true
+                },
+                "search": {
+                  "type": "object",
+                  "properties": {
+                    "aggregations": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    },
+                    "fields": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "from": {
+                      "type": "integer",
+                      "format": "int32",
+                      "nullable": true
+                    },
+                    "query": {
+                      "type": "object",
+                      "properties": {
+                        "analyzer": {
+                          "type": "string"
+                        },
+                        "boost": {
+                          "type": "number",
+                          "format": "double",
+                          "nullable": true
+                        },
+                        "caseInsensitive": {
+                          "type": "boolean",
+                          "nullable": true
+                        },
+                        "conditions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "description": "Recursive reference to esdsl.Condition"
+                          }
+                        },
+                        "escape": {
+                          "type": "boolean",
+                          "nullable": true
+                        },
+                        "field": {
+                          "type": "string"
+                        },
+                        "fields": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "format": {
+                          "type": "string"
+                        },
+                        "fuzziness": {
+                          "type": "string"
+                        },
+                        "gt": {
+                          "type": "object",
+                          "properties": {
+                            "Literal": {
+                              "type": "object",
+                              "description": "Dynamic response value"
+                            },
+                            "Param": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "Param"
+                          ],
+                          "nullable": true
+                        },
+                        "gte": {
+                          "type": "object",
+                          "properties": {
+                            "Literal": {
+                              "type": "object",
+                              "description": "Dynamic response value"
+                            },
+                            "Param": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "Param"
+                          ],
+                          "nullable": true
+                        },
+                        "lt": {
+                          "type": "object",
+                          "properties": {
+                            "Literal": {
+                              "type": "object",
+                              "description": "Dynamic response value"
+                            },
+                            "Param": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "Param"
+                          ],
+                          "nullable": true
+                        },
+                        "lte": {
+                          "type": "object",
+                          "properties": {
+                            "Literal": {
+                              "type": "object",
+                              "description": "Dynamic response value"
+                            },
+                            "Param": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "Param"
+                          ],
+                          "nullable": true
+                        },
+                        "matchOperator": {
+                          "type": "string"
+                        },
+                        "minimumShouldMatch": {
+                          "type": "string"
+                        },
+                        "multiMatchType": {
+                          "type": "string"
+                        },
+                        "occur": {
+                          "type": "string"
+                        },
+                        "op": {
+                          "type": "string"
+                        },
+                        "optional": {
+                          "type": "boolean"
+                        },
+                        "path": {
+                          "type": "string"
+                        },
+                        "scoreMode": {
+                          "type": "string"
+                        },
+                        "slop": {
+                          "type": "integer",
+                          "format": "int32",
+                          "nullable": true
+                        },
+                        "timeZone": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "object",
+                          "properties": {
+                            "Literal": {
+                              "type": "object",
+                              "description": "Dynamic response value"
+                            },
+                            "Param": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "Param"
+                          ],
+                          "nullable": true
+                        },
+                        "values": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "Literal": {
+                                "type": "object",
+                                "description": "Dynamic response value"
+                              },
+                              "Param": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "Param"
+                            ]
+                          }
+                        },
+                        "when": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "op"
+                      ],
+                      "nullable": true
+                    },
+                    "size": {
+                      "type": "integer",
+                      "format": "int32",
+                      "nullable": true
+                    },
+                    "sort": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "missing": {
+                            "type": "string"
+                          },
+                          "mode": {
+                            "type": "string"
+                          },
+                          "order": {
+                            "type": "string"
+                          },
+                          "unmappedType": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field"
+                        ]
+                      }
+                    },
+                    "source": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "nullable": true
+                        },
+                        "excludes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "includes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "nullable": true
+                    },
+                    "storedFields": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "timeField": {
+                      "type": "string"
+                    },
+                    "timeFieldFormat": {
+                      "type": "string"
+                    },
+                    "trackTotalHits": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "nullable": true
+                        },
+                        "threshold": {
+                          "type": "integer",
+                          "format": "int32",
+                          "nullable": true
+                        }
+                      },
+                      "nullable": true
+                    }
+                  },
+                  "nullable": true
+                },
+                "tailLag": {
+                  "type": "string"
+                },
+                "tailPoll": {
+                  "type": "string"
+                }
+              },
+              "nullable": true
+            },
+            "opentelemetry": {
+              "type": "object",
+              "properties": {
+                "dateField": {
+                  "type": "string"
+                },
+                "format": {
+                  "type": "string"
+                },
+                "index": {
+                  "type": "string"
+                },
+                "limit": {
+                  "type": "integer",
+                  "format": "int32"
+                },
+                "pagingMode": {
+                  "type": "string"
+                },
+                "pagingThreshold": {
+                  "type": "integer",
+                  "format": "int32",
+                  "nullable": true
+                },
+                "search": {
+                  "type": "object",
+                  "properties": {
+                    "aggregations": {
+                      "type": "object",
+                      "additionalProperties": {}
+                    },
+                    "fields": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "from": {
+                      "type": "integer",
+                      "format": "int32",
+                      "nullable": true
+                    },
+                    "query": {
+                      "type": "object",
+                      "properties": {
+                        "analyzer": {
+                          "type": "string"
+                        },
+                        "boost": {
+                          "type": "number",
+                          "format": "double",
+                          "nullable": true
+                        },
+                        "caseInsensitive": {
+                          "type": "boolean",
+                          "nullable": true
+                        },
+                        "conditions": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "description": "Recursive reference to esdsl.Condition"
+                          }
+                        },
+                        "escape": {
+                          "type": "boolean",
+                          "nullable": true
+                        },
+                        "field": {
+                          "type": "string"
+                        },
+                        "fields": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "format": {
+                          "type": "string"
+                        },
+                        "fuzziness": {
+                          "type": "string"
+                        },
+                        "gt": {
+                          "type": "object",
+                          "properties": {
+                            "Literal": {
+                              "type": "object",
+                              "description": "Dynamic response value"
+                            },
+                            "Param": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "Param"
+                          ],
+                          "nullable": true
+                        },
+                        "gte": {
+                          "type": "object",
+                          "properties": {
+                            "Literal": {
+                              "type": "object",
+                              "description": "Dynamic response value"
+                            },
+                            "Param": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "Param"
+                          ],
+                          "nullable": true
+                        },
+                        "lt": {
+                          "type": "object",
+                          "properties": {
+                            "Literal": {
+                              "type": "object",
+                              "description": "Dynamic response value"
+                            },
+                            "Param": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "Param"
+                          ],
+                          "nullable": true
+                        },
+                        "lte": {
+                          "type": "object",
+                          "properties": {
+                            "Literal": {
+                              "type": "object",
+                              "description": "Dynamic response value"
+                            },
+                            "Param": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "Param"
+                          ],
+                          "nullable": true
+                        },
+                        "matchOperator": {
+                          "type": "string"
+                        },
+                        "minimumShouldMatch": {
+                          "type": "string"
+                        },
+                        "multiMatchType": {
+                          "type": "string"
+                        },
+                        "occur": {
+                          "type": "string"
+                        },
+                        "op": {
+                          "type": "string"
+                        },
+                        "optional": {
+                          "type": "boolean"
+                        },
+                        "path": {
+                          "type": "string"
+                        },
+                        "scoreMode": {
+                          "type": "string"
+                        },
+                        "slop": {
+                          "type": "integer",
+                          "format": "int32",
+                          "nullable": true
+                        },
+                        "timeZone": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "object",
+                          "properties": {
+                            "Literal": {
+                              "type": "object",
+                              "description": "Dynamic response value"
+                            },
+                            "Param": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "Param"
+                          ],
+                          "nullable": true
+                        },
+                        "values": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "Literal": {
+                                "type": "object",
+                                "description": "Dynamic response value"
+                              },
+                              "Param": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "Param"
+                            ]
+                          }
+                        },
+                        "when": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "op"
+                      ],
+                      "nullable": true
+                    },
+                    "size": {
+                      "type": "integer",
+                      "format": "int32",
+                      "nullable": true
+                    },
+                    "sort": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "field": {
+                            "type": "string"
+                          },
+                          "missing": {
+                            "type": "string"
+                          },
+                          "mode": {
+                            "type": "string"
+                          },
+                          "order": {
+                            "type": "string"
+                          },
+                          "unmappedType": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "field"
+                        ]
+                      }
+                    },
+                    "source": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "nullable": true
+                        },
+                        "excludes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "includes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "nullable": true
+                    },
+                    "storedFields": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "timeField": {
+                      "type": "string"
+                    },
+                    "timeFieldFormat": {
+                      "type": "string"
+                    },
+                    "trackTotalHits": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean",
+                          "nullable": true
+                        },
+                        "threshold": {
+                          "type": "integer",
+                          "format": "int32",
+                          "nullable": true
+                        }
+                      },
+                      "nullable": true
+                    }
+                  },
+                  "nullable": true
+                },
+                "selectFields": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "sourceExcludes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "nullable": true
+            },
+            "postgrest": {
+              "type": "object",
+              "properties": {
+                "jsonpath": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                }
+              },
+              "nullable": true
+            },
+            "prometheus": {
+              "type": "object",
+              "properties": {
+                "language": {
+                  "type": "string"
+                },
+                "range": {
+                  "type": "object",
+                  "properties": {
+                    "end": {
+                      "type": "string"
+                    },
+                    "start": {
+                      "type": "string"
+                    },
+                    "step": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "start",
+                    "end",
+                    "step"
+                  ],
+                  "nullable": true
+                },
+                "selectLabels": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "url": {
+                  "type": "string"
+                }
+              },
+              "nullable": true
+            },
+            "query": {
+              "type": "string",
+              "title": "Query"
+            },
+            "sql": {
+              "type": "object",
+              "properties": {
+                "database": {
+                  "type": "string"
+                },
+                "partitions": {
+                  "type": "object",
+                  "properties": {
+                    "concurrency": {
+                      "type": "integer",
+                      "format": "int32"
+                    },
+                    "files": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "glob": {
+                      "type": "string"
+                    },
+                    "immutable": {
+                      "type": "boolean"
+                    },
+                    "labels": {
+                      "type": "string"
+                    }
+                  },
+                  "nullable": true
+                },
+                "type": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                }
+              },
+              "nullable": true
+            },
+            "type": {
+              "type": "string",
+              "title": "Type"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "nullable": true
+        },
+        "target": {
+          "properties": {
+            "agent": {
+              "type": "string",
+              "title": "Agent",
+              "description": "Agent ID to observe"
+            },
+            "allowMutation": {
+              "type": "boolean",
+              "title": "Allow mutation",
+              "description": "Allow probes to change runtime settings"
+            },
+            "pid": {
+              "type": "integer",
+              "title": "PID",
+              "format": "int32",
+              "description": "Process to observe"
+            },
+            "seam": {
+              "type": "string",
+              "title": "Seam",
+              "description": "How the capture is armed (supported seams: [host])",
+              "enum": [
+                "host"
+              ],
+              "default": "host"
+            },
+            "selector": {
+              "type": "object",
+              "title": "Selector",
+              "description": "Agent resource attributes to match",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "wait": {
+              "type": "boolean",
+              "title": "Wait for agents",
+              "description": "Wait for a matching agent to connect"
+            }
+          },
+          "type": "object",
+          "x-telltale-seams": [
+            "host"
+          ]
+        },
+        "to": {
+          "description": "End of the window; empty is now",
+          "title": "To",
+          "type": "string",
+          "x-clicky-order": 4
+        },
+        "untilStopped": {
+          "description": "Read once when the capture stops; up to that moment",
+          "title": "Until stopped",
+          "type": "boolean",
+          "x-clicky-order": 6
+        }
+      }
+    },
+    "columns": [
+      {
+        "name": "time",
+        "label": "Time",
+        "type": "datetime",
+        "kind": "timestamp"
+      },
+      {
+        "name": "profile",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "provider",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "row",
+        "type": "json",
+        "hidden": true
+      }
+    ],
+    "exportFormats": [
+      {
+        "name": "ndjson",
+        "ext": "ndjson",
+        "mime": "application/x-ndjson"
+      }
+    ],
+    "flags": [
+      {
+        "name": "data-dir",
+        "type": "string",
+        "description": "Directory holding telltale's trace data (default: $XDG_CACHE_HOME/telltale or the OS cache dir)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "duration",
+        "type": "duration",
+        "description": "Stop the run after this long, e.g. 30s (0 runs until the command exits or Ctrl+C)",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "every",
+        "type": "string",
+        "description": "Re-read the rows written since the last read at this interval; e.g. 15s",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "follow",
+        "type": "bool",
+        "description": "Print every armed capture's records while recording",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "from",
+        "type": "string",
+        "description": "Start of the window; a time or date math such as now-1h",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "limit",
+        "type": "int",
+        "description": "Most rows one read keeps; 0 keeps all",
+        "default": "0",
+        "required": false
+      },
+      {
+        "name": "params",
+        "type": "string",
+        "description": "The profile's params by name (JSON object)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "pid",
+        "type": "int",
+        "description": "Process to observe",
+        "default": "0",
+        "required": false
+      },
+      {
+        "name": "profile",
+        "type": "string",
+        "description": "Saved query profile to read",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "provider",
+        "type": "string",
+        "description": "A provider read in place: its type and connection or query and that provider's typed options (JSON object)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "seam",
+        "type": "string",
+        "description": "How the capture is armed (supported seams: [host]) (one of host)",
+        "default": "host",
+        "required": false
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "description": "Record order: seq or timestamp",
+        "default": "seq",
+        "required": false
+      },
+      {
+        "name": "to",
+        "type": "string",
+        "description": "End of the window; empty is now",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "tui",
+        "type": "bool",
+        "description": "Follow records in an interactive terminal",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "ui",
+        "type": "bool",
+        "description": "Open this run's traces in a local web viewer; keep serving until Ctrl+C",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "until-stopped",
+        "type": "bool",
+        "description": "Read once when the capture stops; up to that moment",
+        "default": "false",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "spans",
+    "title": "Spans",
+    "capabilities": {
+      "live": true,
+      "historical": true,
+      "follow": true
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "opensearch": {
+          "type": "object",
+          "title": "OpenSearch",
+          "description": "Index to read spans from on the host seam",
+          "properties": {
+            "connection": {
+              "type": "string",
+              "title": "Connection"
+            },
+            "dateField": {
+              "type": "string",
+              "title": "Date field"
+            },
+            "followIndex": {
+              "type": "boolean",
+              "title": "Follow index"
+            },
+            "format": {
+              "type": "string",
+              "title": "Format"
+            },
+            "from": {
+              "type": "string",
+              "title": "From"
+            },
+            "index": {
+              "type": "string",
+              "title": "Index"
+            },
+            "lag": {
+              "type": "string",
+              "title": "Lag"
+            },
+            "poll": {
+              "type": "string",
+              "title": "Poll"
+            },
+            "search": {
+              "type": "object",
+              "title": "Structured search",
+              "format": "json",
+              "properties": {
+                "aggregations": {
+                  "type": "object",
+                  "additionalProperties": {}
+                },
+                "fields": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "from": {
+                  "type": "integer",
+                  "format": "int32",
+                  "nullable": true
+                },
+                "query": {
+                  "type": "object",
+                  "properties": {
+                    "analyzer": {
+                      "type": "string"
+                    },
+                    "boost": {
+                      "type": "number",
+                      "format": "double",
+                      "nullable": true
+                    },
+                    "caseInsensitive": {
+                      "type": "boolean",
+                      "nullable": true
+                    },
+                    "conditions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "description": "Recursive reference to esdsl.Condition"
+                      }
+                    },
+                    "escape": {
+                      "type": "boolean",
+                      "nullable": true
+                    },
+                    "field": {
+                      "type": "string"
+                    },
+                    "fields": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "format": {
+                      "type": "string"
+                    },
+                    "fuzziness": {
+                      "type": "string"
+                    },
+                    "gt": {
+                      "type": "object",
+                      "properties": {
+                        "Literal": {
+                          "type": "object",
+                          "description": "Dynamic response value"
+                        },
+                        "Param": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "Param"
+                      ],
+                      "nullable": true
+                    },
+                    "gte": {
+                      "type": "object",
+                      "properties": {
+                        "Literal": {
+                          "type": "object",
+                          "description": "Dynamic response value"
+                        },
+                        "Param": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "Param"
+                      ],
+                      "nullable": true
+                    },
+                    "lt": {
+                      "type": "object",
+                      "properties": {
+                        "Literal": {
+                          "type": "object",
+                          "description": "Dynamic response value"
+                        },
+                        "Param": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "Param"
+                      ],
+                      "nullable": true
+                    },
+                    "lte": {
+                      "type": "object",
+                      "properties": {
+                        "Literal": {
+                          "type": "object",
+                          "description": "Dynamic response value"
+                        },
+                        "Param": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "Param"
+                      ],
+                      "nullable": true
+                    },
+                    "matchOperator": {
+                      "type": "string"
+                    },
+                    "minimumShouldMatch": {
+                      "type": "string"
+                    },
+                    "multiMatchType": {
+                      "type": "string"
+                    },
+                    "occur": {
+                      "type": "string"
+                    },
+                    "op": {
+                      "type": "string"
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "scoreMode": {
+                      "type": "string"
+                    },
+                    "slop": {
+                      "type": "integer",
+                      "format": "int32",
+                      "nullable": true
+                    },
+                    "timeZone": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "Literal": {
+                          "type": "object",
+                          "description": "Dynamic response value"
+                        },
+                        "Param": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "Param"
+                      ],
+                      "nullable": true
+                    },
+                    "values": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "Literal": {
+                            "type": "object",
+                            "description": "Dynamic response value"
+                          },
+                          "Param": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "Param"
+                        ]
+                      }
+                    },
+                    "when": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "op"
+                  ],
+                  "nullable": true
+                },
+                "size": {
+                  "type": "integer",
+                  "format": "int32",
+                  "nullable": true
+                },
+                "sort": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field": {
+                        "type": "string"
+                      },
+                      "missing": {
+                        "type": "string"
+                      },
+                      "mode": {
+                        "type": "string"
+                      },
+                      "order": {
+                        "type": "string"
+                      },
+                      "unmappedType": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "field"
+                    ]
+                  }
+                },
+                "source": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "nullable": true
+                    },
+                    "excludes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "includes": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "nullable": true
+                },
+                "storedFields": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "timeField": {
+                  "type": "string"
+                },
+                "timeFieldFormat": {
+                  "type": "string"
+                },
+                "trackTotalHits": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean",
+                      "nullable": true
+                    },
+                    "threshold": {
+                      "type": "integer",
+                      "format": "int32",
+                      "nullable": true
+                    }
+                  },
+                  "nullable": true
+                }
+              },
+              "nullable": true
+            },
+            "to": {
+              "type": "string",
+              "title": "To"
+            }
+          },
+          "required": [
+            "connection"
+          ],
+          "nullable": true
+        },
+        "target": {
+          "properties": {
+            "agent": {
+              "type": "string",
+              "title": "Agent",
+              "description": "Agent ID to observe"
+            },
+            "allowMutation": {
+              "type": "boolean",
+              "title": "Allow mutation",
+              "description": "Allow probes to change runtime settings"
+            },
+            "pid": {
+              "type": "integer",
+              "title": "PID",
+              "format": "int32",
+              "description": "Process to observe"
+            },
+            "seam": {
+              "type": "string",
+              "title": "Seam",
+              "description": "How the capture is armed (supported seams: [self agent host])",
+              "enum": [
+                "self",
+                "agent",
+                "host"
+              ],
+              "default": "self"
+            },
+            "selector": {
+              "type": "object",
+              "title": "Selector",
+              "description": "Agent resource attributes to match",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "wait": {
+              "type": "boolean",
+              "title": "Wait for agents",
+              "description": "Wait for a matching agent to connect"
+            }
+          },
+          "type": "object",
+          "x-telltale-seams": [
+            "self",
+            "agent",
+            "host"
+          ]
+        }
+      }
+    },
+    "columns": [
+      {
+        "name": "key",
+        "type": "string",
+        "filter": {
+          "kind": "exact"
+        }
+      },
+      {
+        "name": "traceId",
+        "type": "string",
+        "filter": {
+          "kind": "exact"
+        }
+      },
+      {
+        "name": "spanId",
+        "type": "string",
+        "filter": {
+          "kind": "exact"
+        }
+      },
+      {
+        "name": "parentId",
+        "type": "string",
+        "filter": {
+          "kind": "exact"
+        }
+      },
+      {
+        "name": "service",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "operation",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "kind",
+        "type": "string"
+      },
+      {
+        "name": "startedAt",
+        "type": "datetime",
+        "kind": "timestamp"
+      },
+      {
+        "name": "durationMs",
+        "type": "number"
+      },
+      {
+        "name": "status",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "attributes",
+        "type": "json",
+        "hidden": true
+      },
+      {
+        "name": "resource",
+        "type": "json",
+        "hidden": true
+      },
+      {
+        "name": "source",
+        "type": "json",
+        "hidden": true
+      },
+      {
+        "name": "native",
+        "type": "string",
+        "filter": {
+          "disabled": true
+        },
+        "hidden": true
+      },
+      {
+        "name": "digest",
+        "type": "string",
+        "filter": {
+          "disabled": true
+        },
+        "hidden": true
+      }
+    ],
+    "exportFormats": [
+      {
+        "name": "ndjson",
+        "ext": "ndjson",
+        "mime": "application/x-ndjson"
+      }
+    ],
+    "flags": [
+      {
+        "name": "agent",
+        "type": "string",
+        "description": "Agent ID to observe",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "allow-mutation",
+        "type": "bool",
+        "description": "Allow probes to change runtime settings",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "data-dir",
+        "type": "string",
+        "description": "Directory holding telltale's trace data (default: $XDG_CACHE_HOME/telltale or the OS cache dir)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "duration",
+        "type": "duration",
+        "description": "Stop the run after this long, e.g. 30s (0 runs until the command exits or Ctrl+C)",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "follow",
+        "type": "bool",
+        "description": "Print every armed capture's records while recording",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "opensearch-connection",
+        "type": "string",
+        "description": "Connection",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "opensearch-date-field",
+        "type": "string",
+        "description": "Date field",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "opensearch-follow-index",
+        "type": "bool",
+        "description": "Follow index",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "opensearch-format",
+        "type": "string",
+        "description": "Format",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "opensearch-from",
+        "type": "string",
+        "description": "From",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "opensearch-index",
+        "type": "string",
+        "description": "Index",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "opensearch-lag",
+        "type": "string",
+        "description": "Lag",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "opensearch-poll",
+        "type": "string",
+        "description": "Poll",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "opensearch-search",
+        "type": "string",
+        "description": "Structured search (JSON object)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "opensearch-to",
+        "type": "string",
+        "description": "To",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "pid",
+        "type": "int",
+        "description": "Process to observe",
+        "default": "0",
+        "required": false
+      },
+      {
+        "name": "seam",
+        "type": "string",
+        "description": "How the capture is armed (supported seams: [self agent host]) (one of self, agent, host)",
+        "default": "self",
+        "required": false
+      },
+      {
+        "name": "selector",
+        "type": "string",
+        "description": "Agent resource attributes to match",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "description": "Record order: seq or timestamp",
+        "default": "seq",
+        "required": false
+      },
+      {
+        "name": "tui",
+        "type": "bool",
+        "description": "Follow records in an interactive terminal",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "ui",
+        "type": "bool",
+        "description": "Open this run's traces in a local web viewer; keep serving until Ctrl+C",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "wait",
+        "type": "bool",
+        "description": "Wait for a matching agent to connect",
+        "default": "false",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "sql",
+    "title": "SQL statements",
+    "capabilities": {
+      "live": true
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "connection": {
+          "type": "string",
+          "title": "Connection label",
+          "description": "Label the statements are recorded under",
+          "default": "proxy"
+        },
+        "connections": {
+          "type": "array",
+          "title": "Connections",
+          "description": "Connections to observe",
+          "default": [
+            "self"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "dsn": {
+          "type": "string",
+          "title": "Upstream DSN",
+          "description": "The postgres:// URL to proxy with $VAR references expanded; empty reads GAVEL_DB_DSN then DATABASE_URL"
+        },
+        "env": {
+          "type": "string",
+          "title": "DSN variable",
+          "description": "Variable the command reads its DSN from; the upstream is read from it and the proxied DSN exported under it"
+        },
+        "export": {
+          "type": "array",
+          "title": "Export",
+          "description": "The only variables the proxied DSN is exported under instead of GAVEL_DB_DSN DATABASE_URL and the PG* variables",
+          "items": {
+            "type": "string"
+          }
+        },
+        "listen": {
+          "type": "string",
+          "title": "Listen",
+          "description": "host:port the proxy listens on such as 127.0.0.1:15432; empty takes a free loopback port"
+        },
+        "maxStatements": {
+          "type": "integer",
+          "title": "Maximum statements",
+          "format": "int32",
+          "description": "Most statements one capture stores before it is marked truncated",
+          "default": 20000
+        },
+        "minDuration": {
+          "type": "string",
+          "title": "Minimum duration",
+          "description": "Record statements that ran at least this long"
+        },
+        "params": {
+          "type": "boolean",
+          "title": "Capture bind values",
+          "description": "Keep bind parameter values which carry row data and may hold secrets"
+        },
+        "target": {
+          "properties": {
+            "agent": {
+              "type": "string",
+              "title": "Agent",
+              "description": "Agent ID to observe"
+            },
+            "allowMutation": {
+              "type": "boolean",
+              "title": "Allow mutation",
+              "description": "Allow probes to change runtime settings"
+            },
+            "pid": {
+              "type": "integer",
+              "title": "PID",
+              "format": "int32",
+              "description": "Process to observe"
+            },
+            "seam": {
+              "type": "string",
+              "title": "Seam",
+              "description": "How the capture is armed (supported seams: [self agent proxy])",
+              "enum": [
+                "self",
+                "agent",
+                "proxy"
+              ],
+              "default": "self"
+            },
+            "selector": {
+              "type": "object",
+              "title": "Selector",
+              "description": "Agent resource attributes to match",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "wait": {
+              "type": "boolean",
+              "title": "Wait for agents",
+              "description": "Wait for a matching agent to connect"
+            }
+          },
+          "type": "object",
+          "x-telltale-seams": [
+            "self",
+            "agent",
+            "proxy"
+          ]
+        }
+      }
+    },
+    "columns": [
+      {
+        "name": "truncated",
+        "label": "Truncated",
+        "type": "json",
+        "filter": {
+          "kind": "terms",
+          "array": true
+        }
+      },
+      {
+        "name": "startedAt",
+        "label": "Started",
+        "type": "datetime",
+        "kind": "timestamp"
+      },
+      {
+        "name": "connection",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "driver",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "op",
+        "label": "Op",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "tables",
+        "type": "json",
+        "filter": {
+          "kind": "terms",
+          "array": true
+        }
+      },
+      {
+        "name": "sql",
+        "label": "SQL",
+        "type": "string",
+        "filter": {
+          "kind": "text"
+        }
+      },
+      {
+        "name": "repeatKey",
+        "type": "string",
+        "filter": {
+          "kind": "exact"
+        },
+        "hidden": true
+      },
+      {
+        "name": "args",
+        "type": "json",
+        "hidden": true
+      },
+      {
+        "name": "durationMs",
+        "label": "Duration",
+        "type": "duration",
+        "unit": "ms"
+      },
+      {
+        "name": "rows",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "error",
+        "type": "string",
+        "filter": {
+          "kind": "text"
+        }
+      },
+      {
+        "name": "resource",
+        "type": "json"
+      }
+    ],
+    "exportFormats": [
+      {
+        "name": "ndjson",
+        "ext": "ndjson",
+        "mime": "application/x-ndjson"
+      }
+    ],
+    "flags": [
+      {
+        "name": "agent",
+        "type": "string",
+        "description": "Agent ID to observe",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "allow-mutation",
+        "type": "bool",
+        "description": "Allow probes to change runtime settings",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "connection",
+        "type": "string",
+        "description": "Label the statements are recorded under",
+        "default": "proxy",
+        "required": false
+      },
+      {
+        "name": "connections",
+        "type": "stringSlice",
+        "description": "Connections to observe",
+        "default": "[self]",
+        "required": false
+      },
+      {
+        "name": "data-dir",
+        "type": "string",
+        "description": "Directory holding telltale's trace data (default: $XDG_CACHE_HOME/telltale or the OS cache dir)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "dsn",
+        "type": "string",
+        "description": "The postgres:// URL to proxy with $VAR references expanded; empty reads GAVEL_DB_DSN then DATABASE_URL",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "duration",
+        "type": "duration",
+        "description": "Stop the run after this long, e.g. 30s (0 runs until the command exits or Ctrl+C)",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "env",
+        "type": "string",
+        "description": "Variable the command reads its DSN from; the upstream is read from it and the proxied DSN exported under it",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "export",
+        "type": "stringSlice",
+        "description": "The only variables the proxied DSN is exported under instead of GAVEL_DB_DSN DATABASE_URL and the PG* variables",
+        "default": "[]",
+        "required": false
+      },
+      {
+        "name": "follow",
+        "type": "bool",
+        "description": "Print every armed capture's records while recording",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "listen",
+        "type": "string",
+        "description": "host:port the proxy listens on such as 127.0.0.1:15432; empty takes a free loopback port",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "max-statements",
+        "type": "int",
+        "description": "Most statements one capture stores before it is marked truncated",
+        "default": "20000",
+        "required": false
+      },
+      {
+        "name": "min-duration",
+        "type": "string",
+        "description": "Record statements that ran at least this long",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "params",
+        "type": "bool",
+        "description": "Keep bind parameter values which carry row data and may hold secrets",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "pid",
+        "type": "int",
+        "description": "Process to observe",
+        "default": "0",
+        "required": false
+      },
+      {
+        "name": "seam",
+        "type": "string",
+        "description": "How the capture is armed (supported seams: [self agent proxy]) (one of self, agent, proxy)",
+        "default": "self",
+        "required": false
+      },
+      {
+        "name": "selector",
+        "type": "string",
+        "description": "Agent resource attributes to match",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "description": "Record order: seq or timestamp",
+        "default": "seq",
+        "required": false
+      },
+      {
+        "name": "tui",
+        "type": "bool",
+        "description": "Follow records in an interactive terminal",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "ui",
+        "type": "bool",
+        "description": "Open this run's traces in a local web viewer; keep serving until Ctrl+C",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "wait",
+        "type": "bool",
+        "description": "Wait for a matching agent to connect",
+        "default": "false",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "sql_deadlock",
+    "title": "SQL Server deadlocks",
+    "capabilities": {
+      "historical": true,
+      "follow": true
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "connection": {
+          "type": "string",
+          "title": "Connection"
+        },
+        "databases": {
+          "type": "array",
+          "title": "Databases",
+          "description": "Participant database patterns; empty selects the connected database",
+          "items": {
+            "type": "string"
+          }
+        },
+        "from": {
+          "type": "string",
+          "title": "From",
+          "description": "Historical window start in RFC3339; empty follows from now"
+        },
+        "poll": {
+          "type": "string",
+          "title": "Poll",
+          "description": "Follow poll interval",
+          "default": "30s"
+        },
+        "target": {
+          "properties": {
+            "agent": {
+              "type": "string",
+              "title": "Agent",
+              "description": "Agent ID to observe"
+            },
+            "allowMutation": {
+              "type": "boolean",
+              "title": "Allow mutation",
+              "description": "Allow probes to change runtime settings"
+            },
+            "pid": {
+              "type": "integer",
+              "title": "PID",
+              "format": "int32",
+              "description": "Process to observe"
+            },
+            "seam": {
+              "type": "string",
+              "title": "Seam",
+              "description": "How the capture is armed (supported seams: [connection])",
+              "enum": [
+                "connection"
+              ],
+              "default": "connection"
+            },
+            "selector": {
+              "type": "object",
+              "title": "Selector",
+              "description": "Agent resource attributes to match",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "wait": {
+              "type": "boolean",
+              "title": "Wait for agents",
+              "description": "Wait for a matching agent to connect"
+            }
+          },
+          "type": "object",
+          "x-telltale-seams": [
+            "connection"
+          ]
+        },
+        "to": {
+          "type": "string",
+          "title": "To",
+          "description": "Historical window end in RFC3339; empty uses server time"
+        }
+      },
+      "required": [
+        "connection"
+      ]
+    },
+    "columns": [
+      {
+        "name": "id",
+        "type": "string",
+        "filter": {
+          "kind": "exact"
+        }
+      },
+      {
+        "name": "timestamp",
+        "type": "datetime",
+        "kind": "timestamp"
+      },
+      {
+        "name": "database",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "databases",
+        "type": "json",
+        "filter": {
+          "kind": "terms",
+          "array": true
+        }
+      },
+      {
+        "name": "shape",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "signature",
+        "type": "string",
+        "filter": {
+          "kind": "text"
+        }
+      },
+      {
+        "name": "objects",
+        "type": "json",
+        "filter": {
+          "kind": "terms",
+          "array": true
+        }
+      },
+      {
+        "name": "indexes",
+        "type": "json",
+        "filter": {
+          "kind": "terms",
+          "array": true
+        }
+      },
+      {
+        "name": "lockTypes",
+        "type": "json",
+        "filter": {
+          "kind": "terms",
+          "array": true
+        }
+      },
+      {
+        "name": "hosts",
+        "type": "json",
+        "filter": {
+          "kind": "terms",
+          "array": true
+        }
+      },
+      {
+        "name": "apps",
+        "type": "json",
+        "filter": {
+          "kind": "terms",
+          "array": true
+        }
+      },
+      {
+        "name": "victims",
+        "type": "number",
+        "format": "integer",
+        "filter": {
+          "kind": "range"
+        }
+      },
+      {
+        "name": "participants",
+        "type": "number",
+        "format": "integer",
+        "filter": {
+          "kind": "range"
+        }
+      },
+      {
+        "name": "victimHost",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "victimApp",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "victimStatement",
+        "type": "string",
+        "filter": {
+          "kind": "text"
+        }
+      },
+      {
+        "name": "statementTruncated",
+        "type": "boolean",
+        "filter": {
+          "kind": "boolean"
+        }
+      },
+      {
+        "name": "statements",
+        "type": "string",
+        "filter": {
+          "kind": "text"
+        }
+      },
+      {
+        "name": "processes",
+        "type": "json"
+      },
+      {
+        "name": "resources",
+        "type": "json"
+      },
+      {
+        "name": "xml",
+        "type": "string",
+        "filter": {
+          "disabled": true
+        }
+      },
+      {
+        "name": "decodeError",
+        "type": "string",
+        "filter": {
+          "kind": "text"
+        }
+      }
+    ],
+    "exportFormats": [
+      {
+        "name": "ndjson",
+        "ext": "ndjson",
+        "mime": "application/x-ndjson"
+      }
+    ],
+    "flags": [
+      {
+        "name": "connection",
+        "type": "string",
+        "description": "Connection",
+        "default": "",
+        "required": true
+      },
+      {
+        "name": "data-dir",
+        "type": "string",
+        "description": "Directory holding telltale's trace data (default: $XDG_CACHE_HOME/telltale or the OS cache dir)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "databases",
+        "type": "stringSlice",
+        "description": "Participant database patterns; empty selects the connected database",
+        "default": "[]",
+        "required": false
+      },
+      {
+        "name": "duration",
+        "type": "duration",
+        "description": "Stop the run after this long, e.g. 30s (0 runs until the command exits or Ctrl+C)",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "follow",
+        "type": "bool",
+        "description": "Print every armed capture's records while recording",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "from",
+        "type": "string",
+        "description": "Historical window start in RFC3339; empty follows from now",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "poll",
+        "type": "string",
+        "description": "Follow poll interval",
+        "default": "30s",
+        "required": false
+      },
+      {
+        "name": "seam",
+        "type": "string",
+        "description": "How the capture is armed (supported seams: [connection]) (one of connection)",
+        "default": "connection",
+        "required": false
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "description": "Record order: seq or timestamp",
+        "default": "seq",
+        "required": false
+      },
+      {
+        "name": "to",
+        "type": "string",
+        "description": "Historical window end in RFC3339; empty uses server time",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "tui",
+        "type": "bool",
+        "description": "Follow records in an interactive terminal",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "ui",
+        "type": "bool",
+        "description": "Open this run's traces in a local web viewer; keep serving until Ctrl+C",
+        "default": "false",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "sql_plancache",
+    "title": "SQL Server plan cache samples",
+    "capabilities": {
+      "follow": true
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "connection": {
+          "type": "string",
+          "title": "Connection",
+          "description": "SQL Server connection reference"
+        },
+        "databases": {
+          "type": "array",
+          "title": "Databases",
+          "description": "Database patterns with * wildcards and ! exclusions; empty selects the connected database",
+          "items": {
+            "type": "string"
+          }
+        },
+        "minExecutions": {
+          "type": "integer",
+          "title": "Minimum executions",
+          "format": "int32",
+          "description": "Minimum interval executions to record"
+        },
+        "poll": {
+          "type": "string",
+          "title": "Poll",
+          "description": "Poll interval such as 30s",
+          "default": "30s"
+        },
+        "target": {
+          "properties": {
+            "agent": {
+              "type": "string",
+              "title": "Agent",
+              "description": "Agent ID to observe"
+            },
+            "allowMutation": {
+              "type": "boolean",
+              "title": "Allow mutation",
+              "description": "Allow probes to change runtime settings"
+            },
+            "pid": {
+              "type": "integer",
+              "title": "PID",
+              "format": "int32",
+              "description": "Process to observe"
+            },
+            "seam": {
+              "type": "string",
+              "title": "Seam",
+              "description": "How the capture is armed (supported seams: [connection])",
+              "enum": [
+                "connection"
+              ],
+              "default": "connection"
+            },
+            "selector": {
+              "type": "object",
+              "title": "Selector",
+              "description": "Agent resource attributes to match",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "wait": {
+              "type": "boolean",
+              "title": "Wait for agents",
+              "description": "Wait for a matching agent to connect"
+            }
+          },
+          "type": "object",
+          "x-telltale-seams": [
+            "connection"
+          ]
+        },
+        "text": {
+          "type": "array",
+          "title": "Statement text",
+          "description": "SQL text patterns with * wildcards and ! exclusions; bare values match substrings",
+          "items": {
+            "type": "string"
+          }
+        },
+        "top": {
+          "type": "integer",
+          "title": "Top",
+          "format": "int32",
+          "description": "Maximum cost samples per poll ranked by interval CPU; defaults to 200",
+          "default": 200
+        }
+      },
+      "required": [
+        "connection"
+      ]
+    },
+    "columns": [
+      {
+        "name": "sampledAt",
+        "label": "Sampled",
+        "type": "datetime",
+        "kind": "timestamp"
+      },
+      {
+        "name": "intervalMs",
+        "label": "Interval",
+        "type": "duration",
+        "unit": "ms"
+      },
+      {
+        "name": "planHandle",
+        "label": "Plan handle",
+        "type": "string",
+        "filter": {
+          "kind": "exact"
+        }
+      },
+      {
+        "name": "queryHash",
+        "type": "string",
+        "filter": {
+          "kind": "exact"
+        }
+      },
+      {
+        "name": "queryPlanHash",
+        "type": "string",
+        "filter": {
+          "kind": "exact"
+        }
+      },
+      {
+        "name": "database",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "object",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "objType",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "executions",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "cpuMs",
+        "label": "CPU",
+        "type": "duration",
+        "unit": "ms"
+      },
+      {
+        "name": "elapsedMs",
+        "label": "Elapsed",
+        "type": "duration",
+        "unit": "ms"
+      },
+      {
+        "name": "logicalReads",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "physicalReads",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "writes",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "rows",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "avgElapsedMs",
+        "label": "Average elapsed",
+        "type": "duration",
+        "unit": "ms"
+      },
+      {
+        "name": "avgCpuMs",
+        "label": "Average CPU",
+        "type": "duration",
+        "unit": "ms"
+      },
+      {
+        "name": "totalExecutions",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "totalCpuMs",
+        "label": "Total CPU",
+        "type": "duration",
+        "unit": "ms"
+      },
+      {
+        "name": "totalElapsedMs",
+        "label": "Total elapsed",
+        "type": "duration",
+        "unit": "ms"
+      },
+      {
+        "name": "useCounts",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "sizeBytes",
+        "type": "bytes"
+      },
+      {
+        "name": "creationTime",
+        "type": "datetime"
+      },
+      {
+        "name": "recompiled",
+        "type": "boolean",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "evicted",
+        "type": "boolean",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "sql",
+        "label": "SQL",
+        "type": "string",
+        "filter": {
+          "kind": "text"
+        }
+      }
+    ],
+    "exportFormats": [
+      {
+        "name": "ndjson",
+        "ext": "ndjson",
+        "mime": "application/x-ndjson"
+      }
+    ],
+    "flags": [
+      {
+        "name": "connection",
+        "type": "string",
+        "description": "SQL Server connection reference",
+        "default": "",
+        "required": true
+      },
+      {
+        "name": "data-dir",
+        "type": "string",
+        "description": "Directory holding telltale's trace data (default: $XDG_CACHE_HOME/telltale or the OS cache dir)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "databases",
+        "type": "stringSlice",
+        "description": "Database patterns with * wildcards and ! exclusions; empty selects the connected database",
+        "default": "[]",
+        "required": false
+      },
+      {
+        "name": "duration",
+        "type": "duration",
+        "description": "Stop the run after this long, e.g. 30s (0 runs until the command exits or Ctrl+C)",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "every",
+        "type": "duration",
+        "description": "Read the checkpointed captures this often, e.g. 10s",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "follow",
+        "type": "bool",
+        "description": "Print every armed capture's records while recording",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "min-executions",
+        "type": "int",
+        "description": "Minimum interval executions to record",
+        "default": "0",
+        "required": false
+      },
+      {
+        "name": "poll",
+        "type": "string",
+        "description": "Poll interval such as 30s",
+        "default": "30s",
+        "required": false
+      },
+      {
+        "name": "seam",
+        "type": "string",
+        "description": "How the capture is armed (supported seams: [connection]) (one of connection)",
+        "default": "connection",
+        "required": false
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "description": "Record order: seq or timestamp",
+        "default": "seq",
+        "required": false
+      },
+      {
+        "name": "text",
+        "type": "stringSlice",
+        "description": "SQL text patterns with * wildcards and ! exclusions; bare values match substrings",
+        "default": "[]",
+        "required": false
+      },
+      {
+        "name": "top",
+        "type": "int",
+        "description": "Maximum cost samples per poll ranked by interval CPU; defaults to 200",
+        "default": "200",
+        "required": false
+      },
+      {
+        "name": "tui",
+        "type": "bool",
+        "description": "Follow records in an interactive terminal",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "ui",
+        "type": "bool",
+        "description": "Open this run's traces in a local web viewer; keep serving until Ctrl+C",
+        "default": "false",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "sql_xevent",
+    "title": "SQL Server events",
+    "capabilities": {
+      "live": true
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "apps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "connection": {
+          "type": "string",
+          "title": "Connection"
+        },
+        "databases": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "hosts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "maxEvents": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "maxMemoryKb": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "minDuration": {
+          "type": "string"
+        },
+        "poll": {
+          "type": "string"
+        },
+        "session": {
+          "enum": [
+            "system_health"
+          ],
+          "title": "Existing session",
+          "type": "string"
+        },
+        "sessionName": {
+          "type": "string"
+        },
+        "tables": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "target": {
+          "properties": {
+            "agent": {
+              "type": "string",
+              "title": "Agent",
+              "description": "Agent ID to observe"
+            },
+            "allowMutation": {
+              "type": "boolean",
+              "title": "Allow mutation",
+              "description": "Allow probes to change runtime settings"
+            },
+            "pid": {
+              "type": "integer",
+              "title": "PID",
+              "format": "int32",
+              "description": "Process to observe"
+            },
+            "seam": {
+              "type": "string",
+              "title": "Seam",
+              "description": "How the capture is armed (supported seams: [connection])",
+              "enum": [
+                "connection"
+              ],
+              "default": "connection"
+            },
+            "selector": {
+              "type": "object",
+              "title": "Selector",
+              "description": "Agent resource attributes to match",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "wait": {
+              "type": "boolean",
+              "title": "Wait for agents",
+              "description": "Wait for a matching agent to connect"
+            }
+          },
+          "type": "object",
+          "x-telltale-seams": [
+            "connection"
+          ]
+        },
+        "types": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "users": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "connection"
+      ]
+    },
+    "columns": [
+      {
+        "name": "name",
+        "label": "Event",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "statementType",
+        "label": "Type",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "timestamp",
+        "label": "Time",
+        "type": "datetime",
+        "kind": "timestamp"
+      },
+      {
+        "name": "durationMs",
+        "label": "Duration",
+        "type": "duration",
+        "unit": "ms"
+      },
+      {
+        "name": "cpuMs",
+        "label": "CPU",
+        "type": "duration",
+        "unit": "ms"
+      },
+      {
+        "name": "logicalReads",
+        "label": "Logical reads",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "physicalReads",
+        "label": "Physical reads",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "writes",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "rowCount",
+        "label": "Rows",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "database",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "clientApp",
+        "label": "App",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "clientHost",
+        "label": "Host",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "username",
+        "label": "User",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "sessionId",
+        "label": "Session",
+        "type": "number",
+        "format": "integer",
+        "filter": {
+          "kind": "exact"
+        }
+      },
+      {
+        "name": "sql",
+        "label": "SQL",
+        "type": "string",
+        "filter": {
+          "kind": "text"
+        }
+      },
+      {
+        "name": "rawStatement",
+        "type": "string",
+        "hidden": true
+      },
+      {
+        "name": "tables",
+        "type": "json",
+        "filter": {
+          "kind": "terms",
+          "array": true
+        }
+      },
+      {
+        "name": "errorNumber",
+        "label": "Error",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "errorMessage",
+        "label": "Error message",
+        "type": "string",
+        "filter": {
+          "kind": "text"
+        }
+      },
+      {
+        "name": "objectName",
+        "label": "Object",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "objectType",
+        "label": "Object type",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "paramsUnavailable",
+        "label": "Params unavailable",
+        "type": "boolean"
+      },
+      {
+        "name": "additionalFields",
+        "type": "json",
+        "hidden": true
+      },
+      {
+        "name": "deadlock",
+        "type": "json",
+        "hidden": true
+      },
+      {
+        "name": "activityId",
+        "type": "string",
+        "hidden": true
+      },
+      {
+        "name": "activitySeq",
+        "type": "number",
+        "format": "integer",
+        "hidden": true
+      },
+      {
+        "name": "children",
+        "type": "json",
+        "hidden": true
+      }
+    ],
+    "exportFormats": [
+      {
+        "name": "ndjson",
+        "ext": "ndjson",
+        "mime": "application/x-ndjson"
+      }
+    ],
+    "flags": [
+      {
+        "name": "apps",
+        "type": "stringSlice",
+        "description": "",
+        "default": "[]",
+        "required": false
+      },
+      {
+        "name": "connection",
+        "type": "string",
+        "description": "Connection",
+        "default": "",
+        "required": true
+      },
+      {
+        "name": "data-dir",
+        "type": "string",
+        "description": "Directory holding telltale's trace data (default: $XDG_CACHE_HOME/telltale or the OS cache dir)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "databases",
+        "type": "stringSlice",
+        "description": "",
+        "default": "[]",
+        "required": false
+      },
+      {
+        "name": "duration",
+        "type": "duration",
+        "description": "Stop the run after this long, e.g. 30s (0 runs until the command exits or Ctrl+C)",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "events",
+        "type": "stringSlice",
+        "description": "",
+        "default": "[]",
+        "required": false
+      },
+      {
+        "name": "follow",
+        "type": "bool",
+        "description": "Print every armed capture's records while recording",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "hosts",
+        "type": "stringSlice",
+        "description": "",
+        "default": "[]",
+        "required": false
+      },
+      {
+        "name": "max-events",
+        "type": "int",
+        "description": "",
+        "default": "0",
+        "required": false
+      },
+      {
+        "name": "max-memory-kb",
+        "type": "int",
+        "description": "",
+        "default": "0",
+        "required": false
+      },
+      {
+        "name": "min-duration",
+        "type": "string",
+        "description": "",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "poll",
+        "type": "string",
+        "description": "",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "seam",
+        "type": "string",
+        "description": "How the capture is armed (supported seams: [connection]) (one of connection)",
+        "default": "connection",
+        "required": false
+      },
+      {
+        "name": "session",
+        "type": "string",
+        "description": "Existing session (one of system_health)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "session-name",
+        "type": "string",
+        "description": "",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "description": "Record order: seq or timestamp",
+        "default": "seq",
+        "required": false
+      },
+      {
+        "name": "tables",
+        "type": "stringSlice",
+        "description": "",
+        "default": "[]",
+        "required": false
+      },
+      {
+        "name": "tui",
+        "type": "bool",
+        "description": "Follow records in an interactive terminal",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "types",
+        "type": "stringSlice",
+        "description": "",
+        "default": "[]",
+        "required": false
+      },
+      {
+        "name": "ui",
+        "type": "bool",
+        "description": "Open this run's traces in a local web viewer; keep serving until Ctrl+C",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "users",
+        "type": "stringSlice",
+        "description": "",
+        "default": "[]",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "stacks",
+    "title": "Stack dumps",
+    "capabilities": {
+      "live": true
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "properties": {
+            "agent": {
+              "type": "string",
+              "title": "Agent",
+              "description": "Agent ID to observe"
+            },
+            "allowMutation": {
+              "type": "boolean",
+              "title": "Allow mutation",
+              "description": "Allow probes to change runtime settings"
+            },
+            "pid": {
+              "type": "integer",
+              "title": "PID",
+              "format": "int32",
+              "description": "Process to observe"
+            },
+            "seam": {
+              "type": "string",
+              "title": "Seam",
+              "description": "How the capture is armed (supported seams: [process agent self])",
+              "enum": [
+                "process",
+                "agent",
+                "self"
+              ],
+              "default": "process"
+            },
+            "selector": {
+              "type": "object",
+              "title": "Selector",
+              "description": "Agent resource attributes to match",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "wait": {
+              "type": "boolean",
+              "title": "Wait for agents",
+              "description": "Wait for a matching agent to connect"
+            }
+          },
+          "type": "object",
+          "x-telltale-seams": [
+            "process",
+            "agent",
+            "self"
+          ]
+        }
+      }
+    },
+    "columns": [
+      {
+        "name": "truncated",
+        "label": "Truncated",
+        "type": "json",
+        "filter": {
+          "kind": "terms",
+          "array": true
+        }
+      },
+      {
+        "name": "checkpointId",
+        "type": "string",
+        "filter": {
+          "kind": "exact"
+        },
+        "hidden": true
+      },
+      {
+        "name": "takenAt",
+        "label": "Taken",
+        "type": "datetime",
+        "kind": "timestamp"
+      },
+      {
+        "name": "reason",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "transport",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "key",
+        "type": "string",
+        "filter": {
+          "kind": "exact"
+        },
+        "hidden": true
+      },
+      {
+        "name": "pid",
+        "label": "PID",
+        "type": "number",
+        "format": "integer",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "format",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "goroutineId",
+        "label": "Goroutine",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "state",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "waitMinutes",
+        "label": "Waiting (min)",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "lockedToThread",
+        "type": "boolean"
+      },
+      {
+        "name": "frames",
+        "type": "json",
+        "hidden": true
+      },
+      {
+        "name": "createdBy",
+        "type": "json",
+        "hidden": true
+      },
+      {
+        "name": "raw",
+        "type": "string",
+        "filter": {
+          "kind": "none"
+        },
+        "hidden": true
+      },
+      {
+        "name": "error",
+        "type": "string"
+      }
+    ],
+    "exportFormats": [
+      {
+        "name": "ndjson",
+        "ext": "ndjson",
+        "mime": "application/x-ndjson"
+      },
+      {
+        "name": "text",
+        "ext": "txt",
+        "mime": "text/plain"
+      }
+    ],
+    "flags": [
+      {
+        "name": "agent",
+        "type": "string",
+        "description": "Agent ID to observe",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "allow-mutation",
+        "type": "bool",
+        "description": "Allow probes to change runtime settings",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "data-dir",
+        "type": "string",
+        "description": "Directory holding telltale's trace data (default: $XDG_CACHE_HOME/telltale or the OS cache dir)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "duration",
+        "type": "duration",
+        "description": "Stop the run after this long, e.g. 30s (0 runs until the command exits or Ctrl+C)",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "every",
+        "type": "duration",
+        "description": "Read the checkpointed captures this often, e.g. 10s",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "follow",
+        "type": "bool",
+        "description": "Print every armed capture's records while recording",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "pid",
+        "type": "int",
+        "description": "Process to observe",
+        "default": "0",
+        "required": false
+      },
+      {
+        "name": "seam",
+        "type": "string",
+        "description": "How the capture is armed (supported seams: [process agent self]) (one of process, agent, self)",
+        "default": "process",
+        "required": false
+      },
+      {
+        "name": "selector",
+        "type": "string",
+        "description": "Agent resource attributes to match",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "description": "Record order: seq or timestamp",
+        "default": "seq",
+        "required": false
+      },
+      {
+        "name": "tui",
+        "type": "bool",
+        "description": "Follow records in an interactive terminal",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "ui",
+        "type": "bool",
+        "description": "Open this run's traces in a local web viewer; keep serving until Ctrl+C",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "wait",
+        "type": "bool",
+        "description": "Wait for a matching agent to connect",
+        "default": "false",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "terminal",
+    "title": "Terminal",
+    "capabilities": {
+      "live": true
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "array",
+          "title": "Command",
+          "description": "Command line named in the cast's header",
+          "items": {
+            "type": "string"
+          }
+        },
+        "height": {
+          "type": "integer",
+          "title": "Height",
+          "format": "int32",
+          "description": "Terminal height in cells",
+          "default": 40
+        },
+        "maxBytes": {
+          "type": "string",
+          "title": "Max bytes",
+          "description": "Most output recorded as events such as 4MiB",
+          "default": "4MiB"
+        },
+        "snapshotInterval": {
+          "type": "string",
+          "title": "Snapshot interval",
+          "description": "How often the settled screen is recorded such as 100ms",
+          "default": "100ms"
+        },
+        "target": {
+          "properties": {
+            "agent": {
+              "type": "string",
+              "title": "Agent",
+              "description": "Agent ID to observe"
+            },
+            "allowMutation": {
+              "type": "boolean",
+              "title": "Allow mutation",
+              "description": "Allow probes to change runtime settings"
+            },
+            "pid": {
+              "type": "integer",
+              "title": "PID",
+              "format": "int32",
+              "description": "Process to observe"
+            },
+            "seam": {
+              "type": "string",
+              "title": "Seam",
+              "description": "How the capture is armed (supported seams: [self])",
+              "enum": [
+                "self"
+              ],
+              "default": "self"
+            },
+            "selector": {
+              "type": "object",
+              "title": "Selector",
+              "description": "Agent resource attributes to match",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "wait": {
+              "type": "boolean",
+              "title": "Wait for agents",
+              "description": "Wait for a matching agent to connect"
+            }
+          },
+          "type": "object",
+          "x-telltale-seams": [
+            "self"
+          ]
+        },
+        "width": {
+          "type": "integer",
+          "title": "Width",
+          "format": "int32",
+          "description": "Terminal width in cells",
+          "default": 120
+        }
+      }
+    },
+    "columns": [
+      {
+        "name": "at",
+        "label": "At",
+        "type": "datetime",
+        "kind": "timestamp"
+      },
+      {
+        "name": "offset",
+        "label": "Offset",
+        "type": "number"
+      },
+      {
+        "name": "kind",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "data",
+        "type": "string",
+        "filter": {
+          "kind": "none"
+        },
+        "hidden": true
+      },
+      {
+        "name": "width",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "height",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "exitCode",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "truncated",
+        "type": "boolean"
+      },
+      {
+        "name": "command",
+        "type": "string"
+      }
+    ],
+    "exportFormats": [
+      {
+        "name": "ndjson",
+        "ext": "ndjson",
+        "mime": "application/x-ndjson"
+      },
+      {
+        "name": "cast",
+        "ext": "cast",
+        "mime": "application/x-asciicast"
+      }
+    ],
+    "flags": [
+      {
+        "name": "allow-mutation",
+        "type": "bool",
+        "description": "Allow probes to change runtime settings",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "command",
+        "type": "stringSlice",
+        "description": "Command line named in the cast's header",
+        "default": "[]",
+        "required": false
+      },
+      {
+        "name": "data-dir",
+        "type": "string",
+        "description": "Directory holding telltale's trace data (default: $XDG_CACHE_HOME/telltale or the OS cache dir)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "duration",
+        "type": "duration",
+        "description": "Stop the run after this long, e.g. 30s (0 runs until the command exits or Ctrl+C)",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "follow",
+        "type": "bool",
+        "description": "Print every armed capture's records while recording",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "height",
+        "type": "int",
+        "description": "Terminal height in cells",
+        "default": "40",
+        "required": false
+      },
+      {
+        "name": "max-bytes",
+        "type": "string",
+        "description": "Most output recorded as events such as 4MiB",
+        "default": "4MiB",
+        "required": false
+      },
+      {
+        "name": "pid",
+        "type": "int",
+        "description": "Process to observe",
+        "default": "0",
+        "required": false
+      },
+      {
+        "name": "seam",
+        "type": "string",
+        "description": "How the capture is armed (supported seams: [self]) (one of self)",
+        "default": "self",
+        "required": false
+      },
+      {
+        "name": "snapshot-interval",
+        "type": "string",
+        "description": "How often the settled screen is recorded such as 100ms",
+        "default": "100ms",
+        "required": false
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "description": "Record order: seq or timestamp",
+        "default": "seq",
+        "required": false
+      },
+      {
+        "name": "tui",
+        "type": "bool",
+        "description": "Follow records in an interactive terminal",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "ui",
+        "type": "bool",
+        "description": "Open this run's traces in a local web viewer; keep serving until Ctrl+C",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "width",
+        "type": "int",
+        "description": "Terminal width in cells",
+        "default": "120",
+        "required": false
+      }
+    ]
+  }
+]
