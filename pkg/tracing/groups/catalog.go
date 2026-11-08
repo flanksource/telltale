@@ -53,6 +53,10 @@ type Rule struct {
 	// TargetSession, or a flag such as --session whose value it is.
 	Target string  `yaml:"target,omitempty" json:"target,omitempty"`
 	Match  []Match `yaml:"match,omitempty" json:"match,omitempty"`
+	// SkipAncestry marks a runner, such as gavel, whose groups do not own the
+	// processes they start by ancestry alone: what it publishes about its
+	// tasks claims them first, by pid, wherever they run.
+	SkipAncestry bool `yaml:"skipAncestry,omitempty" json:"skipAncestry,omitempty"`
 	// Disabled drops the built-in rule of this name.
 	Disabled bool `yaml:"disabled,omitempty" json:"-"`
 }

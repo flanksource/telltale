@@ -40,10 +40,21 @@ groups:
       - exec: [gavel-dev]
   - name: gopls
     disabled: true
+  - name: acme-runner
+    kind: build
+    skipAncestry: true
+    match:
+      - exec: [acme-runner]
 `))
 		Expect(err).NotTo(HaveOccurred())
+		runner, ok := catalog.Rule("acme-runner")
+		Expect(ok).To(BeTrue())
+		Expect(runner.SkipAncestry).To(BeTrue(), "groups.yaml can skip-list a runner")
+		builtinGavel, ok := builtin.Rule("gavel")
+		Expect(ok).To(BeTrue())
+		Expect(builtinGavel.SkipAncestry).To(BeTrue(), "the built-in gavel rule is skip-listed")
 
-		expected := []string{"acme-server"}
+		expected := []string{"acme-server", "acme-runner"}
 		for _, name := range ruleNames(builtin) {
 			if name != "gopls" {
 				expected = append(expected, name)

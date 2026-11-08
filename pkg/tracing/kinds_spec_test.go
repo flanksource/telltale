@@ -66,6 +66,20 @@ func (labeller) Handle(ctx dbcontext.Context, p labelParams, records tracing.Emi
 }
 
 var _ = Describe("Kinds", func() {
+	It("advertises named results under one capture and refuses table name collisions", func() {
+		kinds := tracing.NewKinds()
+		plugin := tickPlugin().WithResults(tracing.NewResultTable("metrics", ticker{}.Schema()))
+		Expect(kinds.RegisterKind("ticks", plugin)).To(Succeed())
+		infos, err := kinds.List()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(infos).To(HaveLen(1))
+		Expect(infos[0].Results).To(ConsistOf(HaveField("Name", "metrics")))
+		Expect(kinds.RegisterKind("ticks_metrics", tickPlugin())).To(MatchError(ContainSubstring("already registered")))
+		duplicate := tickPlugin().WithResults(tracing.NewResultTable("metrics", ticker{}.Schema()), tracing.NewResultTable("metrics", ticker{}.Schema()))
+		Expect(kinds.RegisterKind("duplicate", duplicate)).To(MatchError(ContainSubstring("already registered")))
+		_, exists := kinds.Get("duplicate_metrics")
+		Expect(exists).To(BeFalse())
+	})
 	It("passes the resolved seam into the handler's typed params", func() {
 		got := make(chan target.Target, 1)
 		plugin := tracing.NewHandler[targetParams, tick](targetRecorder{got: got}, tracing.Capabilities{Live: true}, target.Self)

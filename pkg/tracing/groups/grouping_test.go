@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 
+	"github.com/flanksource/gavel/sdk/status"
 	"github.com/flanksource/telltale/pkg/tracing/groups"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -113,5 +114,44 @@ var _ = Describe("Frame.Grouped", func() {
 		Expect(projected.Groups[0].Key).NotTo(Equal(projected.Groups[2].Key))
 		Expect(projected.Groups[0].Total.NetRx).To(HaveValue(Equal(float64(1024))))
 		Expect(projected.Groups[2].Total.NetRx).To(BeNil())
+	})
+
+	It("buckets gavel groups by the slot pool they hold, their tests with them, and queued ones by the pool they wait for", func() {
+		held := &status.Status{Slots: []status.Lease{
+			{Pool: "global", Limit: 4, State: status.LeaseHeld},
+			{Pool: "project/abc", Project: "/src/acme/.git", Limit: 2, State: status.LeaseHeld},
+		}}
+		queued := &status.Status{Slots: []status.Lease{{Pool: "project/abc", Project: "/src/acme/.git", Limit: 2, Index: -1, State: status.LeaseWaiting}}}
+		usage := groups.Usage{Processes: 1, RSSBytes: 10}
+		frame.Groups = []groups.GroupSample{
+			{Key: "agent", Name: "claude", Kind: groups.KindAgent, PID: 1, Self: usage},
+			{Key: "gavel-a", ParentKey: "agent", Name: "gavel", Kind: groups.KindTest, PID: 2, Gavel: held, Self: usage},
+			{Key: "go-test", ParentKey: "gavel-a", Name: "go-test", Kind: groups.KindTest, PID: 3, Self: usage},
+			{Key: "gavel-b", ParentKey: "agent", Name: "gavel", Kind: groups.KindTest, PID: 4, Gavel: queued, Self: usage},
+		}
+		projected, err := frame.Grouped(groups.GroupSlots)
+		Expect(err).NotTo(HaveOccurred())
+		parents := map[string]string{}
+		for _, group := range projected.Groups {
+			parents[group.Key] = group.ParentKey
+		}
+		Expect(parents).To(Equal(map[string]string{
+			"bucket:slots:":                    "",
+			"agent":                            "bucket:slots:",
+			"bucket:slots:project/abc":         "",
+			"gavel-a":                          "bucket:slots:project/abc",
+			"go-test":                          "gavel-a",
+			"bucket:slots:project/abc:waiting": "",
+			"gavel-b":                          "bucket:slots:project/abc:waiting",
+		}))
+		names := map[string]string{}
+		for _, group := range projected.Groups {
+			if group.Kind == groups.KindBucket {
+				names[group.Key] = group.Name
+			}
+		}
+		Expect(names).To(Equal(map[string]string{
+			"bucket:slots:": "Unattributed", "bucket:slots:project/abc": "acme", "bucket:slots:project/abc:waiting": "acme (waiting)",
+		}))
 	})
 })

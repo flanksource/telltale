@@ -138,6 +138,7 @@ type TracePlugin interface {
 	summarize(ctx context.Context, store scanner, ref TraceRef) (map[string]any, error)
 	recordType() reflect.Type
 	jsonFields() []string
+	ResultTables() []ResultTable
 }
 
 // openOptions are what a session gives the capture it opens.
@@ -152,6 +153,7 @@ type openOptions struct {
 // Handler is a TraceHandler as a TracePlugin, with the processing its records
 // get before they are stored.
 type Handler[P, R any] struct {
+	tables       []ResultTable
 	handler      TraceHandler[P, R]
 	capabilities Capabilities
 	defaults     *P
@@ -415,7 +417,15 @@ func (h *Handler[P, R]) ValidateParams(params json.RawMessage) error {
 }
 
 func (h *Handler[P, R]) register(registry *recordresults.Registry, kind string) error {
-	return recordresults.RegisterResultType(registry, h.resultType(kind))
+	if err := recordresults.RegisterResultType(registry, h.resultType(kind)); err != nil {
+		return err
+	}
+	for _, table := range h.tables {
+		if err := table.plugin.register(registry, kind+"_"+table.Name); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // open decodes params and prepares the handler's capture into a new source,
@@ -438,6 +448,7 @@ func (h *Handler[P, R]) open(ctx dbcontext.Context, options openOptions) (*sourc
 		}
 	}
 	ctx = ctx.WithValue(streamKey{}, options.stream)
+	ctx = ctx.WithValue(captureBackendKey{}, options.store)
 	captureCtx, release := ctx, func() error { return nil }
 	if preparer, ok := h.handler.(Preparer[P, R]); ok {
 		prepared, prepareRelease, err := preparer.Prepare(ctx, params, emitter)

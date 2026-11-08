@@ -26,6 +26,7 @@ groups:
   - name: gavel
     kind: test
     target: positional
+    skipAncestry: true
     match:
       - exec: [gavel]
   - name: go-test

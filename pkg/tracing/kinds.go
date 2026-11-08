@@ -16,12 +16,18 @@ import (
 )
 
 // KindInfo describes one registered kind.
+type KindResult struct {
+	Name    string            `json:"name"`
+	Columns []query.ColumnDef `json:"columns"`
+}
+
 type KindInfo struct {
 	Name         string             `json:"name"`
 	Title        string             `json:"title"`
 	Capabilities Capabilities       `json:"capabilities"`
 	Params       *rpc.OpenAPISchema `json:"params"`
 	Columns      []query.ColumnDef  `json:"columns"`
+	Results      []KindResult       `json:"results,omitempty"`
 	// ExportFormats are the formats a window of the kind's records downloads
 	// in, NDJSON first.
 	ExportFormats []ExportFormat `json:"exportFormats"`
@@ -31,10 +37,11 @@ type KindInfo struct {
 type Kinds struct {
 	mu      sync.RWMutex
 	plugins map[string]TracePlugin
+	results map[string]TracePlugin
 }
 
 func NewKinds() *Kinds {
-	return &Kinds{plugins: map[string]TracePlugin{}}
+	return &Kinds{plugins: map[string]TracePlugin{}, results: map[string]TracePlugin{}}
 }
 
 // RegisterKind serves plugin as kind name, refusing a plugin whose params or
@@ -63,10 +70,28 @@ func (k *Kinds) RegisterKind(name string, plugin TracePlugin) error {
 	}
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	if _, ok := k.plugins[name]; ok {
+	if k.plugins[name] != nil || k.results[name] != nil {
 		return fmt.Errorf("trace kind %q is already registered", name)
 	}
+	seen := map[string]bool{name: true}
+	for _, table := range plugin.ResultTables() {
+		if err := recordstore.ValidateKind(table.Name); err != nil {
+			return err
+		}
+		storage := name + "_" + table.Name
+		if seen[storage] || k.results[storage] != nil || k.plugins[storage] != nil {
+			return fmt.Errorf("result table %s already registered", storage)
+		}
+		seen[storage] = true
+		if _, err := table.plugin.Schema(storage); err != nil {
+			return err
+		}
+	}
 	plugin.setKind(name)
+	for _, table := range plugin.ResultTables() {
+		table.plugin.setKind(name + "_" + table.Name)
+		k.results[name+"_"+table.Name] = table.plugin
+	}
 	k.plugins[name] = plugin
 	return nil
 }
@@ -76,6 +101,9 @@ func (k *Kinds) Get(name string) (TracePlugin, bool) {
 	k.mu.RLock()
 	defer k.mu.RUnlock()
 	plugin, ok := k.plugins[name]
+	if !ok {
+		plugin, ok = k.results[name]
+	}
 	return plugin, ok
 }
 
@@ -98,6 +126,13 @@ func (k *Kinds) List() ([]KindInfo, error) {
 			Name: name, Title: plugin.Title(), Capabilities: plugin.Capabilities(), Params: params, Columns: schema.Columns,
 			ExportFormats: plugin.ExportFormats(),
 		})
+		for _, table := range plugin.ResultTables() {
+			schema, err := table.plugin.Schema(name + "_" + table.Name)
+			if err != nil {
+				return nil, err
+			}
+			infos[len(infos)-1].Results = append(infos[len(infos)-1].Results, KindResult{Name: table.Name, Columns: schema.Columns})
+		}
 	}
 	return infos, nil
 }
