@@ -112,7 +112,7 @@ const recording: RunTraces = {
   mount,
   dir: "/cache/telltale/traces/run-2026-10-25T10-00-00Z",
   status: "succeeded",
-  captures: [{ kind: "process_groups", ref: { kind: "process_groups", stream: "groups-1", toSeq: 8 } }],
+  captures: [{ kind: "process", ref: { kind: "process", stream: "groups-1", toSeq: 8 } }],
 };
 
 function recordedFrames(): Frame[] {
@@ -136,6 +136,7 @@ function serveRecording(runs: RunTraces[]) {
     close() { this.closed = true; }
   })(); }));
   const fetchMock = vi.fn((url: string) => {
+	if (url.includes("/process/groups?")) return Promise.resolve(json({ highSeq: rows.length, frames: recordedFrames() }));
     if (url.startsWith("/api/top")) return Promise.resolve(json(sampleFrame()));
     if (url.startsWith("/api/traces?")) return Promise.resolve(json({ runs }));
     return Promise.resolve(new Response("", { status: 404 }));
@@ -151,8 +152,8 @@ describe("recorded process groups", () => {
     renderPage();
     expect(await screen.findByRole("option", { name: `${recording.runId} (succeeded)` })).toBeInTheDocument();
     expect(await screen.findByRole("row", { name: /^claude/ })).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledWith("/api/traces?kind=process_groups", expect.anything());
-    expect(EventSource).toHaveBeenCalledWith(`${mount}/traces/process_groups/records?stream=groups-1&toSeq=8&follow=1`);
+    expect(fetchMock).toHaveBeenCalledWith("/api/traces?kind=process", expect.anything());
+    expect(fetchMock).toHaveBeenCalledWith(`${mount}/process/groups?stream=groups-1&afterSeq=0`, expect.anything());
     expect(fetchMock).not.toHaveBeenCalledWith(expect.stringMatching(/\/(seq|export)\?/), expect.anything());
     expect(screen.getByRole("slider", { name: "Tick" })).toHaveValue("1");
     expect(screen.getByText(/tick 2 of 2/)).toBeInTheDocument();

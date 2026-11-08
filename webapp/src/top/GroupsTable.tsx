@@ -4,6 +4,7 @@ import { useRouter } from "@flanksource/clicky-ui/rpc";
 import { GROUP_KINDS, SCOPES, type GroupKind, type GroupSample, type Scope, type Usage } from "./api";
 import { GROUPINGS, GROUPING_LABELS, type GroupBy } from "./grouping";
 import { isCPUHog } from "./cpu";
+import { hogLabel, isPinned } from "./hogs";
 import {
   contextText, formatBytes, formatCount, formatPercent, formatRate, groupLabel, groupPath, groupRows, isSyntheticOther, originText,
   type GroupsView, type SortKey,
@@ -19,6 +20,8 @@ const COLUMNS: Column[] = [
   { key: "procs", label: "Procs", value: usage => String(usage.processes) },
   { key: "cpu", label: "CPU %", value: usage => formatPercent(usage.cpuPercent) },
   { key: "rss", label: "RSS", value: usage => formatBytes(usage.rssBytes) },
+  { key: "compressed", label: "Compressed", value: usage => formatBytes(usage.compressedBytes) },
+  { key: "swap", label: "Swap", value: usage => formatBytes(usage.swapBytes) },
   { key: "diskRead", label: "Disk read/s", value: usage => formatRate(usage.diskReadBps) },
   { key: "diskWrite", label: "Disk write/s", value: usage => formatRate(usage.diskWriteBps) },
   { key: "netRx", label: "Net in/s", value: usage => formatRate(usage.netRxBps) },
@@ -104,8 +107,9 @@ function GroupRowView({ group, depth, trend, link, expanded, onToggle, cores }: 
   const label = groupLabel(group);
   const path = link ? groupPath(group) : undefined;
   const origin = originText(group.origin);
+  const hog = hogLabel(group.total, group.sampledAt) || (isCPUHog(group.total.cpuPercent, cores) ? "CPU hog" : "");
   return (
-    <tr data-depth={depth} className={`border-t border-border align-top hover:bg-muted/40 ${isCPUHog(group.total.cpuPercent, cores) ? "bg-destructive/10" : ""}`} title={group.command}>
+    <tr data-depth={depth} className={`border-t border-border align-top hover:bg-muted/40 ${hog ? "bg-destructive/10" : ""}`} title={group.command}>
       <td className={`py-1 pr-3 ${KIND_CLASS[group.kind]}`}>
         <span data-indent className="flex max-w-[22rem] items-center gap-1" style={{ paddingLeft: `${depth * INDENT_REM}rem` }}>
           {(isSyntheticOther(group) || group.kind === "bucket") && (
@@ -116,7 +120,7 @@ function GroupRowView({ group, depth, trend, link, expanded, onToggle, cores }: 
           <span className="truncate" title={label}>
             {path ? renderLink({ to: path, className: "hover:underline", children: label, title: `Processes of ${label}` }) : label}
           </span>
-          {isCPUHog(group.total.cpuPercent, cores) && <span className="font-semibold text-destructive">CPU hog</span>}
+          {hog && <span className="font-semibold text-destructive">{hog}</span>}
         </span>
       </td>
       {trend !== undefined && (
@@ -131,7 +135,7 @@ function GroupRowView({ group, depth, trend, link, expanded, onToggle, cores }: 
         </td>
       )}
       {COLUMNS.map(column => (
-        <td key={column.key} className="whitespace-nowrap px-2 py-1 text-right tabular-nums" title={`self ${column.value(group.self)}`}>
+        <td key={column.key} className="whitespace-nowrap px-2 py-1 text-right tabular-nums" title={group.total.memoryError && (column.key === "swap" || column.key === "compressed") ? group.total.memoryError : `self ${column.value(group.self)}`}>
           {column.value(group.total)}
         </td>
       ))}
@@ -162,11 +166,18 @@ export function GroupsTable({ groups, view, onViewChange, trend, linkGroups = fa
   const rows = useMemo(() => groupRows(groups, view, expanded, collapsed), [groups, view, expanded, collapsed]);
   if (groups.length === 0) return <p className="text-sm text-muted-foreground">No process groups yet.</p>;
   if (rows.length === 0) return <p className="text-sm text-muted-foreground">No group matches these filters.</p>;
-  const toggle = (key: string, bucket: boolean) => (bucket ? setCollapsed : setExpanded)(previous => {
-    const next = new Set(previous);
-    if (!next.delete(key)) next.add(key);
-    return next;
-  });
+  const toggle = (key: string, open: boolean) => {
+    setExpanded(previous => {
+      const next = new Set(previous);
+      if (open) next.delete(key); else next.add(key);
+      return next;
+    });
+    setCollapsed(previous => {
+      const next = new Set(previous);
+      if (open) next.add(key); else next.delete(key);
+      return next;
+    });
+  };
   const sortBy = (key: SortKey) => onViewChange(view.sort === key
     ? { dir: view.dir === "desc" ? "asc" : "desc" }
     : { sort: key, dir: key === "name" ? "asc" : "desc" });
@@ -192,18 +203,19 @@ export function GroupsTable({ groups, view, onViewChange, trend, linkGroups = fa
           </tr>
         </thead>
         <tbody>
-          {rows.map(({ group, depth }) => (
-            <GroupRowView
+          {rows.map(({ group, depth }) => {
+            const open = (!collapsed.has(group.key) && (group.kind === "bucket" || expanded.has(group.key) || isPinned(group.total, group.sampledAt))) || !!view.q.trim();
+            return <GroupRowView
               key={group.key}
               group={group}
               cores={cores}
               depth={depth}
               trend={trend ? trend[group.key] ?? [] : undefined}
               link={linkGroups}
-              expanded={(group.kind === "bucket" ? !collapsed.has(group.key) : expanded.has(group.key)) || !!view.q.trim()}
-              onToggle={() => toggle(group.key, group.kind === "bucket")}
-            />
-          ))}
+              expanded={open}
+              onToggle={() => toggle(group.key, open)}
+            />;
+          })}
         </tbody>
       </table>
     </div>

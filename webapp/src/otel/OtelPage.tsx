@@ -79,7 +79,6 @@ export default function OtelPage({ traceId }: { traceId?: string }) {
   }
   return (
     <div className="min-w-0 space-y-4">
-      <h1 className="text-2xl font-semibold">OpenTelemetry traces</h1>
       <TraceSearch key={traceId ?? "search"} sources={sources.data} traceId={traceId} initial={initial} />
     </div>
   );

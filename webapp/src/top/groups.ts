@@ -1,10 +1,11 @@
 import type { Frame, GroupContext, GroupKind, GroupSample, Origin, Scope, Usage } from "./api";
 import { projectGroups, rollupGroups, type GroupBy } from "./grouping";
+import { isPinned } from "./hogs";
 
 // The pure side of the process groups view: which groups a view shows and in
 // what order (mirroring groups.Frame.Sorted), and how their values read.
 
-export const SORT_KEYS = ["name", "procs", "cpu", "rss", "diskRead", "diskWrite", "netRx", "netTx", "sockets"] as const;
+export const SORT_KEYS = ["name", "procs", "cpu", "rss", "compressed", "swap", "diskRead", "diskWrite", "netRx", "netTx", "sockets"] as const;
 
 export type SortKey = (typeof SORT_KEYS)[number];
 
@@ -69,6 +70,8 @@ function sortValue(usage: Usage, key: Exclude<SortKey, "name">): number {
     case "procs": return usage.processes;
     case "cpu": return usage.cpuPercent ?? 0;
     case "rss": return usage.rssBytes;
+    case "compressed": return usage.compressedBytes ?? 0;
+    case "swap": return usage.swapBytes ?? 0;
     case "diskRead": return usage.diskReadBps ?? 0;
     case "diskWrite": return usage.diskWriteBps ?? 0;
     case "netRx": return usage.netRxBps ?? 0;
@@ -89,7 +92,7 @@ function visibleGroups(groups: GroupSample[], view: GroupsView): GroupSample[] {
   const keep = new Set<string>();
   for (const group of groups) {
     if (group.kind === "bucket") continue;
-    if (group.kind === "other" && !view.showOther) continue;
+    if (group.kind === "other" && !view.showOther && !isPinned(group.total, group.sampledAt)) continue;
     if (view.kind && group.kind !== view.kind) continue;
     if (view.scope && group.origin.scope !== view.scope) continue;
     let bucket = group;
@@ -118,14 +121,15 @@ export function groupRows(groups: GroupSample[], view: GroupsView, expanded: Rea
     children.set(parent, [...(children.get(parent) ?? []), group]);
   }
   const sign = view.dir === "desc" ? -1 : 1;
-  const compare = (a: GroupSample, b: GroupSample): number => sign * (view.sort === "name"
-    ? a.name.localeCompare(b.name)
-    : sortValue(a.total, view.sort) - sortValue(b.total, view.sort));
+  const compare = (a: GroupSample, b: GroupSample): number =>
+    Number(isPinned(b.total, b.sampledAt)) - Number(isPinned(a.total, a.sampledAt)) || sign * (view.sort === "name"
+      ? a.name.localeCompare(b.name)
+      : sortValue(a.total, view.sort) - sortValue(b.total, view.sort));
   const rows: GroupRow[] = [];
   const walk = (parent: string, depth: number) => {
     for (const group of [...(children.get(parent) ?? [])].sort(compare)) {
       rows.push({ group, depth });
-      if (isSyntheticOther(group) && !expanded.has(group.key) && !view.q.trim()) continue;
+      if (isSyntheticOther(group) && !view.q.trim() && (collapsed.has(group.key) || (!expanded.has(group.key) && !isPinned(group.total, group.sampledAt)))) continue;
       if (group.kind === "bucket" && collapsed.has(group.key) && !view.q.trim()) continue;
       walk(group.key, depth + 1);
     }

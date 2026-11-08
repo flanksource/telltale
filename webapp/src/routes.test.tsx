@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { DensityProvider, ThemeProvider } from "@flanksource/clicky-ui/hooks";
 import { RouterProvider, useMemoryRouter } from "@flanksource/clicky-ui/rpc";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -113,6 +113,16 @@ describe("AppRoutes", () => {
 });
 
 describe("App", () => {
+  it.each(["/otel", "/otel/73748978474d62e1e4f6e744a3c5f605"])("shows the trace title in the AppShell navbar at %s", async pathname => {
+    window.history.replaceState(null, "", pathname);
+    serve();
+    render(
+      <ThemeProvider><DensityProvider><QueryClientProvider client={new QueryClient()}><App /></QueryClientProvider></DensityProvider></ThemeProvider>,
+    );
+    expect(within(screen.getByRole("banner")).getByRole("heading", { name: "OpenTelemetry traces", level: 1 })).toBeInTheDocument();
+    expect(within(screen.getByRole("main")).queryByRole("heading", { name: "OpenTelemetry traces" })).not.toBeInTheDocument();
+  });
+
   it("navigates between Overview and Top in the browser, marking the current one", async () => {
     window.history.replaceState(null, "", "/top/123");
     serve();

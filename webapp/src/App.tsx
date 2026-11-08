@@ -3,14 +3,17 @@ import { useTheme } from "@flanksource/clicky-ui/hooks";
 import { RouterProvider, useBrowserRouter, useRouter } from "@flanksource/clicky-ui/rpc";
 import { AppRoutes, matchRoute } from "./routes";
 import { CommandSearch } from "./search/CommandSearch";
+import TracesPage from "./traces/TracesPage";
 
 function Shell() {
   const { resolvedTheme, setTheme } = useTheme();
   const { pathname } = useRouter();
   const page = matchRoute(pathname).page;
+  if (new URLSearchParams(window.location.search).get("viewer") === "1") return <AppShell brand="Telltale" contentWidth="contained"><TracesPage /></AppShell>;
   return (
     <AppShell
       brand={<span className="font-semibold">Telltale</span>}
+      nav={page === "otel" ? <h1 className="whitespace-nowrap text-sm font-semibold">OpenTelemetry traces</h1> : undefined}
       contentWidth="contained"
       search={<CommandSearch />}
       navSections={[{

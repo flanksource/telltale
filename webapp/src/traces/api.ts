@@ -18,6 +18,7 @@ export interface TraceRef {
 export interface ProcessTraceRefs {
   tree: TraceRef;
   samples: TraceRef;
+  facets: TraceRef;
   stacks: TraceRef;
   goprof?: TraceRef;
 }

@@ -8,6 +8,7 @@ import { appendFrame, formatBytes, formatCount, formatPercent, formatRate, origi
 import { FacetsPanel } from "./FacetsPanel";
 import { toneOf } from "./HostStrip";
 import { isCPUHog } from "./cpu";
+import { hogLabel } from "./hogs";
 import { ProcessActions } from "./ProcessActions";
 import { RefreshControl, useRefreshInterval } from "../monitoring/RefreshControl";
 import {
@@ -30,6 +31,8 @@ const PEAK = (_host: HostUsage | undefined, peak: number) => Math.max(peak, 1);
 const METRIC_VIEWS: MetricView[] = [
   { metric: "cpu", label: "CPU %", format: formatPercent, max: (host, peak) => (host ? host.cores * 100 : Math.max(peak, 100)) },
   { metric: "rss", label: "RSS", format: formatBytes, max: (host, peak) => (host ? host.memoryTotalBytes : Math.max(peak, 1)) },
+  { metric: "compressed", label: "Compressed", format: formatBytes, max: (host, peak) => (host ? host.memoryTotalBytes : Math.max(peak, 1)) },
+  { metric: "swap", label: "Swap", format: formatBytes, max: (host, peak) => host?.swapTotalBytes || Math.max(peak, 1) },
   { metric: "diskRead", label: "Disk read/s", format: formatRate, max: PEAK },
   { metric: "diskWrite", label: "Disk write/s", format: formatRate, max: PEAK },
   { metric: "netRx", label: "Net in/s", format: formatRate, max: PEAK },
@@ -69,6 +72,7 @@ function SortHeader({ label, active, onClick }: { label: string; active: boolean
 }
 
 interface ProcessTableProps {
+  sampledAt: string;
   cores: number | undefined;
   processes: ProcessSample[];
   sort: ProcessSortKey;
@@ -78,7 +82,7 @@ interface ProcessTableProps {
   onSelect: (pid: number) => void;
 }
 
-function ProcessTable({ processes, sort, onSort, selected, onSelect, cores }: ProcessTableProps) {
+function ProcessTable({ processes, sort, onSort, selected, onSelect, cores, sampledAt }: ProcessTableProps) {
   const { renderLink } = useRouter();
   const muted = "whitespace-nowrap px-2 py-1 text-muted-foreground";
   const number = "whitespace-nowrap px-2 py-1 text-right tabular-nums";
@@ -95,6 +99,8 @@ function ProcessTable({ processes, sort, onSort, selected, onSelect, cores }: Pr
             <th scope="col" className="px-2 py-1 text-left font-medium">Origin</th>
             <SortHeader label="CPU %" active={sort === "cpu"} onClick={() => onSort("cpu")} />
             <SortHeader label="RSS" active={sort === "rss"} onClick={() => onSort("rss")} />
+            <SortHeader label="Compressed" active={sort === "compressed"} onClick={() => onSort("compressed")} />
+            <SortHeader label="Swap" active={sort === "swap"} onClick={() => onSort("swap")} />
             <th scope="col" className="px-2 py-1 text-right font-medium">Disk read/s</th>
             <th scope="col" className="px-2 py-1 text-right font-medium">Disk write/s</th>
             <th scope="col" className="px-2 py-1 text-right font-medium">Net in/s</th>
@@ -110,7 +116,7 @@ function ProcessTable({ processes, sort, onSort, selected, onSelect, cores }: Pr
               key={process.key}
               aria-selected={process.pid === selected}
               title="Show this process's environment, files and connections"
-              className={`cursor-pointer border-t border-border align-top hover:bg-muted/40 ${isCPUHog(process.cpuPercent, cores) ? "bg-destructive/10" : process.pid === selected ? "bg-muted/60" : ""}`}
+              className={`cursor-pointer border-t border-border align-top hover:bg-muted/40 ${hogLabel(process, sampledAt) || isCPUHog(process.cpuPercent, cores) ? "bg-destructive/10" : process.pid === selected ? "bg-muted/60" : ""}`}
               onClick={() => onSelect(process.pid)}
             >
               <td className={number}>{renderLink({ to: `/top/${process.pid}`, className: "hover:underline", children: process.pid, title: `Process ${process.pid} and those under it` })}</td>
@@ -119,8 +125,10 @@ function ProcessTable({ processes, sort, onSort, selected, onSelect, cores }: Pr
               <td className={muted}>{process.origin.owner ?? ""}</td>
               <td className={muted}>{process.origin.scope ?? ""}</td>
               <td className={muted}>{originText(process.origin)}</td>
-              <td className={number}>{formatPercent(process.cpuPercent)}{isCPUHog(process.cpuPercent, cores) && <span className="ml-2 font-semibold text-destructive">CPU hog</span>}</td>
+              <td className={number}>{formatPercent(process.cpuPercent)}{(hogLabel(process, sampledAt) || isCPUHog(process.cpuPercent, cores)) && <span className="ml-2 font-semibold text-destructive">{hogLabel(process, sampledAt) || "CPU hog"}</span>}</td>
               <td className={number}>{formatBytes(process.rssBytes)}</td>
+              <td className={number} title={process.memoryError}>{formatBytes(process.compressedBytes)}</td>
+              <td className={number} title={process.memoryError}>{formatBytes(process.swapBytes)}</td>
               <td className={number}>{formatRate(process.diskReadBps)}</td>
               <td className={number}>{formatRate(process.diskWriteBps)}</td>
               <td className={number}>{formatRate(process.netRxBps)}</td>
@@ -159,7 +167,7 @@ function ProcessView({ target }: { target: string }) {
   const latest = query.data;
   const total = useMemo(() => latest && sumProcesses(latest.processes), [latest]);
   const series = useMemo(() => Object.fromEntries(METRIC_VIEWS.map(view => [view.metric, metricSeries(history, view.metric)])) as Record<Metric, number[]>, [history]);
-  const shown = useMemo(() => latest ? sortProcesses(filterProcesses(latest.processes, q), sort) : [], [latest, q, sort]);
+  const shown = useMemo(() => latest ? sortProcesses(filterProcesses(latest.processes, q), { by: sort, sampledAt: latest.sampledAt }) : [], [latest, q, sort]);
   const heading = "pid" in parsed ? `Process ${parsed.pid} and those under it` : parsed.name;
   return (
     <div className="space-y-4">
@@ -188,11 +196,11 @@ function ProcessView({ target }: { target: string }) {
           <div className="flex flex-wrap gap-3">
             {METRIC_VIEWS.map(view => <MetricTile key={view.metric} view={view} usage={total} host={latest.host} series={series[view.metric]} />)}
           </div>
-          <p className="text-sm text-muted-foreground">CPU hogs use more than 25% of all cores. Terminate sends SIGTERM to one process; renice changes its scheduling priority.</p>
+          <p className="text-sm text-muted-foreground">Hogs exceed 25% of all cores, physical RAM, or swap capacity and stay pinned for 120 seconds after their last spike. On macOS, Compressed includes swapped-out pages; per-process disk swap is unavailable (–). Terminate sends SIGTERM to one process; renice changes its scheduling priority.</p>
           {selected !== undefined && <FacetsPanel key={selected} pid={selected} />}
           {shown.length === 0
             ? <p className="text-sm text-muted-foreground">No process matches these filters.</p>
-            : <ProcessTable processes={shown} sort={sort} onSort={setSort} selected={selected} onSelect={setSelected} cores={latest.host?.cores} />}
+            : <ProcessTable processes={shown} sort={sort} onSort={setSort} selected={selected} onSelect={setSelected} cores={latest.host?.cores} sampledAt={latest.sampledAt} />}
         </>
       )}
     </div>

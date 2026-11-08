@@ -8,7 +8,7 @@ import { failure, type TraceRecord } from "../traces/api";
 export const TOP_ENDPOINT = "/api/top";
 
 /** The trace kind a host run records its process groups as. */
-export const PROCESS_GROUPS_KIND = "process_groups";
+export const PROCESS_GROUPS_KIND = "process";
 
 export const GROUP_KINDS = ["agent", "browser", "test", "build", "tool", "service", "app", "other"] as const;
 
@@ -19,6 +19,13 @@ export interface Usage {
   processes: number;
   cpuPercent?: number;
   rssBytes: number;
+  /** Disk swap; unavailable per process on macOS. */
+  swapBytes?: number;
+  /** macOS CMPRS: compressed and swapped-out pages, before compression. */
+  compressedBytes?: number;
+  memoryError?: string;
+  /** Resource name to expiry, 120 seconds after its last excessive sample. */
+  hogs?: Record<string, string>;
   diskReadBps?: number;
   diskWriteBps?: number;
   netRxBps?: number;
@@ -79,6 +86,29 @@ export interface GroupSample {
   origin: Origin;
   self: Usage;
   total: Usage;
+  /** What a gavel group's process publishes (gavel sdk status.Status); only its slots are read here. */
+  gavel?: GavelStatus;
+  gavelError?: string;
+}
+
+/** A slot a gavel process holds, or a pool it waits for (gavel sdk status.Lease). */
+export interface GavelLease {
+  /** "global" or "project/<id>". */
+  pool: string;
+  /** The git common directory of a project pool. */
+  project?: string;
+  limit: number;
+  /** The slot held, -1 while waiting. */
+  index: number;
+  state: "held" | "waiting";
+  since: string;
+  command: string;
+}
+
+export interface GavelStatus {
+  pid: number;
+  command: string;
+  slots: GavelLease[] | null;
 }
 
 /** What the whole host uses at one live tick (groups.HostUsage); the CPU shares are missing on the first tick. */

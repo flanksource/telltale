@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fixture from "../../../testdata/top-grouping.json";
-import type { Frame } from "./api";
+import type { Frame, GavelLease } from "./api";
 import { projectGroups, type GroupBy } from "./grouping";
 
 describe("grouping projection", () => {
@@ -70,5 +70,25 @@ describe("grouping projection", () => {
     expect(projected[0]!.key).not.toBe(projected[2]!.key);
     expect(projected[0]!.total.netRxBps).toBe(1024);
     expect(projected[2]!.total.netRxBps).toBeUndefined();
+  });
+
+  it("buckets gavel groups by the slot pool they hold, their tests with them, and queued ones by the pool they wait for", () => {
+    const lease = (pool: string, state: GavelLease["state"]): GavelLease => ({
+      pool, project: pool === "global" ? undefined : "/src/acme/.git", limit: 2, index: state === "held" ? 0 : -1, state, since: "", command: "go test",
+    });
+    const base = { sampledAt: "", tick: 1, kind: "test", command: "", context: {}, origin: {}, self: { processes: 1, rssBytes: 10 }, total: { processes: 1, rssBytes: 10 } } as const;
+    const groups: Frame["groups"] = [
+      { ...base, key: "agent", name: "claude", kind: "agent", pid: 1 },
+      { ...base, key: "gavel-a", parentKey: "agent", name: "gavel", pid: 2, gavel: { pid: 2, command: "gavel test", slots: [lease("global", "held"), lease("project/abc", "held")] } },
+      { ...base, key: "go-test", parentKey: "gavel-a", name: "go-test", pid: 3 },
+      { ...base, key: "gavel-b", parentKey: "agent", name: "gavel", pid: 4, gavel: { pid: 4, command: "gavel lint", slots: [lease("project/abc", "waiting")] } },
+    ];
+    const projected = projectGroups(groups, "slots");
+    expect(Object.fromEntries(projected.map(group => [group.key, group.parentKey ?? ""]))).toEqual({
+      "bucket:slots:": "", agent: "bucket:slots:",
+      "bucket:slots:project/abc": "", "gavel-a": "bucket:slots:project/abc", "go-test": "gavel-a",
+      "bucket:slots:project/abc:waiting": "", "gavel-b": "bucket:slots:project/abc:waiting",
+    });
+    expect(projected.filter(group => group.kind === "bucket").map(group => group.name)).toEqual(["Unattributed", "acme", "acme (waiting)"]);
   });
 });

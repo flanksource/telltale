@@ -4,17 +4,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DefinitionSummary } from "../definitions/api";
 import { parseNdjson, runFilterQuery, traceExportUrl, type RunTraces, type StartForm, type TracesStatus } from "./api";
 import { sampleFrame } from "../top/testFrames";
-import { captureWindows } from "./TracesPanel";
 import TracesPage from "./TracesPage";
 
-beforeEach(() => window.history.replaceState(null, "", "/"));
+beforeEach(() => {
+  window.history.replaceState(null, "", "/");
+  vi.stubGlobal("EventSource", class extends EventTarget {
+    close() {}
+  });
+});
 afterEach(() => vi.unstubAllGlobals());
 
 const runId = "run-2026-10-24T10-00-00Z";
 const mount = `/api/traces/${runId}`;
 const processRefs = {
-  tree: { kind: "process_tree", stream: "tree-1" },
-  samples: { kind: "process_samples", stream: "samples-1" },
+  tree: { kind: "process", stream: "tree-1" },
+  samples: { kind: "process_metrics", stream: "tree-1-metrics" },
+  facets: { kind: "process_facets", stream: "tree-1-facets" },
   stacks: { kind: "stacks", stream: "stacks-1" },
 };
 
@@ -68,6 +73,7 @@ function serve(status: TracesStatus, started: Response = json(running, 201), lis
     if (init?.method === "DELETE") return Promise.resolve(new Response(null, { status: 202 }));
     if (url.endsWith("/traces/kinds")) return Promise.resolve(json([{ name: "http", title: "HTTP traffic", exportFormats: [{ name: "har", ext: "har", mime: "application/json" }] }]));
     if (url.includes("/seq?")) return Promise.resolve(json({ seq: 0 }));
+    if (url.includes("/records?")) return Promise.resolve(json({ rows: [], nextCursor: "" }));
     return Promise.resolve(new Response("", { status: 404 }));
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -83,11 +89,23 @@ function renderPage() {
 }
 
 describe("trace runs", () => {
+  it("switches replay runs in the viewer and preserves the selected run in the URL", async () => {
+    const other: RunTraces = { ...finished, runId: "other-run", mount: "/api/traces/other-run" };
+    window.history.replaceState(null, "", `/?viewer=1&run=${other.runId}`);
+    const fetchMock = serve({ runs: [finished, other] });
+    renderPage();
+    expect(await screen.findByRole("combobox", { name: "Run" })).toHaveValue(other.runId);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`${other.mount}/records?sort=seq&limit=100`, expect.anything()));
+    fireEvent.change(screen.getByRole("combobox", { name: "Run" }), { target: { value: runId } });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`${mount}/records?sort=seq&limit=100`, expect.anything()));
+    expect(new URLSearchParams(window.location.search).get("run")).toBe(runId);
+    expect(screen.queryByText("New run")).not.toBeInTheDocument();
+  });
   it.each(["sql_deadlock", "sql_xevent", "jvm_jfr"])("shows %s captures without a local process tree", async kind => {
     const fetchMock = serve({ runs: [{ ...finished, command: undefined, process: undefined, captures: [{ kind, ref: { kind, stream: "connection-or-agent", toSeq: 2 }, summary: { count: 2 } }] }] });
     renderPage();
     expect(await screen.findByText("host run")).toBeInTheDocument();
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`${mount}/api/v1/traces/kinds`, expect.anything()));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`${mount}/records?sort=seq&limit=100`, expect.anything()));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
@@ -103,7 +121,7 @@ describe("trace runs", () => {
     expect(await screen.findByText("curl https://example.com")).toBeInTheDocument();
     expect(screen.getByText(/exited with code 0/)).toBeInTheDocument();
     expect(screen.getByRole("option", { name: `${runId} (succeeded)` })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open in query" })).toHaveAttribute("href", `/records/${runId}/http/proxy-1?toSeq=2`);
+    expect(screen.getByRole("option", { name: "http" })).toBeInTheDocument();
   });
 
   it("names an attached run by its pid and lists the checkpoints that failed", async () => {
@@ -186,13 +204,13 @@ describe("trace runs", () => {
 });
 
 describe("host runs recording process groups", () => {
-  const groupsRef = { kind: "process_groups", stream: "groups-1" };
+  const groupsRef = { kind: "process", stream: "groups-1" };
   const hostRun: RunTraces = {
     runId: "run-2026-10-25T12-00-00Z",
     mount: "/api/traces/run-2026-10-25T12-00-00Z",
     dir: "/cache/telltale/traces/run-2026-10-25T12-00-00Z",
     status: "running",
-    captures: [{ kind: "process_groups", ref: groupsRef }],
+    captures: [{ kind: "process", ref: groupsRef }],
   };
 
   // serveGroups answers the run list with runs and the run's group rows with one tick of sampleFrame.
@@ -211,13 +229,15 @@ describe("host runs recording process groups", () => {
       close() { this.closed = true; }
     });
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url.includes("/process/groups?")) return Promise.resolve(json({ highSeq: 4, frames: [sampleFrame()] }));
       if (url === "/api/traces" || url.startsWith("/api/traces?")) return Promise.resolve(json({ runs }));
       if (url === "/api/traces/start") return Promise.resolve(json(startForm));
       if (url === "/api/traces/definitions") return Promise.resolve(json(definitions));
       if (init?.method === "DELETE") return Promise.resolve(new Response(null, { status: 202 }));
-      if (url.endsWith("/traces/kinds")) return Promise.resolve(json([{ name: "process_groups", title: "Process groups", exportFormats: [] }]));
+      if (url.endsWith("/traces/kinds")) return Promise.resolve(json([{ name: "process", title: "Processes", exportFormats: [] }]));
       if (url.includes("/seq?")) return Promise.resolve(json({ seq: 4 }));
       if (url.includes("/export?")) return Promise.resolve(new Response(rows));
+      if (url.includes("/records?")) return Promise.resolve(json({ rows: [], nextCursor: "" }));
       return Promise.resolve(new Response("", { status: 404 }));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -234,7 +254,7 @@ describe("host runs recording process groups", () => {
   });
 
   it("shows a stopped host run's groups instead of saying it is unavailable", async () => {
-    serveGroups([{ ...hostRun, status: "succeeded", captures: [{ kind: "process_groups", ref: { ...groupsRef, toSeq: 4 } }] }]);
+    serveGroups([{ ...hostRun, status: "succeeded", captures: [{ kind: "process", ref: { ...groupsRef, toSeq: 4 } }] }]);
     renderPage();
     expect(await screen.findByRole("row", { name: /^claude/ })).toBeInTheDocument();
     expect(screen.getByText("host run")).toBeInTheDocument();
@@ -261,7 +281,7 @@ describe("starting a run", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/traces", expect.objectContaining({
       method: "POST", body: JSON.stringify({ command: "sleep 60" }),
     })));
-    await waitFor(() => expect(window.location.search).toBe(`?run=${running.runId}`));
+    await waitFor(() => expect(Object.fromEntries(new URLSearchParams(window.location.search))).toEqual({ run: running.runId, feedSort: "seq" }));
   });
 
   it("starts a saved definition with only the run's execution fields", async () => {
@@ -276,7 +296,7 @@ describe("starting a run", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/traces", expect.objectContaining({
       method: "POST", body: JSON.stringify({ definition: "checkout", command: "./bin/checkout", duration: "20s" }),
     })));
-    await waitFor(() => expect(window.location.search).toBe(`?run=${running.runId}`));
+    await waitFor(() => expect(Object.fromEntries(new URLSearchParams(window.location.search))).toEqual({ run: running.runId, feedSort: "seq" }));
   });
 
   it("shows a failed definition listing and keeps the inline start", async () => {
@@ -296,12 +316,6 @@ describe("starting a run", () => {
 });
 
 describe("trace windows", () => {
-  it("names a capture's window in its run, counted from its summary", () => {
-    expect(captureWindows(finished)).toEqual([
-      { kind: "http", stream: "proxy-1", toSeq: 2, run_id: finished.runId, count: 2, summary: { count: 2 } },
-    ]);
-  });
-
   it("builds a window's export URL under the run's mount", () => {
     expect(traceExportUrl(mount, { kind: "http", stream: "proxy-1", afterSeq: 3, toSeq: 9 }, "har"))
       .toBe(`${mount}/api/v1/traces/http/export?stream=proxy-1&afterSeq=3&toSeq=9&format=har`);

@@ -63,7 +63,7 @@ function LiveGroups({ state, setState, query }: TabProps & { query: ReturnType<t
       {query.data && (
         <>
           <p className="text-sm text-muted-foreground">tick {query.data.tick} · {new Date(query.data.sampledAt).toLocaleTimeString()}</p>
-          <p className="text-sm text-muted-foreground">CPU hogs use more than 25% of all cores. Open a group to terminate or renice individual processes.</p>
+          <p className="text-sm text-muted-foreground">Hogs exceed 25% of all cores, physical RAM, or swap capacity and stay pinned for 120 seconds after their last spike. On macOS, Compressed includes swapped-out pages; per-process disk swap is unavailable (–). Open a group to terminate or renice individual processes.</p>
           <GroupsTable groups={query.data.groups} view={state} onViewChange={setState} trend={trend} linkGroups cores={query.data.host?.cores} />
         </>
       )}

@@ -112,8 +112,8 @@ function HostRunDetail({ run }: { run: RunTraces }) {
   return (
     <div className="space-y-6">
       <RunSummary run={run} />
-      <Panel title="Captures"><TracesPanel run={run} /></Panel>
       {processGroupsCapture(run) && <Panel title="Process groups"><RecordedGroups run={run} view={view} onViewChange={next => setView(previous => ({ ...previous, ...next }))} /></Panel>}
+      <Panel title="Captures"><TracesPanel run={run} /></Panel>
     </div>
   );
 }
@@ -124,16 +124,16 @@ function RunDetail({ run }: { run: RunTraces }) {
   const [expandAll, setExpandAll] = useState<boolean | null>(true);
   const trace = useProcessTrace({
     mount: run.mount,
-    ...(run.process ? { refs: run.process } : {}),
+    ...(run.process && !run.unavailable ? { refs: run.process } : {}),
     ...(run.live ? { sessions: run.live.sessions } : {}),
     ...(selectedKey ? { selectedKey } : {}),
     done: !run.live,
   });
-  if (!run.process) return run.unavailable ? <p role="alert">{run.unavailable}</p> : <HostRunDetail run={run} />;
+  if (run.unavailable) return <p role="alert">{run.unavailable}</p>;
+  if (!run.process) return <HostRunDetail run={run} />;
   return (
     <div className="space-y-6">
       <RunSummary run={run} />
-      <Panel title="Captures"><TracesPanel run={run} /></Panel>
       <Panel title="Processes">
         <RunProcesses
           className="h-[32rem] min-h-0"
@@ -146,6 +146,7 @@ function RunDetail({ run }: { run: RunTraces }) {
           onExpandAllChange={setExpandAll}
         />
       </Panel>
+      <Panel title="Captures"><TracesPanel run={run} /></Panel>
     </div>
   );
 }
@@ -193,13 +194,33 @@ function RunList({ state, setState }: { state: PageState; setState: (next: Parti
 }
 
 /** Starts runs, and shows the runs the server holds, newest first: the selected one's captures and processes, live while it runs. */
+function RunViewer({ selected, onSelect }: { selected?: string; onSelect: (id: string) => void }) {
+  const result = useQuery({ queryKey: ["viewer-run"], queryFn: () => fetchTraceRuns(), refetchInterval: 1000 });
+  if (result.isPending) return <p role="status">Loading trace run…</p>;
+  if (result.isError) return <p role="alert">{result.error.message}</p>;
+  const runs = result.data.runs;
+  const run = runs.find(candidate => candidate.runId === selected) ?? runs[0];
+  if (!run) return <p role="alert">The viewer has no trace run.</p>;
+  return <div className="space-y-4">
+    {runs.length > 1 && <label className="flex flex-wrap items-center gap-2 text-sm">
+      Run
+      <select className="min-w-0 max-w-full rounded border border-border bg-background px-2 py-1" value={run.runId} onChange={event => onSelect(event.target.value)}>
+        {runs.map(candidate => <option key={candidate.runId} value={candidate.runId}>{candidate.runId} ({candidate.status})</option>)}
+      </select>
+    </label>}
+    <Panel title={`Trace records · ${run.status}`}><TracesPanel key={run.runId} run={run} /></Panel>
+  </div>;
+}
+
 export default function TracesPage() {
   const [state, setState] = usePageState();
+	const viewer = new URLSearchParams(window.location.search).get("viewer") === "1";
+  if (viewer) return <RunViewer {...(state.run ? { selected: state.run } : {})} onSelect={run => setState({ run })} />;
   return (
     <div className="space-y-6">
-      <Panel title="New run">
+      {!viewer && <Panel title="New run">
         <StartRunForm onStarted={run => setState({ run: run.runId, q: "", status: "", kind: "" })} />
-      </Panel>
+      </Panel>}
       <RunList state={state} setState={setState} />
     </div>
   );
