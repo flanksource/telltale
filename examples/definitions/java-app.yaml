@@ -1,0 +1,22 @@
+# Attach to the application's JVM, not a Maven/Gradle launcher:
+#   telltale run --definition ./examples/definitions/java-app.yaml --pid 1234 --duration 1m
+# Requires a compatible JDK's jcmd on PATH and permission to attach to the JVM.
+apiVersion: telltale.flanksource.com/v1alpha1
+kind: TraceDefinition
+metadata:
+  name: java-app
+spec:
+  description: Profile a Java application with Flight Recorder and inspect its process tree
+  every: 10s
+  instrument:
+    jvm:
+      flightRecorder:
+        - settings: profile
+          threads: true
+          maxStackDepth: 128
+  collect:
+    process:
+      tree:
+        facets: true
+        environment:
+          keys: [JAVA_HOME, LANG, TZ]

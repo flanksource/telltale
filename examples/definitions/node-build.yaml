@@ -1,0 +1,18 @@
+# Run from the Node project's directory, adjusting the definition path:
+#   telltale run --definition ./examples/definitions/node-build.yaml -- pnpm run build
+# Or: telltale run --definition ./examples/definitions/node-build.yaml -- npm run build
+# Keep build workers under this command; an existing detached daemon is outside its tree.
+apiVersion: telltale.flanksource.com/v1alpha1
+kind: TraceDefinition
+metadata:
+  name: node-build
+spec:
+  description: Follow a Node build's bundler type checker and worker processes with CPU memory and disk IO samples
+  collect:
+    process:
+      tree:
+        facets: true
+        environment:
+          keys: [NODE_ENV, CI, UV_THREADPOOL_SIZE]
+      resources:
+        - interval: 250ms

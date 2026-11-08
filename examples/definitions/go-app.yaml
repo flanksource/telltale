@@ -1,0 +1,23 @@
+# Attach to the compiled application's PID, not the go run launcher:
+#   telltale run --definition ./examples/definitions/go-app.yaml --pid 1234 --duration 1m
+# The application must start github.com/google/gops/agent; its port file must
+# be readable under GOPS_CONFIG_DIR or the user's default gops config directory.
+apiVersion: telltale.flanksource.com/v1alpha1
+kind: TraceDefinition
+metadata:
+  name: go-app
+spec:
+  description: Read a Go application's goroutines and heap over gops alongside its process tree
+  every: 10s
+  collect:
+    go:
+      gops:
+        - {}
+      pprof:
+        - source: gops
+          profile: heap
+    process:
+      tree:
+        facets: true
+        environment:
+          keys: [GOMAXPROCS, GOMEMLIMIT, GOGC, GOPS_CONFIG_DIR]

@@ -1,0 +1,17 @@
+# Run from the Go project's directory, adjusting the definition path:
+#   telltale run --definition ./examples/definitions/go-build.yaml -- go build ./...
+# No gops agent or pprof endpoint is needed in the compiler or linker.
+apiVersion: telltale.flanksource.com/v1alpha1
+kind: TraceDefinition
+metadata:
+  name: go-build
+spec:
+  description: Follow a Go build's compiler linker and cgo processes with CPU memory and disk IO samples
+  collect:
+    process:
+      tree:
+        facets: true
+        environment:
+          keys: [GOOS, GOARCH, CGO_ENABLED, GOMAXPROCS, GOMEMLIMIT]
+      resources:
+        - interval: 250ms

@@ -64,6 +64,7 @@ interface ListedRun {
   command: string[];
   exitCode?: number;
   captures: Captured[];
+  process?: { tree: { kind: string; stream: string }; samples: { kind: string; stream: string }; facets: { kind: string; stream: string } };
 }
 
 interface Listed {
@@ -71,6 +72,58 @@ interface Listed {
 }
 
 describe("recorded trace runs", () => {
+	 it("serves pinned process measurements separately from the styled event stream", async () => {
+    const listed = await (await fetch(`${apiURL}/api/traces`)).json() as Listed;
+    const recorded = listed.runs[0];
+    const snapshot = await fetch(`${apiURL}${recorded.mount}/processes`);
+    expect(snapshot.status).toBe(200);
+    expect(await snapshot.json()).toMatchObject({ armed: true, rows: expect.arrayContaining([expect.objectContaining({ runId: recorded.runId, key: expect.any(String), pid: expect.any(Number), rssBytes: expect.any(Number), memoryPercent: expect.any(Number) })]) });
+    const events = await fetch(`${apiURL}${recorded.mount}/records?excludeKind=process&presentation=ansi&sort=timestamp&limit=1`);
+    expect(events.status).toBe(200);
+    const page = await events.json() as { rows: { kind: string; ansi: string }[] };
+    expect(page.rows).toHaveLength(1);
+    expect(page.rows[0].kind).toBe("http");
+    expect(page.rows[0].ansi).toContain("GET");
+    expect(page.rows[0].ansi).toContain("\u001b[");
+    const raw = await (await fetch(`${apiURL}${recorded.mount}/records?kind=http&limit=1`)).json() as { rows: Record<string, unknown>[] };
+    expect(raw.rows[0]).not.toHaveProperty("ansi");
+  });
+	 it("exposes one process kind with identity, numeric metrics, facet events and derived groups", async () => {
+    const listed = await (await fetch(`${apiURL}/api/traces`)).json() as Listed;
+    const recorded = listed.runs[0];
+    expect(recorded.process).toMatchObject({ tree: { kind: "process" }, samples: { kind: "process_metrics" }, facets: { kind: "process_facets" } });
+    const catalog = await (await fetch(`${apiURL}${recorded.mount}/api/v1/traces/kinds`)).json() as { name: string; results?: { name: string }[] }[];
+    expect(catalog.filter(kind => kind.name.startsWith("process"))).toEqual([expect.objectContaining({ name: "process", results: [expect.objectContaining({ name: "facets" }), expect.objectContaining({ name: "metrics" })] })]);
+    const metrics = await fetch(`${apiURL}${recorded.mount}/traces/process/records?result=metrics&limit=1`);
+    expect(metrics.status).toBe(200);
+    expect(await metrics.json()).toMatchObject({ rows: [expect.objectContaining({ entity: expect.any(String), rssBytes: expect.any(Number) })] });
+    const groups = await fetch(`${apiURL}${recorded.mount}/process/groups?stream=${recorded.process!.tree.stream}`);
+    expect(groups.status).toBe(200);
+    expect(await groups.json()).toMatchObject({ highSeq: expect.any(Number), frames: expect.arrayContaining([expect.objectContaining({ groups: expect.arrayContaining([expect.objectContaining({ total: expect.objectContaining({ processes: expect.any(Number) }) })]) })]) });
+  });
+  it("replays the API's compact run ID through the same stored capture feed", async () => {
+    const listed = await (await fetch(`${apiURL}/api/traces`)).json() as Listed;
+    const recorded = listed.runs[0];
+    expect(recorded.runId).toMatch(/^[A-Za-z0-9]{1,9}\d{8}T\d{6}Z(?:_\d+)?$/);
+    const replayed = await run(".bin/telltale", ["trace", "replay", "--data-dir", testDir, "--format", "ndjson", recorded.runId]);
+    const rows = replayed.stdout.trim().split("\n").map(line => JSON.parse(line) as { runId: string; kind: string; record: { url: string } });
+    expect(rows).toContainEqual(expect.objectContaining({ runId: recorded.runId, kind: "http", record: expect.objectContaining({ url: upstreamURL }) }));
+    expect(rows).toContainEqual(expect.objectContaining({ runId: recorded.runId, kind: "process", result: "metrics" }));
+  });
+  it("pages the unified armed-capture feed and serves a completed NDJSON stream", async () => {
+    const listed = await (await fetch(`${apiURL}/api/traces`)).json() as Listed;
+    const recorded = listed.runs[0];
+    expect(recorded).toBeDefined();
+    const response = await fetch(`${apiURL}${recorded.mount}/records?kind=http&sort=seq&limit=1`);
+    expect(response.status).toBe(200);
+    const page = await response.json() as { rows: { runId: string; kind: string; stream: string; seq: number; record: Record<string, unknown> }[] };
+    expect(page.rows).toHaveLength(1);
+    expect(page.rows[0]).toMatchObject({ runId: recorded.runId, kind: "http", seq: 1, record: { request: expect.anything() } });
+    const streamed = await fetch(`${apiURL}${recorded.mount}/records?kind=http&follow=1&format=ndjson`);
+    expect(streamed.status).toBe(200);
+    expect(JSON.parse((await streamed.text()).trim())).toMatchObject(page.rows[0]);
+  });
+
   it("serves typed result-profile columns and query rows for a recorded capture", async () => {
     const listed = await (await fetch(`${apiURL}/api/traces`)).json() as Listed;
     const recorded = listed.runs[0];
@@ -190,7 +243,7 @@ describe("runs started over the API", () => {
     const response = await start({ command: `curl -sS ${upstreamURL}`, traces: { http: { enabled: true, target: { seam: "proxy" } } } });
     expect(response.status).toBe(201);
     const started = await response.json() as ListedRun;
-    expect(started).toMatchObject({ status: "running", command: ["sh", "-c", `curl -sS ${upstreamURL}`] });
+    expect(started).toMatchObject({ status: "running", command: ["sh", "-c", `curl -sS ${upstreamURL}`], output: { stdout: "stdout.log", stderr: "stderr.log" } });
     expect(await settled(started.runId)).toMatchObject({ status: "succeeded", exitCode: 0, captures: [{ kind: "http", summary: { count: 1 } }] });
   });
 

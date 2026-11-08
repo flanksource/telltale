@@ -41,6 +41,13 @@ describe("standalone API and embedded UI", () => {
     expect(await response.json()).toMatchObject({ info: { title: "Telltale" }, openapi: expect.stringMatching(/^3\./) });
   });
 
+  it("includes explain in the generated command catalog", async () => {
+    const response = await fetch(`${apiURL}/api/openapi.json`);
+    expect(response.status).toBe(200);
+    const spec = await response.json() as { paths: Record<string, unknown> };
+    expect(Object.keys(spec.paths).some((path) => path.startsWith('/api/v1/explain'))).toBe(true);
+  });
+
   it("derives run arguments and checkpoint choices from kind schemas", async () => {
     const response = await fetch(`${apiURL}/api/openapi.json`);
     expect(response.status).toBe(200);

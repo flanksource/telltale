@@ -24,6 +24,8 @@ type playgroundEvent struct {
 	ANSI       string    `json:"ansi"`
 	DetailANSI string    `json:"detailAnsi"`
 	Record     query.Row `json:"record"`
+	Stream     string    `json:"stream"`
+	Timestamp  any       `json:"timestamp"`
 }
 
 type playgroundKind struct {
@@ -37,10 +39,11 @@ type playgroundKind struct {
 }
 
 type playgroundRecording struct {
-	RunID     string           `json:"runId"`
-	StartedAt time.Time        `json:"startedAt"`
-	EndedAt   time.Time        `json:"endedAt"`
-	Kinds     []playgroundKind `json:"kinds"`
+	RunID     string               `json:"runId"`
+	StartedAt time.Time            `json:"startedAt"`
+	EndedAt   time.Time            `json:"endedAt"`
+	Kinds     []playgroundKind     `json:"kinds"`
+	Processes read.ProcessSnapshot `json:"processes"`
 }
 
 func exportPlayground(ctx context.Context, o options) (err error) {
@@ -57,6 +60,15 @@ func exportPlayground(ctx context.Context, o options) (err error) {
 		return err
 	}
 	defer func() { err = errors.Join(err, closeSources()) }()
+	process := sources["process"]
+	refs, err := read.RunRefs(process.info, process.runtime)
+	if err != nil {
+		return err
+	}
+	result.Processes, err = read.Processes(ctx, refs)
+	if err != nil {
+		return err
+	}
 	for _, registration := range traces.Registrations() {
 		source := sources["recording"]
 		if registration.Name == "process" {
@@ -127,7 +139,7 @@ func playgroundSamples(ctx context.Context, refs []read.Ref, item playgroundKind
 		if err != nil {
 			return item, err
 		}
-		item.Events = append(item.Events, playgroundEvent{Variant: variant, Seq: record.Seq, ANSI: ansi, DetailANSI: detail, Record: record.Record})
+		item.Events = append(item.Events, playgroundEvent{Variant: variant, Seq: record.Seq, ANSI: ansi, DetailANSI: detail, Record: record.Record, Stream: record.Stream, Timestamp: record.Timestamp})
 	}
 	slices.SortFunc(item.Events, func(a, b playgroundEvent) int {
 		if a.Seq < b.Seq {

@@ -41,6 +41,9 @@ afterAll(async () => {
 interface Usage {
   processes: number;
   rssBytes: number;
+  swapBytes?: number;
+  compressedBytes?: number;
+  hogs?: Record<string, string>;
 }
 
 interface Frame {
@@ -50,6 +53,21 @@ interface Frame {
 }
 
 describe("live process groups", () => {
+  it("reports platform memory columns without substituting compressed memory for disk swap", async () => {
+    const response = await fetch(`${apiURL}/api/top/processes?pid=${server.pid}&all=true`);
+    expect(response.status).toBe(200);
+    const reading = await response.json() as { processes: Array<Usage & { pid: number }> };
+    const own = reading.processes.find(process => process.pid === server.pid);
+    expect(own?.rssBytes).toBeGreaterThan(0);
+    if (process.platform === "darwin") {
+      expect(own?.compressedBytes).toBeGreaterThanOrEqual(0);
+      expect(own?.swapBytes).toBeUndefined();
+    } else if (process.platform === "linux") {
+      expect(own?.swapBytes).toBeGreaterThanOrEqual(0);
+      expect(own?.compressedBytes).toBeUndefined();
+    }
+  });
+
   it("carries Git identity in raw frames without adding presentation buckets", async () => {
     const response = await fetch(`${apiURL}/api/top`);
     expect(response.status).toBe(200);

@@ -27,6 +27,286 @@ spec:
               collect:
                 description: Captures that only read
                 properties:
+                  clicky:
+                    properties:
+                      entity:
+                        items:
+                          properties:
+                            agent:
+                              description: Read through a connected agent instead
+                                of the execution's process
+                              nullable: true
+                              properties:
+                                id:
+                                  title: Agent ID
+                                  type: string
+                                selector:
+                                  additionalProperties:
+                                    type: string
+                                  description: Agent resource attributes to match
+                                  title: Selector
+                                  type: object
+                                wait:
+                                  description: Wait for a matching agent to connect
+                                  title: Wait
+                                  type: boolean
+                              title: Agent
+                              type: object
+                            entity:
+                              description: Entity name glob
+                              type: string
+                            errorsOnly:
+                              description: Record failed operations only
+                              type: boolean
+                            name:
+                              description: Names the capture's session; empty takes
+                                <definition>-<section>-<group>-<type>-<n>
+                              title: Name
+                              type: string
+                            verb:
+                              description: Verb glob
+                              type: string
+                          type: object
+                        title: Entity operations
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      exec:
+                        items:
+                          properties:
+                            agent:
+                              description: Read through a connected agent instead
+                                of the execution's process
+                              nullable: true
+                              properties:
+                                id:
+                                  title: Agent ID
+                                  type: string
+                                selector:
+                                  additionalProperties:
+                                    type: string
+                                  description: Agent resource attributes to match
+                                  title: Selector
+                                  type: object
+                                wait:
+                                  description: Wait for a matching agent to connect
+                                  title: Wait
+                                  type: boolean
+                              title: Agent
+                              type: object
+                            executable:
+                              description: Executable name glob
+                              title: Executable
+                              type: string
+                            name:
+                              description: Names the capture's session; empty takes
+                                <definition>-<section>-<group>-<type>-<n>
+                              title: Name
+                              type: string
+                            tailBytes:
+                              description: Maximum bytes of each output tail
+                              format: int32
+                              title: Tail bytes
+                              type: integer
+                          type: object
+                        title: Executions
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      http:
+                        items:
+                          properties:
+                            agent:
+                              description: Read through a connected agent instead
+                                of the execution's process
+                              nullable: true
+                              properties:
+                                id:
+                                  title: Agent ID
+                                  type: string
+                                selector:
+                                  additionalProperties:
+                                    type: string
+                                  description: Agent resource attributes to match
+                                  title: Selector
+                                  type: object
+                                wait:
+                                  description: Wait for a matching agent to connect
+                                  title: Wait
+                                  type: boolean
+                              title: Agent
+                              type: object
+                            dedupWindow:
+                              description: Store an identical exchange only once within
+                                this duration such as 1h
+                              title: Dedup window
+                              type: string
+                            features:
+                              description: 'Telltale''s transports to observe by their
+                                HAR level: http prometheus loki opensearch git ...'
+                              items:
+                                type: string
+                              title: Features
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            name:
+                              description: Names the capture's session; empty takes
+                                <definition>-<section>-<group>-<type>-<n>
+                              title: Name
+                              type: string
+                          required:
+                          - features
+                          type: object
+                        title: HTTP
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      logs:
+                        items:
+                          properties:
+                            agent:
+                              description: Read through a connected agent instead
+                                of the execution's process
+                              nullable: true
+                              properties:
+                                id:
+                                  title: Agent ID
+                                  type: string
+                                selector:
+                                  additionalProperties:
+                                    type: string
+                                  description: Agent resource attributes to match
+                                  title: Selector
+                                  type: object
+                                wait:
+                                  description: Wait for a matching agent to connect
+                                  title: Wait
+                                  type: boolean
+                              title: Agent
+                              type: object
+                            levels:
+                              additionalProperties:
+                                type: string
+                              description: 'Refused: setting log levels changes the
+                                agent'
+                              title: Levels
+                              type: object
+                            match:
+                              title: Match
+                              type: string
+                            minLevel:
+                              title: Minimum level
+                              type: string
+                            name:
+                              description: Names the capture's session; empty takes
+                                <definition>-<section>-<group>-<type>-<n>
+                              title: Name
+                              type: string
+                          type: object
+                        title: Logs
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      pprof:
+                        description: Heap cpu allocs or goroutine profiles read through
+                          the agent at each checkpoint
+                        items:
+                          properties:
+                            agent:
+                              description: Read through a connected agent instead
+                                of the execution's process
+                              nullable: true
+                              properties:
+                                id:
+                                  title: Agent ID
+                                  type: string
+                                selector:
+                                  additionalProperties:
+                                    type: string
+                                  description: Agent resource attributes to match
+                                  title: Selector
+                                  type: object
+                                wait:
+                                  description: Wait for a matching agent to connect
+                                  title: Wait
+                                  type: boolean
+                              title: Agent
+                              type: object
+                            name:
+                              description: Names the capture's session; empty takes
+                                <definition>-<section>-<group>-<type>-<n>
+                              title: Name
+                              type: string
+                            profile:
+                              enum:
+                              - heap
+                              - cpu
+                              - allocs
+                              - goroutine
+                              title: Profile
+                              type: string
+                            seconds:
+                              description: Duration of a CPU profile window in seconds
+                              format: int32
+                              title: Seconds
+                              type: integer
+                            source:
+                              description: gops (default) or pprof
+                              enum:
+                              - gops
+                              - pprof
+                              title: Source
+                              type: string
+                          required:
+                          - profile
+                          type: object
+                        title: pprof
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      task:
+                        items:
+                          properties:
+                            agent:
+                              description: Read through a connected agent instead
+                                of the execution's process
+                              nullable: true
+                              properties:
+                                id:
+                                  title: Agent ID
+                                  type: string
+                                selector:
+                                  additionalProperties:
+                                    type: string
+                                  description: Agent resource attributes to match
+                                  title: Selector
+                                  type: object
+                                wait:
+                                  description: Wait for a matching agent to connect
+                                  title: Wait
+                                  type: boolean
+                              title: Agent
+                              type: object
+                            group:
+                              description: Parent group name glob
+                              title: Group
+                              type: string
+                            name:
+                              description: Names the capture's session; empty takes
+                                <definition>-<section>-<group>-<type>-<n>
+                              title: Name
+                              type: string
+                            progressIntervalMs:
+                              description: Minimum milliseconds between progress records
+                                of a task
+                              format: int32
+                              title: Progress interval
+                              type: integer
+                            taskName:
+                              description: Task name glob
+                              title: Task name
+                              type: string
+                          type: object
+                        title: Tasks
+                        type: array
+                        x-kubernetes-list-type: atomic
+                    title: Clicky
+                    type: object
                   go:
                     properties:
                       exec:
@@ -354,30 +634,39 @@ spec:
                     type: object
                   host:
                     properties:
-                      processGroups:
+                      processes:
                         items:
                           properties:
-                            all:
-                              description: Also record the processes no tool's group
-                                holds by program
-                              title: All processes
-                              type: boolean
                             catalog:
-                              description: A groups.yaml whose rules are applied over
-                                the built-in ones
-                              title: Catalog
                               type: string
-                            groups:
-                              description: Record only these groups and those under
-                                them such as claude or vitest
+                            environment:
+                              nullable: true
+                              properties:
+                                keys:
+                                  description: Environment variables to read onto
+                                    each process
+                                  items:
+                                    type: string
+                                  title: Keys
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                                prefixes:
+                                  description: Prefixes of the environment variables
+                                    to read onto each process
+                                  items:
+                                    type: string
+                                  title: Prefixes
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                              type: object
+                            facets:
                               items:
                                 type: string
-                              title: Groups
                               type: array
                               x-kubernetes-list-type: atomic
                             interval:
-                              description: How often the groups are read such as 2s
-                                (at least 1s)
+                              description: How often the tree is sampled such as 1s
+                                (at least 250ms)
                               title: Interval
                               type: string
                             name:
@@ -386,12 +675,9 @@ spec:
                               title: Name
                               type: string
                             net:
-                              description: Read each process's network bytes with
-                                nettop (darwin; costs over a core)
-                              title: Network bytes
                               type: boolean
                           type: object
-                        title: Process groups
+                        title: Processes
                         type: array
                         x-kubernetes-list-type: atomic
                     title: Host
@@ -657,10 +943,8 @@ spec:
                               nullable: true
                               properties:
                                 aggregations:
-                                  additionalProperties:
-                                    format: byte
-                                    type: string
                                   type: object
+                                  x-kubernetes-preserve-unknown-fields: true
                                 fields:
                                   items:
                                     type: string
@@ -877,15 +1161,34 @@ spec:
                         type: array
                         x-kubernetes-list-type: atomic
                       resources:
-                        description: CPU memory disk IO and descriptors of every process
+                        description: Startup metadata resource changes and metrics
                         items:
                           properties:
+                            catalog:
+                              type: string
+                            environment:
+                              nullable: true
+                              properties:
+                                keys:
+                                  description: Environment variables to read onto
+                                    each process
+                                  items:
+                                    type: string
+                                  title: Keys
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                                prefixes:
+                                  description: Prefixes of the environment variables
+                                    to read onto each process
+                                  items:
+                                    type: string
+                                  title: Prefixes
+                                  type: array
+                                  x-kubernetes-list-type: atomic
+                              type: object
                             facets:
-                              description: 'Descriptors read of every process each
-                                tick with lsof: openFiles sockets ports or connections'
                               items:
                                 type: string
-                              title: Facets
                               type: array
                               x-kubernetes-list-type: atomic
                             interval:
@@ -898,8 +1201,10 @@ spec:
                                 <definition>-<section>-<group>-<type>-<n>
                               title: Name
                               type: string
+                            net:
+                              type: boolean
                           type: object
-                        title: Resources
+                        title: Processes
                         type: array
                         x-kubernetes-list-type: atomic
                       tree:
@@ -1339,6 +1644,12 @@ spec:
                                 <definition>-<section>-<group>-<type>-<n>
                               title: Name
                               type: string
+                            pagingMode:
+                              type: string
+                            pagingThreshold:
+                              format: int32
+                              nullable: true
+                              type: integer
                             params:
                               description: The query's params by name
                               title: Params
@@ -1351,10 +1662,8 @@ spec:
                               nullable: true
                               properties:
                                 aggregations:
-                                  additionalProperties:
-                                    format: byte
-                                    type: string
                                   type: object
+                                  x-kubernetes-preserve-unknown-fields: true
                                 fields:
                                   items:
                                     type: string
@@ -1595,17 +1904,17 @@ spec:
                                 <definition>-<section>-<group>-<type>-<n>
                               title: Name
                               type: string
-                            operationField:
+                            pagingMode:
                               type: string
+                            pagingThreshold:
+                              format: int32
+                              nullable: true
+                              type: integer
                             params:
                               description: The query's params by name
                               title: Params
                               type: object
                               x-kubernetes-preserve-unknown-fields: true
-                            parentIdField:
-                              type: string
-                            parentRefType:
-                              type: string
                             query:
                               title: Query
                               type: string
@@ -1613,10 +1922,8 @@ spec:
                               nullable: true
                               properties:
                                 aggregations:
-                                  additionalProperties:
-                                    format: byte
-                                    type: string
                                   type: object
+                                  x-kubernetes-preserve-unknown-fields: true
                                 fields:
                                   items:
                                     type: string
@@ -1811,16 +2118,7 @@ spec:
                                 type: string
                               type: array
                               x-kubernetes-list-type: atomic
-                            serviceField:
-                              type: string
                             sourceExcludes:
-                              items:
-                                type: string
-                              type: array
-                              x-kubernetes-list-type: atomic
-                            spanIdField:
-                              type: string
-                            statusFields:
                               items:
                                 type: string
                               type: array
@@ -1828,8 +2126,6 @@ spec:
                             to:
                               description: End of the window; empty is now
                               title: To
-                              type: string
-                            traceIdField:
                               type: string
                             untilStopped:
                               description: Read once when the run stops over the whole
