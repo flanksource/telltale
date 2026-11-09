@@ -19,6 +19,7 @@ The target seam determines what is observed: `process` follows a command or PID,
 | [sql](/traces/sql) | Instrumented or proxied SQL statements |
 | [sql_deadlock](/traces/sql_deadlock) | SQL Server deadlocks |
 | [sql_plancache](/traces/sql_plancache) | SQL Server plan cost deltas |
+| [sql_top](/traces/sql_top) | Running queries on Postgres or SQL Server |
 | [sql_xevent](/traces/sql_xevent) | SQL Server Extended Events |
 | [stacks](/traces/stacks) | Process stacks at checkpoints |
 | [terminal](/traces/terminal) | Terminal events supplied by a host |

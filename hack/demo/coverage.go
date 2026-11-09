@@ -63,6 +63,8 @@ func meaningful(kind string, row query.Row) bool {
 		return row["health"] == "up" && number(row["samples"]) > 0
 	case "sql_plancache":
 		return number(row["executions"]) > 0
+	case "sql_top":
+		return number(row["sessionId"]) > 0 && strings.Contains(text(row["sql"]), "WAITFOR") && number(row["elapsedMs"]) > 0
 	case "sql_deadlock":
 		return number(row["victims"]) > 0 && strings.Contains(text(row["xml"]), "deadlock")
 	case "sql_xevent", "sql":

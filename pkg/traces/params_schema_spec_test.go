@@ -17,7 +17,7 @@ import (
 var schemaGoldens = map[string][]string{
 	"exec": nil, "goprof": nil, "jvm_jfr": nil, "llm": nil,
 	"prometheus": nil, "spans": nil, "sql_deadlock": nil, "sql_plancache": nil,
-	"sql_xevent": nil, "stacks": nil, "terminal": nil,
+	"sql_xevent": nil, "sql_top": nil, "stacks": nil, "terminal": nil,
 	"http": {"listen", "export"},
 	"sql":  {"listen", "export"},
 	"logs": {"target"},

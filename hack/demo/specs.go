@@ -26,6 +26,7 @@ func demoSpecs(url, database string, javaPID int) ([]telltale.TraceSpec, error) 
 		"sql_xevent":    {"connection": "connection://mssql", "databases": []string{database}, "sessionName": database, "poll": "200ms"},
 		"sql_plancache": {"connection": "connection://mssql", "databases": []string{database}, "poll": "1s", "top": 20},
 		"sql_deadlock":  {"connection": "connection://mssql", "databases": []string{database}, "poll": "1s"},
+		"sql_top":       {"connection": "connection://mssql", "databases": []string{database}, "poll": "200ms"},
 		"llm":           {"target": self, "includePrompts": true, "includeResponses": true},
 	}
 	if len(params) != len(traces.Registrations()) {

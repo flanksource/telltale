@@ -86,7 +86,8 @@ func (w *labWorkload) create(ctx context.Context) error {
 
 func (w *labWorkload) query(ctx context.Context) error {
 	var total int
-	return w.db.QueryRowContext(ctx, "SELECT SUM(value) FROM dbo.orders /* telltale_demo */").Scan(&total)
+	// The delay keeps the request running across sql_top polls.
+	return w.db.QueryRowContext(ctx, "WAITFOR DELAY '00:00:01'; SELECT SUM(value) FROM dbo.orders /* telltale_demo */").Scan(&total)
 }
 
 func (w *labWorkload) deadlock(ctx context.Context) error {

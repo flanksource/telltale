@@ -30,6 +30,7 @@ const examples: Record<string, Record<string, unknown>> = {
   sql: { startedAt: '2026-01-01T10:00:00Z', connection: 'proxy', op: 'SELECT', sql: 'SELECT id FROM orders', durationMs: 8, rows: 2 },
   sql_deadlock: { timestamp: '2026-01-01T10:00:00Z', database: 'orders', victims: 1, participants: 2, victimStatement: 'UPDATE orders SET status = 1' },
   sql_plancache: { sampledAt: '2026-01-01T10:00:00Z', database: 'orders', executions: 5, cpuMs: 25, logicalReads: 100, sql: 'SELECT id FROM orders' },
+  sql_top: { sampledAt: '2026-01-01T10:00:00Z', engine: 'postgres', database: 'orders', sessionId: 41, state: 'active', waitType: 'Lock:transactionid', blockedBy: 40, elapsedMs: 1500, sql: 'UPDATE orders SET paid = true' },
   sql_xevent: { timestamp: '2026-01-01T10:00:00Z', name: 'sql_batch_completed', database: 'orders', durationMs: 12, sql: 'SELECT id FROM orders' },
   stacks: { takenAt: '2026-01-01T10:00:00Z', pid: 1234, format: 'goroutine', goroutineId: 1, state: 'running' },
   terminal: { at: '2026-01-01T10:00:00Z', offset: 0, kind: 'output', data: 'Build complete\n', width: 120, height: 40 },

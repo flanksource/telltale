@@ -158,6 +158,13 @@ spec:
         - poll: 30s
       deadlockReport:
         - {}
+      top:
+        - minElapsed: 500ms
+          top: 20
+    postgres:
+      top:
+        - poll: 2s
+          idle: true
     telltale:
       http:
         - features: [http]

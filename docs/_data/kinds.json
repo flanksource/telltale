@@ -1,5 +1,253 @@
 [
   {
+    "name": "entity",
+    "title": "Entity operations",
+    "capabilities": {
+      "live": true
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "entity": {
+          "type": "string",
+          "description": "Entity name glob"
+        },
+        "errorsOnly": {
+          "type": "boolean",
+          "description": "Record failed operations only"
+        },
+        "target": {
+          "properties": {
+            "agent": {
+              "type": "string",
+              "title": "Agent",
+              "description": "Agent ID to observe"
+            },
+            "allowMutation": {
+              "type": "boolean",
+              "title": "Allow mutation",
+              "description": "Allow probes to change runtime settings"
+            },
+            "pid": {
+              "type": "integer",
+              "title": "PID",
+              "format": "int32",
+              "description": "Process to observe"
+            },
+            "seam": {
+              "type": "string",
+              "title": "Seam",
+              "description": "How the capture is armed (supported seams: [agent])",
+              "enum": [
+                "agent"
+              ],
+              "default": "agent"
+            },
+            "selector": {
+              "type": "object",
+              "title": "Selector",
+              "description": "Agent resource attributes to match",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "wait": {
+              "type": "boolean",
+              "title": "Wait for agents",
+              "description": "Wait for a matching agent to connect"
+            }
+          },
+          "type": "object",
+          "x-telltale-seams": [
+            "agent"
+          ]
+        },
+        "verb": {
+          "type": "string",
+          "description": "Verb glob"
+        }
+      }
+    },
+    "columns": [
+      {
+        "name": "truncated",
+        "label": "Truncated",
+        "type": "json",
+        "filter": {
+          "kind": "terms",
+          "array": true
+        }
+      },
+      {
+        "name": "entity",
+        "type": "string"
+      },
+      {
+        "name": "verb",
+        "type": "string"
+      },
+      {
+        "name": "surface",
+        "type": "string"
+      },
+      {
+        "name": "targetId",
+        "type": "string"
+      },
+      {
+        "name": "admin",
+        "type": "boolean"
+      },
+      {
+        "name": "readOnly",
+        "type": "boolean"
+      },
+      {
+        "name": "parameters",
+        "type": "json"
+      },
+      {
+        "name": "args",
+        "type": "json",
+        "filter": {
+          "kind": "terms",
+          "array": true
+        }
+      },
+      {
+        "name": "startedAt",
+        "type": "datetime",
+        "kind": "timestamp"
+      },
+      {
+        "name": "durationMs",
+        "type": "number"
+      },
+      {
+        "name": "error",
+        "type": "string"
+      },
+      {
+        "name": "resource",
+        "type": "json"
+      }
+    ],
+    "exportFormats": [
+      {
+        "name": "ndjson",
+        "ext": "ndjson",
+        "mime": "application/x-ndjson"
+      }
+    ],
+    "flags": [
+      {
+        "name": "agent",
+        "type": "string",
+        "description": "Agent ID to observe",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "allow-mutation",
+        "type": "bool",
+        "description": "Allow probes to change runtime settings",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "data-dir",
+        "type": "string",
+        "description": "Directory holding telltale's trace data (default: $XDG_CACHE_HOME/telltale or the OS cache dir)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "duration",
+        "type": "duration",
+        "description": "Stop the run after this long, e.g. 30s (0 runs until the command exits or Ctrl+C)",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "entity",
+        "type": "string",
+        "description": "Entity name glob",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "errors-only",
+        "type": "bool",
+        "description": "Record failed operations only",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "follow",
+        "type": "bool",
+        "description": "Print every armed capture's records while recording",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "pid",
+        "type": "int",
+        "description": "Process to observe",
+        "default": "0",
+        "required": false
+      },
+      {
+        "name": "seam",
+        "type": "string",
+        "description": "How the capture is armed (supported seams: [agent]) (one of agent)",
+        "default": "agent",
+        "required": false
+      },
+      {
+        "name": "selector",
+        "type": "string",
+        "description": "Agent resource attributes to match",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "description": "Record order: seq or timestamp",
+        "default": "seq",
+        "required": false
+      },
+      {
+        "name": "tui",
+        "type": "bool",
+        "description": "Follow records in an interactive terminal",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "ui",
+        "type": "bool",
+        "description": "Open this run's traces in a local web viewer; keep serving until Ctrl+C",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "verb",
+        "type": "string",
+        "description": "Verb glob",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "wait",
+        "type": "bool",
+        "description": "Wait for a matching agent to connect",
+        "default": "false",
+        "required": false
+      }
+    ]
+  },
+  {
     "name": "exec",
     "title": "Executions",
     "capabilities": {
@@ -5464,6 +5712,444 @@
     ]
   },
   {
+    "name": "sql_top",
+    "title": "SQL running requests",
+    "capabilities": {
+      "follow": true
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "connection": {
+          "type": "string",
+          "title": "Connection",
+          "description": "Postgres or SQL Server connection reference"
+        },
+        "databases": {
+          "type": "array",
+          "title": "Databases",
+          "description": "Database patterns with * wildcards and ! exclusions; empty keeps every database",
+          "items": {
+            "type": "string"
+          }
+        },
+        "idle": {
+          "type": "boolean",
+          "title": "Idle sessions",
+          "description": "Also record idle sessions; sessions holding an open transaction are always recorded"
+        },
+        "minElapsed": {
+          "type": "string",
+          "title": "Minimum elapsed",
+          "description": "Only record requests running at least this long such as 500ms"
+        },
+        "poll": {
+          "type": "string",
+          "title": "Poll",
+          "description": "Poll interval such as 5s",
+          "default": "5s"
+        },
+        "target": {
+          "properties": {
+            "agent": {
+              "type": "string",
+              "title": "Agent",
+              "description": "Agent ID to observe"
+            },
+            "allowMutation": {
+              "type": "boolean",
+              "title": "Allow mutation",
+              "description": "Allow probes to change runtime settings"
+            },
+            "pid": {
+              "type": "integer",
+              "title": "PID",
+              "format": "int32",
+              "description": "Process to observe"
+            },
+            "seam": {
+              "type": "string",
+              "title": "Seam",
+              "description": "How the capture is armed (supported seams: [connection])",
+              "enum": [
+                "connection"
+              ],
+              "default": "connection"
+            },
+            "selector": {
+              "type": "object",
+              "title": "Selector",
+              "description": "Agent resource attributes to match",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "wait": {
+              "type": "boolean",
+              "title": "Wait for agents",
+              "description": "Wait for a matching agent to connect"
+            }
+          },
+          "type": "object",
+          "x-telltale-seams": [
+            "connection"
+          ]
+        },
+        "text": {
+          "type": "array",
+          "title": "Statement text",
+          "description": "SQL text patterns with * wildcards and ! exclusions; bare values match substrings",
+          "items": {
+            "type": "string"
+          }
+        },
+        "top": {
+          "type": "integer",
+          "title": "Top",
+          "format": "int32",
+          "description": "Maximum requests per poll ranked by elapsed time; defaults to 50",
+          "default": 50
+        }
+      },
+      "required": [
+        "connection"
+      ]
+    },
+    "columns": [
+      {
+        "name": "sampledAt",
+        "label": "Sampled",
+        "type": "datetime",
+        "kind": "timestamp",
+        "filter": {
+          "kind": "time"
+        }
+      },
+      {
+        "name": "engine",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "database",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "sessionId",
+        "label": "Session",
+        "type": "number",
+        "format": "integer",
+        "filter": {
+          "kind": "exact"
+        }
+      },
+      {
+        "name": "requestId",
+        "label": "Request",
+        "type": "number",
+        "format": "integer",
+        "filter": {
+          "kind": "exact"
+        }
+      },
+      {
+        "name": "blockedBy",
+        "label": "Blocked by",
+        "type": "number",
+        "format": "integer",
+        "filter": {
+          "kind": "exact"
+        }
+      },
+      {
+        "name": "blocked",
+        "type": "boolean",
+        "filter": {
+          "kind": "boolean"
+        }
+      },
+      {
+        "name": "user",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "application",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "clientHost",
+        "label": "Client host",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "state",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "command",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "waitType",
+        "label": "Wait",
+        "type": "string",
+        "filter": {
+          "kind": "terms"
+        }
+      },
+      {
+        "name": "waitResource",
+        "label": "Wait resource",
+        "type": "string",
+        "filter": {
+          "kind": "exact"
+        }
+      },
+      {
+        "name": "waitMs",
+        "label": "Waited",
+        "type": "duration",
+        "unit": "ms",
+        "filter": {
+          "kind": "duration"
+        }
+      },
+      {
+        "name": "startedAt",
+        "label": "Started",
+        "type": "datetime",
+        "filter": {
+          "kind": "time"
+        }
+      },
+      {
+        "name": "transactionStartedAt",
+        "label": "Transaction started",
+        "type": "datetime",
+        "filter": {
+          "kind": "time"
+        }
+      },
+      {
+        "name": "elapsedMs",
+        "label": "Elapsed",
+        "type": "duration",
+        "unit": "ms",
+        "filter": {
+          "kind": "duration"
+        }
+      },
+      {
+        "name": "transactionMs",
+        "label": "Transaction",
+        "type": "duration",
+        "unit": "ms",
+        "filter": {
+          "kind": "duration"
+        }
+      },
+      {
+        "name": "cpuMs",
+        "label": "CPU",
+        "type": "duration",
+        "unit": "ms",
+        "filter": {
+          "kind": "duration"
+        }
+      },
+      {
+        "name": "logicalReads",
+        "type": "number",
+        "format": "integer",
+        "filter": {
+          "kind": "range"
+        }
+      },
+      {
+        "name": "reads",
+        "type": "number",
+        "format": "integer",
+        "filter": {
+          "kind": "range"
+        }
+      },
+      {
+        "name": "writes",
+        "type": "number",
+        "format": "integer",
+        "filter": {
+          "kind": "range"
+        }
+      },
+      {
+        "name": "memoryBytes",
+        "label": "Memory",
+        "type": "bytes",
+        "filter": {
+          "kind": "range"
+        }
+      },
+      {
+        "name": "openTransactions",
+        "type": "number",
+        "format": "integer",
+        "filter": {
+          "kind": "range"
+        }
+      },
+      {
+        "name": "queryId",
+        "label": "Query id",
+        "type": "string",
+        "filter": {
+          "kind": "exact"
+        }
+      },
+      {
+        "name": "sql",
+        "label": "SQL",
+        "type": "string",
+        "filter": {
+          "kind": "text"
+        }
+      }
+    ],
+    "exportFormats": [
+      {
+        "name": "ndjson",
+        "ext": "ndjson",
+        "mime": "application/x-ndjson"
+      }
+    ],
+    "flags": [
+      {
+        "name": "connection",
+        "type": "string",
+        "description": "Postgres or SQL Server connection reference",
+        "default": "",
+        "required": true
+      },
+      {
+        "name": "data-dir",
+        "type": "string",
+        "description": "Directory holding telltale's trace data (default: $XDG_CACHE_HOME/telltale or the OS cache dir)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "databases",
+        "type": "stringSlice",
+        "description": "Database patterns with * wildcards and ! exclusions; empty keeps every database",
+        "default": "[]",
+        "required": false
+      },
+      {
+        "name": "duration",
+        "type": "duration",
+        "description": "Stop the run after this long, e.g. 30s (0 runs until the command exits or Ctrl+C)",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "every",
+        "type": "duration",
+        "description": "Read the checkpointed captures this often, e.g. 10s",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "follow",
+        "type": "bool",
+        "description": "Print every armed capture's records while recording",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "idle",
+        "type": "bool",
+        "description": "Also record idle sessions; sessions holding an open transaction are always recorded",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "min-elapsed",
+        "type": "string",
+        "description": "Only record requests running at least this long such as 500ms",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "poll",
+        "type": "string",
+        "description": "Poll interval such as 5s",
+        "default": "5s",
+        "required": false
+      },
+      {
+        "name": "seam",
+        "type": "string",
+        "description": "How the capture is armed (supported seams: [connection]) (one of connection)",
+        "default": "connection",
+        "required": false
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "description": "Record order: seq or timestamp",
+        "default": "seq",
+        "required": false
+      },
+      {
+        "name": "text",
+        "type": "stringSlice",
+        "description": "SQL text patterns with * wildcards and ! exclusions; bare values match substrings",
+        "default": "[]",
+        "required": false
+      },
+      {
+        "name": "top",
+        "type": "int",
+        "description": "Maximum requests per poll ranked by elapsed time; defaults to 50",
+        "default": "50",
+        "required": false
+      },
+      {
+        "name": "tui",
+        "type": "bool",
+        "description": "Follow records in an interactive terminal",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "ui",
+        "type": "bool",
+        "description": "Open this run's traces in a local web viewer; keep serving until Ctrl+C",
+        "default": "false",
+        "required": false
+      }
+    ]
+  },
+  {
     "name": "sql_xevent",
     "title": "SQL Server events",
     "capabilities": {
@@ -6167,6 +6853,384 @@
         "type": "string",
         "description": "How the capture is armed (supported seams: [process agent self]) (one of process, agent, self)",
         "default": "process",
+        "required": false
+      },
+      {
+        "name": "selector",
+        "type": "string",
+        "description": "Agent resource attributes to match",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "sort",
+        "type": "string",
+        "description": "Record order: seq or timestamp",
+        "default": "seq",
+        "required": false
+      },
+      {
+        "name": "tui",
+        "type": "bool",
+        "description": "Follow records in an interactive terminal",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "ui",
+        "type": "bool",
+        "description": "Open this run's traces in a local web viewer; keep serving until Ctrl+C",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "wait",
+        "type": "bool",
+        "description": "Wait for a matching agent to connect",
+        "default": "false",
+        "required": false
+      }
+    ]
+  },
+  {
+    "name": "task",
+    "title": "Tasks",
+    "capabilities": {
+      "live": true
+    },
+    "params": {
+      "type": "object",
+      "properties": {
+        "group": {
+          "type": "string",
+          "description": "Parent group name glob"
+        },
+        "name": {
+          "type": "string",
+          "description": "Task name glob"
+        },
+        "progressIntervalMs": {
+          "type": "integer",
+          "format": "int32",
+          "description": "Minimum milliseconds between progress records of a task; 0 takes the agent's default"
+        },
+        "target": {
+          "properties": {
+            "agent": {
+              "type": "string",
+              "title": "Agent",
+              "description": "Agent ID to observe"
+            },
+            "allowMutation": {
+              "type": "boolean",
+              "title": "Allow mutation",
+              "description": "Allow probes to change runtime settings"
+            },
+            "pid": {
+              "type": "integer",
+              "title": "PID",
+              "format": "int32",
+              "description": "Process to observe"
+            },
+            "seam": {
+              "type": "string",
+              "title": "Seam",
+              "description": "How the capture is armed (supported seams: [agent])",
+              "enum": [
+                "agent"
+              ],
+              "default": "agent"
+            },
+            "selector": {
+              "type": "object",
+              "title": "Selector",
+              "description": "Agent resource attributes to match",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "wait": {
+              "type": "boolean",
+              "title": "Wait for agents",
+              "description": "Wait for a matching agent to connect"
+            }
+          },
+          "type": "object",
+          "x-telltale-seams": [
+            "agent"
+          ]
+        }
+      }
+    },
+    "columns": [
+      {
+        "name": "truncated",
+        "label": "Truncated",
+        "type": "json",
+        "filter": {
+          "kind": "terms",
+          "array": true
+        }
+      },
+      {
+        "name": "phase",
+        "type": "string"
+      },
+      {
+        "name": "id",
+        "type": "string"
+      },
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "type",
+        "type": "string"
+      },
+      {
+        "name": "group",
+        "type": "string"
+      },
+      {
+        "name": "status",
+        "type": "string"
+      },
+      {
+        "name": "error",
+        "type": "string"
+      },
+      {
+        "name": "retry",
+        "type": "json"
+      },
+      {
+        "name": "message",
+        "type": "string"
+      },
+      {
+        "name": "logs",
+        "type": "json"
+      },
+      {
+        "name": "logsClearedThrough",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "total",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "completed",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "failed",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "running",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "canceled",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "work",
+        "type": "json"
+      },
+      {
+        "name": "description",
+        "type": "string"
+      },
+      {
+        "name": "progress",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "maxValue",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "progressMetrics",
+        "type": "json"
+      },
+      {
+        "name": "groupId",
+        "type": "string"
+      },
+      {
+        "name": "parentGroupId",
+        "type": "string"
+      },
+      {
+        "name": "dependencyIds",
+        "type": "json",
+        "filter": {
+          "kind": "terms",
+          "array": true
+        }
+      },
+      {
+        "name": "kind",
+        "type": "string"
+      },
+      {
+        "name": "labels",
+        "type": "json"
+      },
+      {
+        "name": "owner",
+        "type": "string"
+      },
+      {
+        "name": "startedAt",
+        "type": "string"
+      },
+      {
+        "name": "finishedAt",
+        "type": "string"
+      },
+      {
+        "name": "href",
+        "type": "string"
+      },
+      {
+        "name": "session",
+        "type": "json"
+      },
+      {
+        "name": "controls",
+        "type": "json",
+        "filter": {
+          "kind": "terms",
+          "array": true
+        }
+      },
+      {
+        "name": "stdout",
+        "type": "string"
+      },
+      {
+        "name": "stderr",
+        "type": "string"
+      },
+      {
+        "name": "stdoutOffset",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "stderrOffset",
+        "type": "number",
+        "format": "integer"
+      },
+      {
+        "name": "stdoutTruncated",
+        "type": "boolean"
+      },
+      {
+        "name": "stderrTruncated",
+        "type": "boolean"
+      },
+      {
+        "name": "details",
+        "type": "json"
+      },
+      {
+        "name": "prompts",
+        "type": "json"
+      },
+      {
+        "name": "resource",
+        "type": "json"
+      }
+    ],
+    "exportFormats": [
+      {
+        "name": "ndjson",
+        "ext": "ndjson",
+        "mime": "application/x-ndjson"
+      }
+    ],
+    "flags": [
+      {
+        "name": "agent",
+        "type": "string",
+        "description": "Agent ID to observe",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "allow-mutation",
+        "type": "bool",
+        "description": "Allow probes to change runtime settings",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "data-dir",
+        "type": "string",
+        "description": "Directory holding telltale's trace data (default: $XDG_CACHE_HOME/telltale or the OS cache dir)",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "duration",
+        "type": "duration",
+        "description": "Stop the run after this long, e.g. 30s (0 runs until the command exits or Ctrl+C)",
+        "default": "0s",
+        "required": false
+      },
+      {
+        "name": "follow",
+        "type": "bool",
+        "description": "Print every armed capture's records while recording",
+        "default": "false",
+        "required": false
+      },
+      {
+        "name": "group",
+        "type": "string",
+        "description": "Parent group name glob",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "description": "Task name glob",
+        "default": "",
+        "required": false
+      },
+      {
+        "name": "pid",
+        "type": "int",
+        "description": "Process to observe",
+        "default": "0",
+        "required": false
+      },
+      {
+        "name": "progress-interval-ms",
+        "type": "int",
+        "description": "Minimum milliseconds between progress records of a task; 0 takes the agent's default",
+        "default": "0",
+        "required": false
+      },
+      {
+        "name": "seam",
+        "type": "string",
+        "description": "How the capture is armed (supported seams: [agent]) (one of agent)",
+        "default": "agent",
         "required": false
       },
       {

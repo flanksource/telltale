@@ -50,6 +50,7 @@ type Collect struct {
 	Prometheus CollectPrometheus `json:"prometheus,omitzero" clicky:"title=Prometheus" telltale:"seam=host"`
 	OpenSearch CollectOpenSearch `json:"opensearch,omitzero" clicky:"title=OpenSearch" telltale:"seam=host"`
 	SQLServer  CollectSQLServer  `json:"sqlserver,omitzero" clicky:"title=SQL Server" telltale:"seam=connection"`
+	Postgres   CollectPostgres   `json:"postgres,omitzero" clicky:"title=Postgres" telltale:"seam=connection"`
 	Telltale   CollectTelltale   `json:"telltale,omitzero" clicky:"title=Telltale" telltale:"seam=self"`
 }
 
@@ -132,6 +133,12 @@ type CollectSQLServer struct {
 	SystemHealth   []SystemHealth   `json:"systemHealth,omitempty" clicky:"title=system_health,desc=Attach read-only to the system_health session" telltale:"kind=sql_xevent"`
 	PlanCache      []PlanCache      `json:"planCache,omitempty" clicky:"title=Plan cache" telltale:"kind=sql_plancache"`
 	DeadlockReport []DeadlockReport `json:"deadlockReport,omitempty" clicky:"title=Deadlock report" telltale:"kind=sql_deadlock"`
+	Top            []SQLServerTop   `json:"top,omitempty" clicky:"title=Running requests,desc=Samples sys.dm_exec_requests top style" telltale:"kind=sql_top"`
+}
+
+// CollectPostgres reads a Postgres server over a connection.
+type CollectPostgres struct {
+	Top []PostgresTop `json:"top,omitempty" clicky:"title=Running queries,desc=Samples pg_stat_activity top style" telltale:"kind=sql_top"`
 }
 
 // CollectTelltale reads telltale's own process.

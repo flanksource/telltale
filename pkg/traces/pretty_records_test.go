@@ -29,6 +29,7 @@ var _ = Describe("styled trace records", func() {
 		{"sql", query.Row{"sql": "SELECT id FROM orders", "durationMs": 1500.0, "rows": 3}, []string{"SLOW SQL", "[1500ms]", "[rows:3]", "SELECT id FROM orders"}},
 		{"sql_xevent", query.Row{"name": "sql_statement_completed", "sql": "SELECT id FROM orders", "durationMs": 12.0, "rowCount": 3}, []string{"SELECT id FROM orders", "rows"}},
 		{"sql_plancache", query.Row{"sql": "SELECT id FROM orders", "executions": 4, "avgElapsedMs": 12.0, "database": "checkout"}, []string{"SELECT id FROM orders", "4", "checkout"}},
+		{"sql_top", query.Row{"database": "checkout", "sessionId": 41, "state": "active", "waitType": "Lock:transactionid", "elapsedMs": 1500.0, "blocked": true, "blockedBy": 40, "sql": "UPDATE orders SET paid = true"}, []string{"checkout", "#41", "Lock:transactionid", "blocked by #40", "UPDATE orders"}},
 		{"sql_deadlock", query.Row{"database": "checkout", "victims": 1, "participants": 2, "victimStatement": "UPDATE orders SET total = 1"}, []string{"deadlock", "checkout", "UPDATE orders"}},
 		{"exec", query.Row{"name": "git", "args": []string{"status"}, "exitCode": 0}, []string{"git", "status"}},
 		{"entity", query.Row{"entity": "widget", "verb": "update", "targetId": "w-1", "surface": "http", "durationMs": 12.0, "error": "update rejected"}, []string{"widget", "update", "w-1", "http", "update rejected"}},

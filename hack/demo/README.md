@@ -51,6 +51,7 @@ After `make build`, view the saved records using the local binary:
 | `jvm_jfr` | A child JVM allocating, computing, parking, and contending while Flight Recorder samples it |
 | `prometheus`, `query` | Managed Prometheus scraping the demo's request counter and a windowed query reading those samples |
 | `sql_xevent`, `sql_plancache`, `sql_deadlock` | Lab database statements, execution deltas, and two transactions updating rows in opposite order to produce a deadlock |
+| `sql_top` | The lab query's one-second `WAITFOR`, seen running by a 200ms poll |
 | `llm` | One observed Captain API request and its actual response/token usage |
 
 The run is stopped and drained before the JVM, local HTTP server, and lab database are removed. Errors and partial traces are retained. A new catalog kind requires a new real workload and evidence predicate; it cannot silently pass.

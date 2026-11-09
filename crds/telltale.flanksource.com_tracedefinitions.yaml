@@ -1144,6 +1144,63 @@ spec:
                         x-kubernetes-list-type: atomic
                     title: OpenSearch
                     type: object
+                  postgres:
+                    properties:
+                      top:
+                        description: Samples pg_stat_activity top style
+                        items:
+                          properties:
+                            connection:
+                              description: Postgres or SQL Server connection reference
+                              title: Connection
+                              type: string
+                            databases:
+                              description: Database patterns with * wildcards and
+                                ! exclusions; empty keeps every database
+                              items:
+                                type: string
+                              title: Databases
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            idle:
+                              description: Also record idle sessions; sessions holding
+                                an open transaction are always recorded
+                              title: Idle sessions
+                              type: boolean
+                            minElapsed:
+                              description: Only record requests running at least this
+                                long such as 500ms
+                              title: Minimum elapsed
+                              type: string
+                            name:
+                              description: Names the capture's session; empty takes
+                                <definition>-<section>-<group>-<type>-<n>
+                              title: Name
+                              type: string
+                            poll:
+                              description: Poll interval such as 5s
+                              title: Poll
+                              type: string
+                            text:
+                              description: SQL text patterns with * wildcards and
+                                ! exclusions; bare values match substrings
+                              items:
+                                type: string
+                              title: Statement text
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            top:
+                              description: Maximum requests per poll ranked by elapsed
+                                time; defaults to 50
+                              format: int32
+                              title: Top
+                              type: integer
+                          type: object
+                        title: Running queries
+                        type: array
+                        x-kubernetes-list-type: atomic
+                    title: Postgres
+                    type: object
                   process:
                     properties:
                       nativeStacks:
@@ -2524,6 +2581,59 @@ spec:
                               x-kubernetes-list-type: atomic
                           type: object
                         title: system_health
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      top:
+                        description: Samples sys.dm_exec_requests top style
+                        items:
+                          properties:
+                            connection:
+                              description: Postgres or SQL Server connection reference
+                              title: Connection
+                              type: string
+                            databases:
+                              description: Database patterns with * wildcards and
+                                ! exclusions; empty keeps every database
+                              items:
+                                type: string
+                              title: Databases
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            idle:
+                              description: Also record idle sessions; sessions holding
+                                an open transaction are always recorded
+                              title: Idle sessions
+                              type: boolean
+                            minElapsed:
+                              description: Only record requests running at least this
+                                long such as 500ms
+                              title: Minimum elapsed
+                              type: string
+                            name:
+                              description: Names the capture's session; empty takes
+                                <definition>-<section>-<group>-<type>-<n>
+                              title: Name
+                              type: string
+                            poll:
+                              description: Poll interval such as 5s
+                              title: Poll
+                              type: string
+                            text:
+                              description: SQL text patterns with * wildcards and
+                                ! exclusions; bare values match substrings
+                              items:
+                                type: string
+                              title: Statement text
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            top:
+                              description: Maximum requests per poll ranked by elapsed
+                                time; defaults to 50
+                              format: int32
+                              title: Top
+                              type: integer
+                          type: object
+                        title: Running requests
                         type: array
                         x-kubernetes-list-type: atomic
                     title: SQL Server
