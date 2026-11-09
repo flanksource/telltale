@@ -11,10 +11,10 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/flanksource/commons-db/connection"
 	"github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/models"
 	"github.com/flanksource/commons-db/query"
+	"github.com/flanksource/telltale/pkg/tracing/sqlconn"
 	"github.com/flanksource/telltale/pkg/tracing/sqlserver/xetrace"
 )
 
@@ -259,26 +259,8 @@ func (sqlXEventProvider) Stream(ctx context.Context, req query.ProviderRequest, 
 // client on it for an Extended Events capture; release closes the client and
 // gives the lease back. A connection of any other type is refused.
 func OpenSQLServer(ctx context.Context, reference string) (*sql.DB, func(), error) {
-	conn := connection.SQLConnection{ConnectionName: reference}
-	if err := conn.HydrateConnection(ctx); err != nil {
-		return nil, nil, err
-	}
-	if conn.Type != models.ConnectionTypeSQLServer {
-		return nil, nil, fmt.Errorf("SQL XEvents requires a SQL Server connection")
-	}
-	releaseLease, err := ctx.AcquireConnectionLease(reference)
-	if err != nil {
-		return nil, nil, err
-	}
-	client, err := conn.Client(ctx)
-	if err != nil {
-		releaseLease()
-		return nil, nil, err
-	}
-	return client, func() {
-		_ = client.Close()
-		releaseLease()
-	}, nil
+	client, _, release, err := sqlconn.Open(ctx, sqlconn.OpenOptions{Reference: reference, Types: []string{models.ConnectionTypeSQLServer}, Purpose: "SQL XEvents"})
+	return client, release, err
 }
 
 // eventRow converts a captured event to a generic row through its own JSON
