@@ -104,7 +104,7 @@ require (
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/flanksource/clicky v1.21.88-0.20261027204456-34e65b99d69d // indirect
-	github.com/flanksource/commons v1.63.0 // indirect
+	github.com/flanksource/commons v1.64.1 // indirect
 	github.com/flanksource/commons-db v0.1.61-0.20261027210213-a7b138ebccde // indirect
 	github.com/flanksource/gomplate/v3 v3.24.90 // indirect
 	github.com/flanksource/is-healthy v1.0.92 // indirect

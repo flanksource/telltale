@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/flanksource/commons/har"
+	commonshttp "github.com/flanksource/commons/http"
 	"github.com/flanksource/telltale/sdk/protocol"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -83,6 +84,34 @@ var _ = Describe("HTTP transport", func() {
 		Expect(entry.Request.PostData.Text).NotTo(ContainSubstring("secret-value"))
 		Expect(entry.Response.Status).To(Equal(http.StatusCreated))
 		Expect(entry.Response.Content.Text).NotTo(ContainSubstring("secret-value"))
+	})
+	It("captures a commons client configured for TLS after instrumenting the default transport", func() {
+		previous := http.DefaultTransport
+		DeferCleanup(func() { http.DefaultTransport = previous })
+		server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(w, "ok")
+		}))
+		defer server.Close()
+		agent := Loopback()
+		defer agent.Close()
+		stream, conn := openAgent(agent)
+		defer stream.Close()
+		Expect(conn.Send("arm", protocol.Arm{Session: "tls-test", Probe: "http", Params: json.RawMessage(`{}`)})).To(Succeed())
+		_, _, err := conn.Read()
+		Expect(err).NotTo(HaveOccurred())
+		InstrumentDefaultTransport()
+		response, err := commonshttp.NewClient().InsecureSkipVerify(true).R(GinkgoT().Context()).Get(server.URL + "/widgets")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(response.StatusCode).To(Equal(http.StatusOK))
+		frame, _, err := conn.Read()
+		Expect(err).NotTo(HaveOccurred())
+		var batch protocol.Records
+		Expect(json.Unmarshal(frame.Body, &batch)).To(Succeed())
+		Expect(batch.Items).To(HaveLen(1))
+		var entry har.Entry
+		Expect(json.Unmarshal(batch.Items[0], &entry)).To(Succeed())
+		Expect(entry.Request.URL).To(Equal(server.URL + "/widgets"))
+		Expect(entry.Response.Status).To(Equal(http.StatusOK))
 	})
 	It("emits a HAR entry for an armed request", func() {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

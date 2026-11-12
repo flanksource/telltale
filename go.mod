@@ -15,7 +15,7 @@ require (
 	github.com/elazarl/goproxy v1.7.2
 	github.com/flanksource/captain v0.0.73
 	github.com/flanksource/clicky v1.21.90
-	github.com/flanksource/commons v1.63.0
+	github.com/flanksource/commons v1.64.1
 	github.com/flanksource/commons-db v0.1.70
 	github.com/flanksource/commons-db/cmd/query v0.1.70
 	github.com/flanksource/commons-db/recordstore v0.1.70

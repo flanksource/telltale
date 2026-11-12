@@ -49,6 +49,7 @@ func (httpProbe) Arm(ctx context.Context, params json.RawMessage, sink Sink) (fu
 type httpTransport struct {
 	next    http.RoundTripper
 	capture http.RoundTripper
+	wrap    func(http.RoundTripper) http.RoundTripper
 }
 
 func (t httpTransport) RoundTrip(request *http.Request) (*http.Response, error) {
@@ -56,6 +57,19 @@ func (t httpTransport) RoundTrip(request *http.Request) (*http.Response, error) 
 		return t.next.RoundTrip(request)
 	}
 	return t.capture.RoundTrip(request)
+}
+
+// Unwrap implements commons http.TransportWrapper so clients can reconfigure
+// the transport beneath the capture layer.
+func (t httpTransport) Unwrap() http.RoundTripper { return t.next }
+
+// Rewrap implements commons http.TransportWrapper: it captures through the same
+// collector around a reconfigured inner transport.
+func (t httpTransport) Rewrap(inner http.RoundTripper) http.RoundTripper {
+	if inner == nil {
+		panic("telltale: HTTP transport must not be nil")
+	}
+	return httpTransport{next: inner, capture: t.wrap(inner), wrap: t.wrap}
 }
 
 // Transport captures requests made through next when the HTTP probe is armed.
@@ -69,7 +83,8 @@ func Transport(next http.RoundTripper) http.RoundTripper {
 		Record(context.Background(), "http", entry)
 		return nil
 	})
-	return httpTransport{next: next, capture: collector.Middleware()(next)}
+	wrap := collector.Middleware()
+	return httpTransport{next: next, capture: wrap(next), wrap: wrap}
 }
 
 // InstrumentDefaultTransport wraps the default HTTP transport at application startup.
