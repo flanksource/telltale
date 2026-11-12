@@ -2,6 +2,7 @@ package telltale_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"time"
@@ -14,6 +15,20 @@ import (
 )
 
 var _ = Describe("listing runs", func() {
+	It("orders mixed hostnames and old IDs by start time before applying the limit", func() {
+		dir := GinkgoT().TempDir()
+		names := []string{"zworker20261105T000000Z", "run-2026-11-06T00-00-00Z", "aworker20261107T000000Z"}
+		for index, name := range names {
+			store := traces.StoreDir(dir, name)
+			Expect(os.MkdirAll(store, 0o755)).To(Succeed())
+			manifest, err := json.Marshal(telltale.Result{RunID: name, Dir: store, StartedAt: time.Date(2026, 11, 5+index, 0, 0, 0, 0, time.UTC)})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(os.WriteFile(filepath.Join(store, telltale.ManifestFile), manifest, 0o600)).To(Succeed())
+		}
+		runs, err := telltale.List(telltale.ListOptions{DataDir: dir, Limit: 2})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(runs).To(HaveExactElements(HaveField("RunID", names[2]), HaveField("RunID", names[1])))
+	})
 	var dataDir, succeeded, failed, unfinished string
 	var started time.Time
 

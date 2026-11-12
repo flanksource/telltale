@@ -19,3 +19,6 @@ sdk/java/build/
 pkg/agentinstall/java/assets/*
 !pkg/agentinstall/java/assets/.gitkeep
 /docs/plans/
+/docs/doc_build/
+/docs/.rspress/
+/victoria-metrics-data/

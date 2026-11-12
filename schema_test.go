@@ -133,7 +133,7 @@ var _ = Describe("a start request", func() {
 			telltale.FieldError{InstancePath: "/command", Message: "a command is required"},
 			And(HaveField("InstancePath", HavePrefix("/traces/"+httpproxy.Kind)), HaveField("Message", ContainSubstring(`mode "sideways"`))),
 			And(HaveField("InstancePath", "/traces/"+pgproxy.Kind), HaveField("Message", ContainSubstring("want an object"))),
-			And(HaveField("InstancePath", "/traces/process_tree"), HaveField("Message", ContainSubstring("no trace definition list arms process_tree"))),
+			And(HaveField("InstancePath", "/traces/process_tree"), HaveField("Message", ContainSubstring(`unknown trace kind "process_tree"`))),
 		))
 	})
 })

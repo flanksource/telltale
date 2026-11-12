@@ -2,6 +2,7 @@ package telltale
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -15,7 +16,10 @@ import (
 
 	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/tracing"
+	"github.com/flanksource/telltale/pkg/tracing/process"
+	"github.com/flanksource/telltale/pkg/tracing/processcapture"
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 )
 
 // ErrNotLive is a Stop of a run this process is not running: finished,
@@ -36,7 +40,7 @@ type Run struct {
 	captures    []*traces.Capture
 	checkpoints checkpoints
 	cmd         *exec.Cmd
-	output      *os.File
+	output      []*os.File
 	stopOnce    sync.Once
 	stopErr     error
 	// stopping is closed by Stop of an attached run, which owns no process
@@ -45,10 +49,12 @@ type Run struct {
 	exited   chan struct{}
 	// checkpointed is closed once no interval checkpoint can start or is in
 	// flight, so the captures can be stopped.
-	checkpointed chan struct{}
-	done         chan struct{}
-	result       *Result
-	err          error
+	checkpointed      chan struct{}
+	checkpointCtx     context.Context
+	cancelCheckpoints context.CancelFunc
+	done              chan struct{}
+	result            *Result
+	err               error
 }
 
 // Start arms options.Traces, starts options.Command or attaches to
@@ -65,6 +71,8 @@ func Start(ctx context.Context, options StartOptions) (*Run, error) {
 	startedAt := time.Now()
 	host, err := traces.Open(traces.OpenOptions{
 		DataDir: options.DataDir, RunID: traces.RunID(startedAt), Connections: options.Connections, RunConnections: options.RunConnections,
+		// Reserve the tree, samples and stacks captures alongside the requested ones.
+		MaxCaptures: len(specs) + 3,
 	})
 	if err != nil {
 		return nil, err
@@ -73,6 +81,7 @@ func Start(ctx context.Context, options StartOptions) (*Run, error) {
 		host: host, options: options, specs: specs, startedAt: startedAt,
 		stopping: make(chan struct{}), exited: make(chan struct{}), checkpointed: make(chan struct{}), done: make(chan struct{}),
 	}
+	run.checkpointCtx, run.cancelCheckpoints = context.WithCancel(ctx)
 	if run.key, err = registryKey(host.Dir()); err == nil {
 		err = run.start()
 	}
@@ -84,7 +93,7 @@ func Start(ctx context.Context, options StartOptions) (*Run, error) {
 		}
 	}
 	if err != nil {
-		return nil, errors.Join(err, run.close())
+		return nil, errors.Join(err, run.close(context.WithoutCancel(ctx)))
 	}
 	live.add(run)
 	go run.wait()
@@ -147,7 +156,7 @@ func (r *Run) Info() RunInfo {
 	}
 	info := RunInfo{
 		RunID: r.ID(), Dir: r.Dir(), Status: StatusRunning, Command: r.options.Command, PID: r.options.PID, StartedAt: r.startedAt,
-		Captures: captures, Process: r.processRefs(), CheckpointErrors: r.checkpoints.failed(), Definition: r.options.Definition,
+		Captures: captures, Process: r.processRefs(), Output: r.outputRefs(), CheckpointErrors: r.checkpoints.failed(), Definition: r.options.Definition,
 	}
 	if r.process != nil {
 		info.Live = &LiveRun{Sessions: r.process.Sessions()}
@@ -171,6 +180,7 @@ func (r *Run) processRefs() *traces.ProcessRefs {
 // The run still summarizes its captures and writes its manifest.
 func (r *Run) Stop() error {
 	r.stopOnce.Do(func() {
+		r.cancelCheckpoints()
 		if r.cmd == nil {
 			close(r.stopping)
 			return
@@ -238,6 +248,28 @@ func (r *Run) start() error {
 func (r *Run) arm() (map[string]string, error) {
 	env := map[string]string{}
 	for _, spec := range r.specs {
+		if spec.Kind == processcapture.Kind && spec.target == target.Process {
+			var params processcapture.Params
+			if err := json.Unmarshal(spec.Params, &params); err != nil {
+				return nil, err
+			}
+			if params.Environment == nil {
+				params.Environment = r.options.Tree.Environment
+			}
+			if r.options.Tree.Facets {
+				if params.Facets == nil {
+					params.Facets = []string{processcapture.Files, processcapture.Sockets, "connections"}
+				}
+				if params.Environment == nil {
+					params.Environment = &process.EnvironmentParams{}
+				}
+			}
+			var err error
+			spec.Params, err = json.Marshal(params)
+			if err != nil {
+				return nil, err
+			}
+		}
 		capture, err := r.host.Start(traces.StartOptions{Kind: spec.Kind, Params: spec.Params, Labels: spec.Labels})
 		if err != nil {
 			return nil, err
@@ -258,12 +290,14 @@ func (r *Run) command(env map[string]string) (*exec.Cmd, error) {
 	cmd.Dir = r.options.Dir
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = r.options.Stdin, r.options.Stdout, r.options.Stderr
 	if r.options.Stdout == nil && r.options.Stderr == nil {
-		output, err := os.Create(filepath.Join(r.Dir(), OutputFile))
-		if err != nil {
-			return nil, fmt.Errorf("create run output: %w", err)
+		for _, name := range []string{StdoutFile, StderrFile} {
+			output, err := os.Create(filepath.Join(r.Dir(), name))
+			if err != nil {
+				return nil, fmt.Errorf("create run %s: %w", name, err)
+			}
+			r.output = append(r.output, output)
 		}
-		r.output = output
-		cmd.Stdout, cmd.Stderr = output, output
+		cmd.Stdout, cmd.Stderr = r.output[0], r.output[1]
 	}
 	if r.options.TraceRoot == TraceRootCommand {
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -283,8 +317,26 @@ func (r *Run) startCommand() error {
 }
 
 func (r *Run) startProcessTrace(rootPID int) error {
+	options := traces.ProcessTraceOptions{RootPID: rootPID, Tree: r.options.Tree}
+	for i, spec := range r.specs {
+		if spec.Kind != processcapture.Kind || spec.target != target.Process {
+			continue
+		}
+		var params processcapture.Params
+		if err := json.Unmarshal(spec.Params, &params); err != nil {
+			return err
+		}
+		pid := params.Target.PID
+		if pid == 0 {
+			pid = os.Getpid()
+		}
+		if pid == rootPID {
+			options.Capture = r.captures[i]
+			break
+		}
+	}
 	var err error
-	if r.process, err = r.host.StartProcessTrace(traces.ProcessTraceOptions{RootPID: rootPID, Tree: r.options.Tree}); err != nil {
+	if r.process, err = r.host.StartProcessTrace(options); err != nil {
 		return fmt.Errorf("process trace: %w", err)
 	}
 	return nil
@@ -301,19 +353,26 @@ func (r *Run) wait() {
 		r.waitAttached()
 	}
 	close(r.exited)
-	<-r.checkpointed
+	r.cancelCheckpoints()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	select {
+	case <-r.checkpointed:
+	case <-ctx.Done():
+		err = errors.Join(err, fmt.Errorf("settle interval checkpoints: %w", ctx.Err()))
+	}
 	if r.cmd == nil && (r.options.host() || alive(r.options.PID)) {
-		r.checkpoint(context.Background(), "stop")
+		r.checkpoint(ctx, "stop")
 	}
 	result := &Result{
 		RunID: r.ID(), Dir: r.Dir(), Command: r.options.Command, PID: r.options.PID, StartedAt: r.startedAt, EndedAt: time.Now(),
-		ExitCode: exitCode, Process: r.processRefs(), Definition: r.options.Definition,
+		ExitCode: exitCode, Process: r.processRefs(), Output: r.outputRefs(), Definition: r.options.Definition,
 	}
 	if err == nil {
-		result.Captures, err = r.summarize(context.Background())
+		result.Captures, err = r.summarize(ctx)
 		result.CheckpointErrors = r.checkpoints.failed()
 	}
-	if err = errors.Join(err, r.close()); err != nil {
+	if err = errors.Join(err, ctx.Err(), r.close(ctx)); err != nil {
 		result.Error = err.Error()
 	}
 	// A run that could not end cleanly still records that it ended, and why,
@@ -366,28 +425,36 @@ func commandExitCode(err error, program string) (int, error) {
 
 // summarize stops every capture, committing its stream, and summarizes it.
 func (r *Run) summarize(ctx context.Context) ([]CaptureResult, error) {
-	results := make([]CaptureResult, 0, len(r.captures))
-	for _, capture := range r.captures {
+	results := make([]CaptureResult, len(r.captures))
+	for index, capture := range r.captures {
+		results[index] = CaptureResult{Kind: capture.Kind(), Ref: capture.Ref(0, 0)}
+	}
+	var errs []error
+	for index, capture := range r.captures {
 		seq, err := capture.Stop(ctx)
 		if err != nil {
-			return nil, err
+			errs = append(errs, err)
+			continue
 		}
 		ref := capture.Ref(0, seq)
+		results[index].Ref = ref
 		summary, err := r.host.Summarize(ctx, ref)
 		if err != nil {
-			return nil, fmt.Errorf("summarize %s trace: %w", capture.Kind(), err)
+			errs = append(errs, fmt.Errorf("summarize %s trace: %w", capture.Kind(), err))
+			continue
 		}
-		results = append(results, CaptureResult{Kind: capture.Kind(), Ref: ref, Summary: summary})
+		results[index].Summary = summary
 	}
-	return results, nil
+	return results, errors.Join(errs...)
 }
 
 // close takes a last reading of the process capture — under TraceRootSelf
 // telltale's final goroutines into its stacks — re-observes the tree, stops
 // the run's captures and closes its store, which stays on disk to be served;
 // the oldest runs' stores beyond traces.KeepRuns go.
-func (r *Run) close() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+func (r *Run) close(ctx context.Context) error {
+	r.cancelCheckpoints()
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	var errs []error
 	if r.process != nil {
@@ -396,8 +463,8 @@ func (r *Run) close() error {
 		}
 		errs = append(errs, r.process.CheckpointTree(ctx), r.process.Stop(ctx))
 	}
-	if r.output != nil {
-		errs = append(errs, r.output.Close())
+	for _, output := range r.output {
+		errs = append(errs, output.Close())
 	}
 	errs = append(errs, r.host.Close(ctx), traces.Prune(r.options.DataDir, traces.KeepRuns))
 	return errors.Join(errs...)

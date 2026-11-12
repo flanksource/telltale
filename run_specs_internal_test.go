@@ -36,12 +36,10 @@ var _ = Describe("run target resolution", func() {
 		Expect(string(got)).To(MatchJSON(`{"target":{"pid":123}}`))
 	})
 	It("uses the run PID only for seams that accept it", func() {
-		for _, kind := range []string{"process_groups"} {
-			result, err := aimedSpecs(StartOptions{PID: 123, Traces: []TraceSpec{{Kind: kind}}})
-			Expect(err).NotTo(HaveOccurred())
-			Expect(string(result[0].Params)).NotTo(ContainSubstring("pid"))
-		}
-		result, err := aimedSpecs(StartOptions{PID: 123, Traces: []TraceSpec{{Kind: "process_samples"}}})
+		host, err := aimedSpecs(StartOptions{PID: 123, Traces: []TraceSpec{{Kind: "process", Params: json.RawMessage(`{"target":{"seam":"host"}}`)}}})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(host[0].Params)).NotTo(ContainSubstring("pid"))
+		result, err := aimedSpecs(StartOptions{PID: 123, Traces: []TraceSpec{{Kind: "process"}}})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(result[0].Params)).To(MatchJSON(`{"target":{"pid":123}}`))
 		_, err = aimedSpecs(StartOptions{PID: 123, Traces: []TraceSpec{{Kind: "http"}}})

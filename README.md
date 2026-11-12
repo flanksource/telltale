@@ -27,6 +27,25 @@ telltale serve
 
 `telltale trace list` filters runs by `--query` (command, run id or `pid N`), `--status` (`running`, `succeeded`, `failed`, `unfinished`), `--kind`, `--since` and `--limit`. The 20 newest runs are kept. Set `-Phttp.har=<path>` on any command to capture telltale's own outbound HTTP as a HAR archive. `telltale trace run --help` lists every trace kind with its params.
 
+### Following armed captures
+
+Every run form, including definitions and presets, accepts `--follow` to print records from every capture it arms. Use `--format ndjson` for one complete JSON record per line or `--format ansi` (`pretty` also works) for readable terminal output. NDJSON stdout contains records only; command output and the final summary go to stderr. Each record identifies its run, capture kind, stream, local sequence and timestamp, and keeps the native fields under `record` so payload fields cannot collide with that identity.
+
+```sh
+telltale trace run --follow --format ndjson -- curl -sS https://example.com
+telltale run --definition checkout --follow --format ansi -- ./service
+telltale run --definition checkout --tui -- ./service
+telltale run --definition checkout --ui --sort timestamp -- ./service
+```
+
+`--tui` opens a full-screen monitor with a tab per enabled kind and separate **Stdout** and **Stderr** tabs. Switch tabs with Tab/Shift+Tab; use arrows or j/k to scroll, `s` to change record order, `n`/`p` to page, Enter for details, space to pause, `r` to refresh, and `q` to quit. Each kind shows its capture summary above schema-based record columns. Command output is stored separately in `stdout.log` and `stderr.log`; Home/End and `n`/`p` browse large output in bounded blocks. The viewer owns terminal input and remains open after capture completion. `--ui` opens a loopback web server showing that run's armed captures and remains available until Ctrl+C.
+
+The normal server uses the same paged viewer and `GET /api/traces/{run}/records` API. `kind` and `stream` narrow the armed captures, `sort=seq|timestamp` selects ascending order, `limit` defaults to 100 (maximum 500), `from`/`until` bound record time, and `cursor` continues a frozen sequence window. `follow=1` streams SSE; add `format=ndjson` for NDJSON. SSE reconnects carry independent stream positions through `Last-Event-ID`. Sequences are local to each stream: live arrivals interleave while preserving each stream's order. Timestamp ordering applies to pages and reorderable views; late live terminal records print immediately.
+
+### Replaying recorded traces
+
+`telltale trace replay <run-id> [run-id...]` reads saved captures without executing their commands. Add `--ui` for a local viewer with a run selector, `--tui` for an interactive terminal, or `--format ndjson --sort timestamp` for merged records. New IDs use up to nine dash-free hostname characters followed by a compact UTC timestamp, such as `buildhost20261107T123000Z`; same-second collisions receive `_2`, `_3`, and subsequent suffixes. See [replay commands and ID format](docs/replay.md).
+
 ### One kind at a time, or a running process
 
 `telltale run <kind>` arms a single trace kind, its params as flags. There is one subcommand for every kind in the registry, which `pkg/traces` fills in `init()` before the CLI is built, so a kind registered by another package's `init()` gets its own command with no CLI change. `telltale run <kind> --help` shows what the kind records, its flags with their defaults and choices, the variables it exports and examples.
@@ -37,27 +56,30 @@ Flag types, descriptions, defaults, choices, and required inputs come from the k
 telltale run http --seam proxy --mode mitm --hosts '*.example.com' -- curl -sS https://api.example.com
 telltale run sql --seam proxy --env ORDERS_DB_URL --params -- go test ./...
 telltale run stacks --every 10s -- ./server          # dump the server's stacks every 10s
-telltale run process_samples --pid 1234 --facets ports --duration 1m
+telltale run process --pid 1234 --facets sockets --duration 1m
 ```
 
-Kinds that observe a process tree (`process_tree`, `process_samples`, `stacks`, `goprof`) can attach to a running process with `--pid`, recording until Ctrl+C, `--duration`, or the process exits; the process is left running. The `http` and `sql` proxy seams work on a command they are pointed at; their agent seams attach to instrumented processes. `stacks` and `goprof` read at checkpoints: every `--every`, and once as an attached run stops. A checkpoint that fails fails the run, listed under `checkpointErrors`.
+Kinds that observe a process tree (`process`, `stacks`, `goprof`) can attach to a running process with `--pid`, recording until Ctrl+C, `--duration`, or the process exits; the process is left running. The `http` and `sql` proxy seams work on a command they are pointed at; their agent seams attach to instrumented processes. `stacks` and `goprof` read at checkpoints: every `--every`, and once as an attached run stops. A checkpoint that fails fails the run, listed under `checkpointErrors`.
 
 The built-in [trace definitions](#trace-definitions) are named runs of several kinds, each a top-level command:
 
 | Command | Records |
 |---|---|
 | `telltale ps <pid>` | the process tree with each process's CPU, memory, disk IO, open files, sockets, ports, connections and environment |
+| `telltale clicky <pid>` | everything a clicky process's [clicky/telltale](https://github.com/flanksource/clicky/tree/main/telltale) agent observes: its executions, entity operations, tasks, commons HTTP and commons logs; a process without the agent is refused |
 | `telltale gops <pid>` | the goroutines and heap profile of a Go process running a [gops agent](https://github.com/google/gops), every 30s; the agent is found from its port file (`$GOPS_CONFIG_DIR/<pid>`), and a process without one is refused before the run starts |
 
 Both also take `-- command [args...]`. They are `pkg/definition/builtin/ps.yaml` and `gops.yaml`.
 
 `telltale serve` mounts the runs of the data dir at `/api/traces`, and the web UI starts, stops, filters and shows them, live while they run:
 
+The overview at `/` combines OpenTelemetry trace summaries and recorded trace runs in one list, newest first. Use **All activity**, **OpenTelemetry traces**, or **Recorded runs** and filter by service, command, ID, status, or capture kind. The trace source and time window apply to OpenTelemetry results; recorded runs show the retained run history. Filters stay in the URL. Select a trace to open its span view, or a run to open its captures and process header; existing `/?run=<id>` links select that run. **Record a run** opens the existing recording form. A source failure is shown explicitly while the other results remain available.
+
 | Route | Does |
 |---|---|
 | `GET /api/traces?q=&status=&kind=&since=&limit=` | Lists runs, newest first (`since` is RFC 3339) |
 | `GET /api/traces/start` | The start form: a JSON schema and its defaults |
-| `POST /api/traces` | Starts `{"command": "...", "tree": {"facets": false}, "traces": {"http": {"enabled": true, "target": {"seam": "proxy"}, "mode": "mitm"}}}`, or a stored definition: `{"definition": "checkout", "command": "...", "duration": "20s"}` (`command`, `pid` or neither for a host run; `traces` and `definition` exclude each other). The command runs with `sh -c` in the work dir and its output goes to `output.log` in the run's store. A refused request is a 400 `{"errors": [{"instancePath", "message"}]}` |
+| `POST /api/traces` | Starts `{"command": "...", "tree": {"facets": false}, "traces": {"http": {"enabled": true, "target": {"seam": "proxy"}, "mode": "mitm"}}}`, or a stored definition: `{"definition": "checkout", "command": "...", "duration": "20s"}` (`command`, `pid` or neither for a host run; `traces` and `definition` exclude each other). The command runs with `sh -c` in the work dir and its output goes to `stdout.log` and `stderr.log` in the run's store, named by the optional `output` metadata. A refused request is a 400 `{"errors": [{"instancePath", "message"}]}` |
 | `/api/traces/definitions/...` | The trace definitions: see [Trace definitions](#trace-definitions) |
 | `DELETE /api/traces/<run id>` | Stops a run the server is running |
 | `/api/traces/<run id>/api/v1/...` | The run's records, exports and checkpoints, live from its running captures |
@@ -157,16 +179,22 @@ telltale top --all                             # also the processes no tool hold
 telltale top --net                             # with network bytes (nettop, darwin)
 telltale top --once --format json              # one frame, once CPU can be rated
 telltale top --record --duration 10m           # record into the data dir
-telltale trace list --kind process_groups
+telltale trace list --kind process
 ```
 
-Use `--group-by repo`, `--group-by worktree`, or `--group-by claude-session` to collect tool groups into expandable buckets; `--group-by tree` is the default process tree. Repository grouping combines a main checkout and its linked worktrees using their shared Git directory, while worktree grouping keeps each checkout separate and shows its branch. Claude session grouping uses the full session ID and displays its title when available; tools inherit their ancestor's session until another agent session begins. Missing metadata stays visible under `Unattributed`. Bucket totals count each tool group's own usage once and preserve unknown measurements.
+Use `--group-by repo`, `--group-by worktree`, `--group-by claude-session`, or `--group-by slots` to collect tool groups into expandable buckets; `--group-by tree` is the default process tree. Slot grouping puts each gavel process in the gavel slot pool it holds (its repository's project pool before the global one), with the tests it runs under it. A gavel holding no slot goes under `<pool> (waiting)` for the pool it is queued on. Repository grouping combines a main checkout and its linked worktrees using their shared Git directory, while worktree grouping keeps each checkout separate and shows its branch. Claude session grouping uses the full session ID and displays its title when available; tools inherit their ancestor's session until another agent session begins. Missing metadata stays visible under `Unattributed`. Bucket totals count each tool group's own usage once and preserve unknown measurements.
 
 Press `b` in the terminal to cycle grouping without restarting sampling. The web `/top` page offers the same modes through **Group by**, persists the choice in `topGroupBy`, and applies it to tables and trends. Recordings retain raw tool groups, so grouping can change during playback; older recordings without shared Git directory metadata remain unattributed in repository mode, while their recorded checkout paths still support worktree grouping. For example, `telltale top --group-by repo --once --format json` prints one grouped frame, and `telltale top --group-by worktree --record --duration 1m` records raw groups while showing worktree buckets in an interactive terminal.
 
-In a terminal, `telltale top` takes the whole screen. The header shows the host's CPU split between processes (user), the kernel (system) and idle time and load, bars for memory and swap, and the disks' read and write IOPS and throughput. The title ends with telltale's own overhead: the CPU it and the commands it runs each tick (`ps`, `lsof`, `launchctl`) use, and how long a tick takes; JSON frames carry it as `overhead`. The groups fill the rest of the window as a tree, and the origin and context columns appear only when the window is wide enough. Keys: `↑↓` (or `j`/`k`, `g`/`G`, PgUp/PgDn) move; `←→` and space fold; `enter` lists the selected group's processes below the tree; `s` cycles the sort column and `S` reverses it; `/` filters by name, command, repo, owner or launchd label; `o` shows the processes no tool holds; `n` reads network bytes; `q` quits. When stdout is not a terminal, or with `--once`, it prints one frame instead.
+In a terminal, `telltale top` takes the whole screen. The header shows the host's CPU split between processes (user), the kernel (system) and idle time and load, bars for memory and swap, and the disks' read and write IOPS and throughput. The title ends with telltale's own overhead: the CPU it and the commands it runs each tick (`ps`, `lsof`, `launchctl`) use, and how long a tick takes; JSON frames carry it as `overhead`. The groups fill the rest of the window as a tree, and the origin and context columns appear only when the window is wide enough. Keys: `↑↓` (or `j`/`k`, `g`/`G`, PgUp/PgDn) move; `←→` and space fold; `enter` lists the selected group's own processes in the tree, nested by parent process, with a process whose parent is outside the group marked `↰` and a process a gavel task runs under that task (a group's processes are otherwise only counted: a process no rule matches joins its nearest grouped ancestor); `f` opens the pane below the tree that lists the selected group's processes and those of every group under it; `s` cycles the sort column and `S` reverses it; `/` filters by name, command, repo, owner or launchd label; `o` shows the processes no tool holds; `n` reads network bytes; `q` quits. When stdout is not a terminal, or with `--once`, it prints one frame instead.
+
+Gavel groups also show what their gavel process is doing, read from the status each running `gavel test`, `gavel lint` and `gavel fixtures` publishes (via `github.com/flanksource/gavel/sdk/status`). The gavel row shows the machine-wide slots it holds (`●global`) or waits for (`⧗acme`). Under it, each task group with work gets its own row with a progress bar, finished of total and failures (for example `packages [██▓▒░░░░] 12/40 ✗2`; █ finished, ▓ failed, ▒ running, ░ pending), and each task it is running gets a row under that (`▶ go test ./pkg/a 42s`). The gavel rule is `skipAncestry`: the group of the process a task runs moves under that task's row, found by pid, even when the process is detached and not under gavel in the process tree. Groups no task claims stay under the gavel. The header's `SLT` line adds up every pool those processes use: held of limit and how many wait. The file is polled each second until the process opens its status socket, after its first 30 seconds, and is streamed from then on. JSON frames carry each group's `gavel` status and the frame's `slots`. Run `gavel slots` for the same pools from gavel itself.
 
 CPU hogs are highlighted when their CPU use exceeds 25% of all logical cores: on an 8-core host, the threshold is strictly greater than 200% in the per-core CPU column. In the terminal, open the process list with `enter`, choose a process with `[` / `]`, then press `x` to send SIGTERM or `r` to set its nice value to 10; `y` confirms and `n` / Escape cancels. The web process table offers **Terminate** and **Renice**, with a confirmation showing the PID and command and a nice value from -20 to 19 (higher means lower priority). These controls act on one live process, require OS permissions, and reject a process whose start-qualified identity changed. Recordings remain read-only.
+
+Memory is split into **RSS** (resident physical memory), **Compressed** (`CMPRS` in the terminal), and **Swap**, with separate sortable columns in both interfaces (`--sort compressed` or `--sort swap`). Linux reports each process's disk swap. macOS reports its compressed and swapped-out pages together in Compressed, in bytes before compression, and leaves per-process Swap unavailable (`–`); the host's swap bar still reports actual disk swap. Unsupported or unreadable measurements stay unavailable rather than becoming zero; read failures are exposed as `memoryError` in JSON and the memory cells' tooltips. macOS compressed memory is read using the system `top` command each tick.
+
+A process is a memory hog when its RSS or compressed memory exceeds 25% of physical RAM, or its disk swap exceeds 25% of swap capacity. CPU and memory hogs stay pinned ahead of the selected sort for 120 seconds after their last excessive sample. Their groups and ancestor branches rise together, preserving the tree; otherwise hidden other-process hogs become visible automatically. Each resource expires independently, ongoing hogging renews its pin, and pins follow start-qualified process identities so a reused PID cannot inherit one. Recordings retain the expiry timestamps in each usage's `hogs` map, evaluated against the recorded sample time during playback.
 
 `POST /api/top/action` accepts an `application/json` body such as `{"key":"123@1793000000","action":"terminate"}` or `{"key":"123@1793000000","action":"renice","nice":10}`. Use the key returned by the live processes endpoint. Success is 204; invalid input is 400, stale identity is 409, and OS permission failures are 403. Cross-origin browser requests are refused. PID 1 and the Telltale server itself cannot be targeted.
 
@@ -177,9 +205,9 @@ Each group also says where its process came from (`origin`):
 
 A brew service no rule matches becomes a `service` group of its own, so `postgresql@17` holds its backends. A program inside an app bundle in an `Applications` folder (`/Applications`, `/System/Applications`, `~/Applications` or a folder in one) that no rule matches joins its app's `app` group, under `applications` unless a tool started it, so every helper of an Electron app adds up in one place. The telltale reading the host is a `telltale` group of its own, with what it keeps running such as `nettop`. The processes no tool holds sit under `other` (the user's) and `system`, grouped by program. The kernel itself (`kernel_task`) is not a process `ps` lists, so its time shows as the host's kernel CPU share.
 
-Nothing is kept unless you pass `--record`, which starts a host run: a run with neither a command nor a process, arming the `process_groups` trace kind (also `telltale run process_groups`). The screen then shows the frames as the run's store commits them. On darwin, network bytes come from `nettop`, which uses more than a core however long its interval, so it runs only with `--net`; other platforms refuse `--net`. Socket and connection counts come from `lsof` on every platform.
+Nothing is kept unless you pass `--record`, which starts a host run with `process` on the host seam (also `telltale run process --seam host`). The screen derives complete group frames from startup grouping tags and numeric samples. On darwin, network bytes come from `nettop`, which uses more than a core however long its interval, so it runs only with `--net`; other platforms refuse `--net`. Files and receiving sockets have independent delta events. Established TCP connections are counted as unique remote endpoints per process, with inferred inbound, inferred outbound, or unknown direction.
 
-The built-in rules (`pkg/tracing/groups/catalog.yaml`) cover claude, codex, cmux, captain, gavel, go test, vitest, playwright, agent-browser, lightpanda, chrome, vite, make, pnpm/npm and gopls. Rules in `./.telltale/groups.yaml`, else the global config dir's `groups.yaml`, or in the file `--catalog` names, go ahead of the built-in ones. A rule with a built-in rule's name replaces it, and `disabled: true` drops it:
+The built-in rules (`pkg/tracing/groups/catalog.yaml`) cover claude, codex, cmux, captain, gavel, go test, vitest, playwright, agent-browser, lightpanda, chrome, vite, make, pnpm/npm and gopls. Rules in `./.telltale/groups.yaml`, else the global config dir's `groups.yaml`, or in the file `--catalog` names, go ahead of the built-in ones. A rule with a built-in rule's name replaces it, and `disabled: true` drops it. `skipAncestry: true` marks a runner whose published tasks claim their processes' groups by pid before ancestry does; the built-in gavel rule has it:
 
 ```yaml
 groups:
@@ -194,7 +222,7 @@ groups:
     disabled: true
 ```
 
-`telltale serve` serves the latest live frame, with the host's use, at `GET /api/top?all=true&net=true`, and keeps reading it every 2s while it is asked for. `GET /api/top/processes?name=<program>` returns the processes running a program, `?pid=<n>` a process and every process under it, and `?q=<text>` the processes whose name, command or pid holds the text. The web UI's Top page (`/top`) shows the groups live with gauges for the host, and recorded `process_groups` runs over time. ⌘K (Ctrl+K) anywhere in the web UI searches processes by name, command or pid, and trace runs by id, command, pid, status or capture kind. `/top/<program>` and `/top/<pid>` show one program's or one process tree's processes, with gauges and their history. `GET /api/top/facets?pid=<n>` reads a process the latest frame listed, and answers 404 for one it did not. It returns the process's context with those names, its environment with its secrets masked as stored traces mask them, and its open files, sockets, listening ports and connections: the facets `process_samples` and `process_tree` record. `/top/<pid>` shows these facets for its process every 5s, and clicking a process in the table shows that process's.
+`telltale serve` serves the latest live frame, with the host's use, at `GET /api/top?all=true&net=true`, and keeps reading it every 2s while it is asked for. `GET /api/top/processes?name=<program>` returns the processes running a program, `?pid=<n>` a process and every process under it, and `?q=<text>` the processes whose name, command or pid holds the text. The web UI's Top page (`/top`) shows the groups live with gauges for the host, and recorded `process` runs over time. ⌘K (Ctrl+K) anywhere in the web UI searches processes by name, command or pid, and trace runs by id, command, pid, status or capture kind. `/top/<program>` and `/top/<pid>` show one program's or one process tree's processes, with gauges and their history. `GET /api/top/facets?pid=<n>` reads a process the latest frame listed, and answers 404 for one it did not. It returns the process's context, masked environment and current descriptors. `/top/<pid>` refreshes them every 5s; recorded process views reconstruct resources from their added/removed events.
 
 ### Resource rules
 
@@ -320,7 +348,14 @@ To install a binary built against the same local Clicky UI source (honouring `TE
 task install:symlinked
 ```
 
-Production builds and normal frontend tests use published Clicky UI packages from the lockfile. A plain source checkout compiles with an embed sentinel but cannot serve the production UI until `make build` has generated it.
+This development workspace links `@flanksource/clicky-ui` to `../clicky-ui/packages/ui` through the pnpm workspace override. Build the sibling package after changing its source, then build Telltale:
+
+```sh
+pnpm --dir ../clicky-ui --filter @flanksource/clicky-ui build
+make build
+```
+
+Frontend tests share the app's React runtime with the linked package. Remove the local pnpm override and regenerate the lockfile before a published-dependency release. A plain source checkout compiles with an embed sentinel but cannot serve the production UI until `make build` has generated it.
 
 ## Checks and build output
 
