@@ -252,8 +252,8 @@ github.com/flanksource/captain v0.0.73 h1:kxV+OkhanWTr0DcnWeUlALHSSY8pn1FNg5cq39
 github.com/flanksource/captain v0.0.73/go.mod h1:M6+b1SjeyS88NSrLZKrzuVt/LHUUH/hqzDCcwVKLKpY=
 github.com/flanksource/clicky v1.21.88-0.20261027204456-34e65b99d69d h1:S8zFjrGZZj+HoOPt0YnUMgOt7YvLY1T4v9ifpsQphW8=
 github.com/flanksource/clicky v1.21.88-0.20261027204456-34e65b99d69d/go.mod h1:2hh1pw/svkWomN+Ah946CD7zcwuGxvRSnR0PTSqMe/Y=
-github.com/flanksource/commons v1.63.0 h1:gI5DecATKbay5Q1o1hYRxQUSnbC+yWP7BmdHQjrpvTY=
-github.com/flanksource/commons v1.63.0/go.mod h1:RlVSQ+Jq96jKaJWf3WnwVO4DmDTdzkm3sremzJuYuVw=
+github.com/flanksource/commons v1.64.1 h1:qm6ZnsoTw9JxzzH3R3WJs9kKig0+nfMBXJomWgCi/VU=
+github.com/flanksource/commons v1.64.1/go.mod h1:XauWx50brQc4kK6t9OwK9JVMXy/Aq99mX6w6txASBag=
 github.com/flanksource/commons-db v0.1.61-0.20261027210213-a7b138ebccde h1:QfMh6xZcg9/ksRl5k1Zpd1Enov932Z/xltj8hbRbLkY=
 github.com/flanksource/commons-db v0.1.61-0.20261027210213-a7b138ebccde/go.mod h1:81yea1KIjO52xC2uoehwTd8BfnxSN+S6aoGYVDLuLp4=
 github.com/flanksource/gomplate/v3 v3.24.90 h1:MAUlwU7REhSL62i4n74yvo+T4LA7HuRpJ9tKH9dbMzk=
