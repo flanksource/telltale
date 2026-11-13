@@ -250,6 +250,8 @@ github.com/fergusstrange/embedded-postgres v1.34.0 h1:c6RKhPKFsLVU+Tdxsx8q0UxCHs
 github.com/fergusstrange/embedded-postgres v1.34.0/go.mod h1:w0YvnCgf19o6tskInrOOACtnqfVlOvluz3hlNLY7tRk=
 github.com/flanksource/captain v0.0.73 h1:kxV+OkhanWTr0DcnWeUlALHSSY8pn1FNg5cq39JBkuw=
 github.com/flanksource/captain v0.0.73/go.mod h1:M6+b1SjeyS88NSrLZKrzuVt/LHUUH/hqzDCcwVKLKpY=
+github.com/flanksource/captain v0.0.75 h1:6Kd5+Mn4OzbZ2W9nHMgA5q/QFoBW1f9tusKmFhqV54c=
+github.com/flanksource/captain v0.0.75/go.mod h1:M6+b1SjeyS88NSrLZKrzuVt/LHUUH/hqzDCcwVKLKpY=
 github.com/flanksource/clicky v1.21.88-0.20261027204456-34e65b99d69d h1:S8zFjrGZZj+HoOPt0YnUMgOt7YvLY1T4v9ifpsQphW8=
 github.com/flanksource/clicky v1.21.88-0.20261027204456-34e65b99d69d/go.mod h1:2hh1pw/svkWomN+Ah946CD7zcwuGxvRSnR0PTSqMe/Y=
 github.com/flanksource/commons v1.63.0 h1:gI5DecATKbay5Q1o1hYRxQUSnbC+yWP7BmdHQjrpvTY=
