@@ -93,6 +93,9 @@ func newRunKindCommand(registration traces.Registration, plugin tracing.TracePlu
 	if err != nil {
 		panic(fmt.Sprintf("trace kind %s: %v", registration.Name, err))
 	}
+	if err := bindConnectionCompletions(cmd, params); err != nil {
+		panic(err)
+	}
 	var checkpoint *profileCheckpointFlags
 	if defaults, ok := registration.Checkpoint.(goprof.CheckpointParams); ok {
 		checkpoint = bindProfileCheckpoint(cmd.Flags(), defaults)

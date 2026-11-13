@@ -187,6 +187,19 @@ var _ = Describe("Model", func() {
 		Expect(m.order).To(Equal(groups.Order{By: groups.SortMemory, Reverse: true}))
 		Expect(shown(m)[0]).To(Equal("other:system"))
 	})
+	It("freezes inspection across arriving frames until live updates are explicitly resumed", func() {
+		m := press(newModel(80, 24), "d")
+		Expect(m.paused).To(BeTrue())
+		Expect(m.inspection).NotTo(BeNil())
+		next, _ := m.Update(frameMsg{frame: groups.Frame{Tick: 99}, ok: true})
+		m = next.(Model)
+		Expect(m.frame.Tick).To(Equal(int64(7)))
+		m = press(m, "esc")
+		Expect(m.inspection).To(BeNil())
+		Expect(m.paused).To(BeTrue())
+		m = press(m, "P")
+		Expect(m.paused).To(BeFalse())
+	})
 
 	It("filters to the groups that match and their ancestors, unfolding them, and clears with esc", func() {
 		m := press(newModel(120, 30), "/", "l", "o", "g", "enter")

@@ -19,6 +19,9 @@ func (m Model) load() tea.Cmd {
 	m.options.Runs = slices.Clone(m.options.Runs)
 	t := m.tabs[m.active]
 	return func() tea.Msg {
+		if t.top != nil && !t.browse {
+			return m.loadTop(t)
+		}
 		result := pageMsg{generation: m.generation}
 		if t.file != "" {
 			result.output, result.err = m.readOutput(t.file)

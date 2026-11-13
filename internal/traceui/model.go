@@ -6,8 +6,10 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/flanksource/commons-db/recordstore/sampleframe"
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/pkg/traces/read"
+	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/processcapture"
 )
 
@@ -19,6 +21,7 @@ type Options struct {
 }
 
 type tab struct {
+	top                *sampledTab
 	name, file, cursor string
 	refs               []read.Ref
 	page               read.FeedResult
@@ -33,6 +36,9 @@ type tab struct {
 }
 
 type pageMsg struct {
+	top             *read.TopResult
+	frames          []sampleframe.Frame
+	topMessage      string
 	generation      int
 	page            read.FeedResult
 	monitor, output string
@@ -125,6 +131,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		t := &m.tabs[m.active]
+		if t.top != nil && !t.browse {
+			if err := t.top.receive(value); err != nil {
+				m.err = err
+				return m, tea.Quit
+			}
+		}
 		if !t.paused {
 			t.page, t.monitor, t.output, t.watermarks = value.page, value.monitor, value.output, value.watermarks
 			if t.file == "" {
@@ -143,6 +155,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m Model) key(key string) (tea.Model, tea.Cmd) {
 	t := &m.tabs[m.active]
+	if t.top != nil && !t.browse {
+		if model, cmd, handled := m.sampleKey(key); handled {
+			return model, cmd
+		}
+	}
+	if key == "h" && t.top != nil {
+		t.browse = false
+		m.generation++
+		return m, m.load()
+	}
 	switch key {
 	case "q", "ctrl+c":
 		return m, tea.Quit
@@ -292,8 +314,14 @@ func (m *Model) buildTabs() {
 		if len(m.options.Runs) > 0 && ref.RunID != m.options.Runs[m.run].RunID {
 			continue
 		}
-		owner, _ := ref.Runtime.Kinds.ResultOf(ref.Kind)
+		owner, result := ref.Runtime.Kinds.ResultOf(ref.Kind)
+		if result == "frames" {
+			continue
+		}
 		if owner == processcapture.Kind {
+			if !slices.Contains(names, owner) {
+				names = append(names, owner)
+			}
 			continue
 		}
 		m.tabs[0].refs = append(m.tabs[0].refs, ref)
@@ -308,6 +336,12 @@ func (m *Model) buildTabs() {
 			owner, _ := ref.Runtime.Kinds.ResultOf(ref.Kind)
 			if owner == name && (len(m.options.Runs) == 0 || ref.RunID == m.options.Runs[m.run].RunID) {
 				t.refs = append(t.refs, ref)
+				if plugin, ok := ref.Runtime.Kinds.Get(ref.Kind); ok && tracing.TopOf(plugin) != nil {
+					if t.top == nil {
+						t.top = &sampledTab{ref: ref}
+					}
+					t.top.refs = append(t.top.refs, ref)
+				}
 			}
 		}
 		m.tabs = append(m.tabs, t)

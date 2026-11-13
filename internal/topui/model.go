@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/flanksource/clicky/tui/table"
 	"slices"
 	"strings"
 	"time"
@@ -41,20 +42,23 @@ type Options struct {
 // Model is the view's state: the latest frame, the selected group and how
 // the tree is folded, filtered and sorted.
 type Model struct {
-	ctx      context.Context
-	options  Options
-	source   Source
-	toggles  Toggles
-	order    groups.Order
-	gen      int
-	frame    *groups.Frame
-	raw      *groups.Frame
-	groupBy  groups.GroupBy
-	width    int
-	height   int
-	selected string
-	offset   int
-	folded   map[string]bool
+	inspection *table.Model
+	paused     bool
+	help       bool
+	ctx        context.Context
+	options    Options
+	source     Source
+	toggles    Toggles
+	order      groups.Order
+	gen        int
+	frame      *groups.Frame
+	raw        *groups.Frame
+	groupBy    groups.GroupBy
+	width      int
+	height     int
+	selected   string
+	offset     int
+	folded     map[string]bool
 	// expanded are the groups whose member processes the tree lists.
 	expanded   map[string]bool
 	query      string
@@ -121,7 +125,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case frameMsg:
 		return m.received(msg)
 	case tickMsg:
-		if msg.gen == m.gen {
+		if msg.gen == m.gen && !m.paused {
 			return m, m.read()
 		}
 	case doneMsg:
@@ -140,6 +144,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // received takes a frame, or a failed read: the first failure is shown,
 // the second in a row ends the view.
 func (m Model) received(msg frameMsg) (tea.Model, tea.Cmd) {
+	if m.paused {
+		return m, nil
+	}
 	if msg.gen != m.gen {
 		return m, nil
 	}
@@ -174,6 +181,22 @@ func (m Model) received(msg frameMsg) (tea.Model, tea.Cmd) {
 func (m Model) pressed(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.Keystroke() == "ctrl+c" {
 		return m, tea.Quit
+	}
+	if m.inspection != nil {
+		switch msg.Keystroke() {
+		case "q":
+			return m, tea.Quit
+		case "esc", "d":
+			m.inspection = nil
+			return m, nil
+		case "space", "P":
+			m.inspection = nil
+			m.paused = false
+			return m, m.read()
+		default:
+			m.inspection.Key(msg.Keystroke())
+			return m, nil
+		}
 	}
 	if m.typing {
 		return m.typed(msg), nil
@@ -220,6 +243,18 @@ func (m Model) pressed(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // command runs a key that names one: sort, filter, toggles, quit.
 func (m Model) command(key string) (tea.Model, tea.Cmd) {
 	switch key {
+	case "d":
+		view := m.processTable()
+		view.Detail = true
+		m.inspection = &view
+		m.paused = true
+	case "P":
+		m.paused = !m.paused
+		if !m.paused {
+			return m, m.read()
+		}
+	case "?":
+		m.help = !m.help
 	case "q":
 		return m, tea.Quit
 	case "f":

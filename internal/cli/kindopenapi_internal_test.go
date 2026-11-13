@@ -34,17 +34,17 @@ var _ = Describe("kind argument OpenAPI", func() {
 	It("serves schema-derived arguments for every registered run kind", func() {
 		spec := kindOpenAPI(NewRoot("test"))
 		for _, registration := range traces.Registrations() {
-			path := "/api/v1/run/{flags}/" + registration.Name
+			path := "/api/v1/run/" + registration.Name
 			Expect(slices.Sorted(maps.Keys(spec.Paths))).To(ContainElement(path))
 			Expect(spec.Paths[path]).To(HaveKey("post"))
 		}
-		http := spec.Paths["/api/v1/run/{flags}/http"]["post"].RequestBody.Content["application/json"].Schema.Properties
+		http := spec.Paths["/api/v1/run/http"]["post"].RequestBody.Content["application/json"].Schema.Properties
 		Expect(http["mode"].Enum).To(Equal([]any{"connect", "mitm"}))
 		Expect(http["seam"].Enum).To(Equal([]any{"self", "agent", "proxy"}))
 		Expect(http["seam"].Default).To(Equal("self"))
 		Expect(http["hosts"].Items.Type).To(Equal("string"))
 		Expect(http).NotTo(HaveKey("format"))
-		checkpoint := spec.Paths["/api/v1/run/{flags}/goprof"]["post"].RequestBody.Content["application/json"].Schema.Properties
+		checkpoint := spec.Paths["/api/v1/run/goprof"]["post"].RequestBody.Content["application/json"].Schema.Properties
 		Expect(checkpoint["profile"].Enum).To(Equal([]any{"cpu", "heap", "allocs", "mutex", "block", "goroutine"}))
 		Expect(checkpoint["profile"].Default).To(Equal("heap"))
 		Expect(checkpoint["seconds"].Type).To(Equal("integer"))

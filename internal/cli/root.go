@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/flanksource/clicky"
+	"github.com/flanksource/clicky/rpc"
 	"github.com/flanksource/telltale/internal/otelreceiver"
 	"github.com/flanksource/telltale/internal/server"
 	"github.com/flanksource/telltale/pkg/datadir"
@@ -61,5 +62,6 @@ func NewRoot(version string) *cobra.Command {
 		}
 		root.AddCommand(newPresetCommand(def))
 	}
+	rpc.InstallInteractive(root)
 	return root
 }

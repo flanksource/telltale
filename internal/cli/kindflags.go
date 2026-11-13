@@ -127,6 +127,24 @@ func bindParam(flags *pflag.FlagSet, schema *rpc.OpenAPISchema, path []string) (
 	param.flag = flags.Lookup(name)
 	flagmeta.SetCategory(param.flag, paramsCategory)
 	flagmeta.SetAllowedValues(param.flag, paramChoices(schema)...)
+	encoded, err := json.Marshal(schema)
+	if err != nil {
+		return paramFlag{}, err
+	}
+	var metadata map[string]any
+	if err := json.Unmarshal(encoded, &metadata); err != nil {
+		return paramFlag{}, err
+	}
+	if schema.Type == "object" {
+		for key := range metadata {
+			if key != "title" && key != "description" && !strings.HasPrefix(key, "x-") {
+				delete(metadata, key)
+			}
+		}
+	}
+	if err := flagmeta.SetSchema(param.flag, metadata); err != nil {
+		return paramFlag{}, err
+	}
 	if schema.Default != nil {
 		if _, err := param.read(); err != nil {
 			return paramFlag{}, err

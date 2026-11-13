@@ -24,13 +24,6 @@ var (
 	kernelStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
 	memoryStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("78"))
 	swapStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	kindStyles    = map[string]lipgloss.Style{
-		groups.KindAgent:   lipgloss.NewStyle().Foreground(lipgloss.Color("39")),
-		groups.KindTest:    lipgloss.NewStyle().Foreground(lipgloss.Color("78")),
-		groups.KindBrowser: lipgloss.NewStyle().Foreground(lipgloss.Color("170")),
-		groups.KindService: lipgloss.NewStyle().Foreground(lipgloss.Color("214")),
-		groups.KindOther:   mutedStyle,
-	}
 )
 
 func (m Model) View() tea.View {
@@ -43,17 +36,14 @@ func (m Model) render() string {
 	if m.width <= 0 || m.height <= 0 {
 		return "Reading process groups…"
 	}
-	lines := m.header()
-	columns := layout(m.width)
-	lines = append(lines, headStyle.Render(fit(columns.head(), m.width)))
-	rows := m.rows()
-	for index := m.offset; index < m.offset+m.bodyHeight(); index++ {
-		if index >= len(rows) {
-			lines = append(lines, "")
-			continue
-		}
-		lines = append(lines, m.renderRow(columns, rows[index]))
+	if m.inspection != nil {
+		return "Recorded process detail · paused\n" + m.inspection.View(m.width, max(1, m.height-2)) + "\n↑↓ scroll · esc close · space resume live"
 	}
+	if m.help {
+		return "Process Top\n↑↓ select · ←→ fold · enter list processes\ns sort · S reverse · / filter · b group\nd inspect and freeze · P pause/resume\nf process pane · x terminate · r nice (confirmation required)\n? close help · q quit"
+	}
+	lines := m.header()
+	lines = append(lines, padLines(m.processTable().View(m.width, max(1, m.bodyHeight()+1)), max(1, m.bodyHeight()+1))...)
 	lines = append(lines, m.renderDetail()...)
 	lines = append(lines, m.footer())
 	return strings.Join(lines[:min(len(lines), m.height)], "\n")
@@ -90,6 +80,9 @@ func (m Model) header() []string {
 	}
 	title := fmt.Sprintf("telltale top · %s · %s · tick %d · %d groups · %d processes · by %s · sort %s%s",
 		m.options.Title, m.frame.SampledAt.Local().Format("15:04:05"), m.frame.Tick, len(m.frame.Groups), processes, m.groupBy, m.order.By, direction)
+	if m.paused {
+		title += " · paused"
+	}
 	if overhead := m.frame.Overhead; overhead != nil {
 		title += fmt.Sprintf(" · overhead %s%% CPU %.0fms/tick", groups.Percent(overhead.CPUPercent), overhead.TickMillis)
 	}
@@ -168,95 +161,6 @@ func ratio(part, whole uint64) float64 {
 	return 100 * float64(part) / float64(whole)
 }
 
-// columns are the table's columns at a width: the name takes what the
-// fixed ones leave, and origin and context show only where they fit.
-type columns struct {
-	name            int
-	origin, context int
-}
-
-const fixedWidth = 6 + 7 + 8 + 8 + 8 + 9 + 9 + 9 + 9 + 6
-
-func layout(width int) columns {
-	c := columns{}
-	if width >= 140 {
-		c.origin = 26
-	}
-	if width >= 190 {
-		c.context = 34
-	}
-	c.name = max(16, width-fixedWidth-c.origin-c.context)
-	return c
-}
-
-func (c columns) head() string {
-	return c.line("GROUP", "PROCS", "CPU%", "RSS", "CMPRS", "SWAP", "DISK R/s", "DISK W/s", "NET IN/s", "NET OUT/s", "SOCK", "ORIGIN", "CONTEXT")
-}
-
-func (c columns) line(name, procs, cpu, rss, compressed, swap, diskRead, diskWrite, netIn, netOut, sockets, origin, context string) string {
-	text := fmt.Sprintf("%-*s%6s%7s%8s%8s%8s%9s%9s%9s%9s%6s", c.name, groups.Truncate(name, c.name-1), procs, cpu, rss, compressed, swap, diskRead, diskWrite, netIn, netOut, sockets)
-	if c.origin > 0 {
-		text += fmt.Sprintf("  %-*s", c.origin-2, groups.Truncate(origin, c.origin-2))
-	}
-	if c.context > 0 {
-		text += "  " + groups.Truncate(context, c.context-2)
-	}
-	return text
-}
-
-func (m Model) renderRow(c columns, r row) string {
-	glyph := "  "
-	if r.parent {
-		glyph = "▾ "
-		if r.folded {
-			glyph = "▸ "
-		}
-	}
-	usage, label, procs := r.group.Total, groups.Label(r.group), fmt.Sprint(r.group.Total.Processes)
-	origin, context := groups.OriginText(r.group.Origin), groups.ContextText(r.group.Context)
-	switch {
-	case r.process != nil:
-		usage, label, procs = r.process.Usage, fmt.Sprintf("%d %s", r.process.PID, groups.ShortCommand(r.process.Command)), ""
-		origin, context = groups.OriginText(r.process.Origin), ""
-		if r.detached {
-			label = "↰ " + label
-		}
-	case r.group.Task != nil:
-		label, context = groups.TaskText(r.group, m.frame.SampledAt), ""
-		if usage.Processes == 0 {
-			procs = ""
-		}
-	default:
-		if slots := groups.SlotGlyphs(r.group.Gavel); slots != "" {
-			label += "  " + slots
-		}
-		if r.group.GavelError != "" {
-			label += " · status unreadable"
-		}
-	}
-	if hog := m.hogLabel(usage); hog != "" {
-		label = "! " + hog + " · " + label
-	}
-	name := strings.Repeat("  ", r.depth) + glyph + label
-	text := fit(c.line(name, procs, groups.Percent(usage.CPUPercent),
-		groups.Size(float64(usage.RSSBytes)), groups.MemorySize(usage.CompressedBytes), groups.MemorySize(usage.SwapBytes), groups.Rate(usage.DiskRead), groups.Rate(usage.DiskWrite), groups.Rate(usage.NetRx),
-		groups.Rate(usage.NetTx), groups.Count(usage.Sockets), origin, context), m.width)
-	if r.group.Task != nil && usage.Processes == 0 {
-		// A task row holding no process's group has no use to show.
-		text = fit(c.line(name, "", "", "", "", "", "", "", "", "", "", origin, context), m.width)
-	}
-	if r.key == m.selected {
-		return selectedStyle.Render(text)
-	}
-	if m.hogLabel(usage) != "" {
-		return statusStyle.Render(text)
-	}
-	if style, ok := kindStyles[r.group.Kind]; ok {
-		return style.Render(text)
-	}
-	return text
-}
-
 func (m Model) renderDetail() []string {
 	height := m.detailHeight()
 	if height == 0 {
@@ -321,7 +225,7 @@ func (m Model) footer() string {
 		return mutedStyle.Render(fit("[ ] choose process  x terminate  r nice=10  y confirm  esc cancel  f close · hogs pinned 120s · CMPRS includes swapped-out pages on macOS", m.width))
 	}
 	toggles := fmt.Sprintf("o other:%s  n net:%s", onOff(m.toggles.All), onOff(m.toggles.Net))
-	return mutedStyle.Render(fit("↑↓ move  ←→ fold  enter list processes  f process pane  b group  s sort  S reverse  / filter  "+toggles+"  q quit", m.width))
+	return mutedStyle.Render(fit("↑↓ move  enter processes  d inspect  P pause/resume  / filter  ? help  "+toggles+"  q quit", m.width))
 }
 
 func onOff(on bool) string {

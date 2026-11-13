@@ -24,6 +24,9 @@ func (m Model) rowCount() int {
 }
 
 func (m Model) View() tea.View {
+	if m.tabs[m.active].top != nil && !m.tabs[m.active].browse {
+		return m.sampleView()
+	}
 	width, height := max(1, m.width), max(1, m.height)
 	t := m.tabs[m.active]
 	status := "Following"
