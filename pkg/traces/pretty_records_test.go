@@ -48,6 +48,9 @@ var _ = Describe("styled trace records", func() {
 		{"process_facets", query.Row{"process": "123@started", "facet": "files", "operation": "open", "entity": "/orders.db"}, []string{"123@started", "files", "open", "/orders.db"}},
 	}
 
+	for _,kind:=range []string{"goprof","jvm_jfr","process","prometheus","query","sql_plancache","sql_top","stacks"} {
+		examples=append(examples,example{kind:kind+"_frames",row:query.Row{"source":"worker","completedAt":"2026-11-11T10:00:00Z","retained":1,"observed":2},contains:[]string{"worker","1/2 rows"}})
+	}
 	DescribeTableSubtree("presents native fields with a typed formatter", func(e example) {
 		It("keeps meaningful content and semantic styles", func() {
 			kinds, err := traces.Kinds()

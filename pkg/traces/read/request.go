@@ -26,7 +26,7 @@ func ParseRequest(dataDir string, values url.Values) (scope Scope, q Query, aggr
 		return
 	}
 	scope = Scope{DataDir: dataDir, Run: values.Get("run"), Runs: requestList(values["runs"]), Result: values.Get("result")}
-	q = Query{Filters: values["filter"], Search: values.Get("q"), Where: values.Get("where"), Cursor: values.Get("cursor")}
+	q = Query{Filters: values["filter"], Search: values.Get("q"), Where: values.Get("where"), Cursor: values.Get("cursor"), Sort: values.Get("sort")}
 	aggregate = Aggregate{Columns: requestList(values["stats"]), GroupBy: values.Get("groupBy"), View: values.Get("view")}
 	if err = parseRequestTimes(values, &scope, &q); err != nil {
 		return
@@ -47,7 +47,7 @@ func ParseRequest(dataDir string, values url.Values) (scope Scope, q Query, aggr
 			return
 		}
 	}
-	for name, target := range map[string]*bool{"all": &q.All, "follow": &aggregate.Follow} {
+	for name, target := range map[string]*bool{"all": &q.All, "follow": &aggregate.Follow, "desc": &q.Desc} {
 		if values.Has(name) {
 			*target, err = strconv.ParseBool(values.Get(name))
 			if err != nil {
@@ -132,7 +132,10 @@ func validateRequest(scope Scope, q Query, aggregate Aggregate, limitSet bool) e
 	if aggregate.Follow && (aggregate.Enabled() || aggregate.View != "" || q.Cursor != "") {
 		return fmt.Errorf("--follow cannot combine with --stats, --group-by, --view or --cursor")
 	}
-	if aggregate.View != "" && (aggregate.Enabled() || !q.From.IsZero() || !q.Until.IsZero() || len(q.Filters) > 0 || q.Search != "" || q.Where != "" || q.Cursor != "" || limitSet) {
+	if aggregate.View == "top" && aggregate.Enabled() {
+		return fmt.Errorf("--view top cannot combine with --stats or --group-by")
+	}
+	if aggregate.View != "" && aggregate.View != "top" && (aggregate.Enabled() || !q.From.IsZero() || !q.Until.IsZero() || len(q.Filters) > 0 || q.Search != "" || q.Where != "" || q.Cursor != "" || limitSet) {
 		return fmt.Errorf("--view accepts a seq window, without row filters, time bounds, paging or --stats/--group-by")
 	}
 	return nil

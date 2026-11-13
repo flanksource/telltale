@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/flanksource/clicky/entity"
 	"github.com/flanksource/clicky/rpc"
 	"github.com/flanksource/commons-db/models"
 	"github.com/flanksource/telltale/sdk/protocol"
@@ -31,6 +32,11 @@ func addConnectionPaths(spec *rpc.OpenAPISpec) {
 			if path == "/api/agents" {
 				response = &rpc.OpenAPISchema{Type: "array", Items: rpc.SchemaForStruct(protocol.Hello{})}
 			}
+			if path == "/api/v1/connection" && method == "GET" {
+				response = &rpc.OpenAPISchema{OneOf: []*rpc.OpenAPISchema{
+					{Type: "array", Items: rpc.SchemaForStruct(models.Connection{})}, rpc.SchemaForStruct(entity.LookupResponse{}),
+				}}
+			}
 			if path == "/api/v1/connection" && method == "POST" {
 				status = http.StatusCreated
 			}
@@ -41,6 +47,11 @@ func addConnectionPaths(spec *rpc.OpenAPISpec) {
 				strconv.Itoa(status): {Description: "Success", Content: map[string]rpc.OpenAPIMediaType{"application/json": {Schema: response}}},
 				"400":                {Description: "Invalid request"}, "404": {Description: "Resource not found"}, "405": {Description: "Read-only resource"},
 			}}
+			if path == "/api/v1/connection" && method == "GET" {
+				for _, name := range []string{"type", "types", "__lookup", "__lookup_filter", "__lookup_q"} {
+					op.Parameters = append(op.Parameters, rpc.OpenAPIParameter{Name: name, In: "query", Schema: &rpc.OpenAPISchema{Type: "string"}})
+				}
+			}
 			for _, name := range []string{"id", "run", "kind"} {
 				if strings.Contains(path, "{"+name+"}") {
 					op.Parameters = append(op.Parameters, rpc.OpenAPIParameter{Name: name, In: "path", Required: true, Schema: &rpc.OpenAPISchema{Type: "string"}})

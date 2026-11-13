@@ -93,7 +93,7 @@ describe("recorded trace runs", () => {
     const recorded = listed.runs[0];
     expect(recorded.process).toMatchObject({ tree: { kind: "process" }, samples: { kind: "process_metrics" }, facets: { kind: "process_facets" } });
     const catalog = await (await fetch(`${apiURL}${recorded.mount}/api/v1/traces/kinds`)).json() as { name: string; results?: { name: string }[] }[];
-    expect(catalog.filter(kind => kind.name.startsWith("process"))).toEqual([expect.objectContaining({ name: "process", results: [expect.objectContaining({ name: "facets" }), expect.objectContaining({ name: "metrics" })] })]);
+    expect(catalog.filter(kind => kind.name.startsWith("process"))).toEqual([expect.objectContaining({ name: "process", results: [expect.objectContaining({ name: "facets" }), expect.objectContaining({ name: "metrics" }), expect.objectContaining({ name:"frames" })] })]);
     const metrics = await fetch(`${apiURL}${recorded.mount}/traces/process/records?result=metrics&limit=1`);
     expect(metrics.status).toBe(200);
     expect(await metrics.json()).toMatchObject({ rows: [expect.objectContaining({ entity: expect.any(String), rssBytes: expect.any(Number) })] });

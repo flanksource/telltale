@@ -107,7 +107,10 @@ func filterFeed(refs []read.Ref, r *http.Request) ([]read.Ref, error) {
 		}
 	}
 	for _, ref := range refs {
-		owner, _ := ref.Runtime.Kinds.ResultOf(ref.Kind)
+		owner, result := ref.Runtime.Kinds.ResultOf(ref.Kind)
+		if result == "frames" && r.URL.Query().Get("stream") != ref.Stream && r.URL.Query().Get("kind") != ref.Kind {
+			continue
+		}
 		if excluded := r.URL.Query().Get("excludeKind"); excluded != "" && (ref.Kind == excluded || owner == excluded) {
 			continue
 		}

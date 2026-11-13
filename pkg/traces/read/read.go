@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/flanksource/commons-db/query"
 	"strings"
 	"time"
 
@@ -45,6 +46,8 @@ func (s *Selection) Close() error {
 }
 
 type Query struct {
+	Sort            string
+	Desc            bool
 	From, Until     time.Time
 	AfterSeq, ToSeq int64
 	Filters         []string
@@ -54,6 +57,8 @@ type Query struct {
 	All             bool
 	NextCursor      func(string) `json:"-"`
 	seqOrder        bool
+	order           query.Order
+	profile         *query.Profile
 }
 
 func Resolve(kind string, scope Scope) (_ *Selection, err error) {

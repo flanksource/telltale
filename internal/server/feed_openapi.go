@@ -10,6 +10,7 @@ func addFeedPaths(spec *rpc.OpenAPISpec) {
 	if spec.Paths == nil {
 		spec.Paths = map[string]rpc.OpenAPIPath{}
 	}
+	addRecordsPath(spec)
 	pageSchema := rpc.SchemaForStruct(read.FeedResult{})
 	pageSchema.Properties["rows"].Items.Properties["ansi"] = &rpc.OpenAPISchema{Type: "string", Description: "Styled summary, included when presentation=ansi"}
 	operation := rpc.OpenAPIOperation{Summary: "Read or follow every armed capture of a run", Tags: []string{"Traces"}, Responses: map[string]rpc.OpenAPIResponse{
