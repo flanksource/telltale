@@ -45,7 +45,7 @@ describe("run trace layout", () => {
   it("keeps the existing process tree row above the tabs and opens its details on selection", async () => {
     renderPanel();
     const row = await screen.findByRole("treeitem");
-    const events = screen.getByRole("tab", { name: "Events" });
+    const events = screen.getByRole("tab", { name: "History" });
     expect(row).toHaveTextContent("demo");
     expect(row).toHaveTextContent("pid 9508");
     expect(row).toHaveTextContent("demo --record");
@@ -71,7 +71,7 @@ describe("run trace layout", () => {
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
     expect(await screen.findByText("Select a process to view its trace")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: "Events" }));
+    fireEvent.click(screen.getByRole("tab", { name: "History" }));
     await waitFor(() => expect(new URLSearchParams(window.location.search).has("runView")).toBe(false));
     expect(new URLSearchParams(window.location.search).get("feedSort")).toBe("timestamp");
     expect(window.location.hash).toBe("#capture");

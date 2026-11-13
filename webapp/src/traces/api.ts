@@ -1,4 +1,4 @@
-import type { ProcessNodeRow, ProcessSampleRow } from "@flanksource/clicky-ui/data";
+import type { ProcessNodeRow, ProcessSampleRow, TopMetric } from "@flanksource/clicky-ui/data";
 
 // The server lists, starts and stops runs at /api/traces (telltale.Handler),
 // and serves each one's trace routes under its mount, /api/traces/<run id>
@@ -131,6 +131,7 @@ export interface TraceExportFormat {
 }
 
 export interface TraceKindInfo {
+  top?: { identity?: string[]; perSource?: boolean; metrics?: TopMetric[]; relation?: { column:string; target:string; label:string } };
   name: string;
   title: string;
   exportFormats: TraceExportFormat[];

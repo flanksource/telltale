@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, JsonSchemaForm, type JsonSchemaFormError, type JsonSchemaObject } from "@flanksource/clicky-ui/components";
 import { UiLoader } from "@flanksource/clicky-ui/icons";
+import { createOperationsApiClient, useOperationLookupFetcher } from "@flanksource/clicky-ui/rpc";
 import { useDefinitions } from "../definitions/api";
 import { StartDefinitionForm } from "../definitions/StartDefinitionForm";
 import { fetchStartForm, startRun, StartRunError, type RunTraces, type StartForm, type StartRequest } from "./api";
@@ -14,6 +15,8 @@ export interface StartRunFormProps {
 }
 
 function StartRunFields({ form, onStarted, agent, probe }: StartRunFormProps & { form: StartForm }) {
+  const lookupClient = useMemo(() => createOperationsApiClient(), []);
+  const lookupFetcher = useOperationLookupFetcher(lookupClient);
   const queryClient = useQueryClient();
   const [value, setValue] = useState<StartRequest>(() => agent && probe ? {
     ...form.defaults, command: "",
@@ -45,6 +48,7 @@ function StartRunFields({ form, onStarted, agent, probe }: StartRunFormProps & {
         schema={form.schema as JsonSchemaObject}
         value={value}
         onChange={setValue}
+        {...(lookupFetcher ? { lookupFetcher } : {})}
         errors={fieldErrors}
         hiddenKeys={["definition"]}
         size="sm"

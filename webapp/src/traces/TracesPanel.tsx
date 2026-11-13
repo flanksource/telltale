@@ -5,17 +5,18 @@ import { Tabs } from "@flanksource/clicky-ui/components";
 import { DEFAULT_VIEW, type GroupsView } from "../top/groups";
 import { processGroupsCapture, RecordedGroups } from "../top/RecordedGroups";
 import { traceFeedSource } from "./feed";
-import { failure, type RunTraces } from "./api";
+import { failure, fetchTraceKinds, type RunTraces } from "./api";
 import { RunProcessDetail } from "./RunProcessDetail";
 import { RunTasks } from "./RunTasks";
 import { useProcessTrace } from "./useProcessTrace";
 import { RunShellSlot } from "../layout/RunShellSlot";
+import { RunTop } from "./RunTop";
 
-type RunView = "events" | "process" | "tasks";
+type RunView = "top" | "events" | "process" | "tasks";
 
 function readView(): RunView {
   const view = new URLSearchParams(window.location.search).get("runView");
-  return view === "process" || view === "tasks" ? view : "events";
+  return view === "process" || view === "tasks" || view === "events" ? view : "top";
 }
 
 /** The captures one run armed, read from its store. */
@@ -36,7 +37,9 @@ export function TracesPanel({ run, summary }: { run: RunTraces; summary?: ReactN
   });
   const hasDetails = !!run.process || !!processGroupsCapture(run);
   const taskCapture = run.captures?.find(capture => capture.kind === "task");
-  const tabs = [{ id: "events", label: "Events" }, ...(taskCapture ? [{ id: "tasks", label: "Tasks" }] : []), ...(hasDetails ? [{ id: "process", label: "Process details" }] : [])];
+  const catalog = useQuery({ queryKey: ["sample-kinds", run.mount], queryFn: () => fetchTraceKinds(run.mount), retry: false });
+  const hasTop = [...(run.captures ?? []), ...(run.process ? [{ kind: run.process.tree.kind }, { kind: run.process.stacks.kind }] : [])].some(capture => catalog.data?.some(info => info.name === capture.kind && info.top));
+  const tabs = [...(hasTop ? [{ id: "top", label: "Top" }] : []), { id: "events", label: "History" }, ...(taskCapture ? [{ id: "tasks", label: "Tasks" }] : []), ...(hasDetails ? [{ id: "process", label: "Process details" }] : [])];
   const activeView: RunView = tabs.some(tab => tab.id === view) ? view : "events";
   const processes = useQuery({
     queryKey: ["trace-process-header", run.runId, run.mount],
@@ -56,9 +59,9 @@ export function TracesPanel({ run, summary }: { run: RunTraces; summary?: ReactN
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (showExited) params.set("showExited", "1"); else params.delete("showExited");
-    if (activeView === "events") params.delete("runView"); else params.set("runView", activeView);
+    if (activeView === "top" || (!hasTop && activeView === "events")) params.delete("runView"); else params.set("runView", activeView);
     window.history.replaceState(null, "", `${window.location.pathname}?${params}${window.location.hash}`);
-  }, [showExited, activeView]);
+  }, [showExited, activeView, hasTop]);
   useEffect(() => {
     const restore = () => {
       setShowExited(new URLSearchParams(window.location.search).get("showExited") === "1");
@@ -83,8 +86,9 @@ export function TracesPanel({ run, summary }: { run: RunTraces; summary?: ReactN
     <RunShellSlot name="actions">
     {summary && <div className="min-w-0 max-w-full sm:max-w-lg">{summary}</div>}
     {tabs.length > 1 && <Tabs className="shrink-0" tabs={tabs}
-      value={activeView} onChange={id => setView(id === "process" || id === "tasks" ? id : "events")} />}
+      value={activeView} onChange={id => setView(id === "process" || id === "tasks" || id === "top" ? id : "events")} />}
     </RunShellSlot>
+    {activeView === "top" && <RunTop run={run} />}
     <div hidden={activeView !== "events"} className="min-h-0 flex-1 overflow-hidden">
       <div role="tabpanel" aria-label="Events" className="flex h-full min-h-0 flex-col">
         <TraceFeed kinds={kinds} loadPage={source.loadPage} presentation="ansi" {...(live && source.follow ? { follow: source.follow } : {})} />
