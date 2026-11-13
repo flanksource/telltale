@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/flanksource/commons-db/recordstore"
+	"github.com/flanksource/telltale/pkg/traces/read"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/process"
 	"github.com/flanksource/telltale/pkg/tracing/processcapture"
@@ -41,5 +42,13 @@ var _ = Describe("unified process runtime", func() {
 			Expect(row).NotTo(HaveKey("command"))
 			return nil
 		})).To(Succeed())
+		top, err := read.Top(context.Background(), read.Ref{Runtime: env.Runtime, TraceRef: tracing.TraceRef{Kind: processcapture.Kind, Stream: stream}}, read.TopQuery{Query: read.Query{Filters: []string{fmt.Sprintf("pid=%d", os.Getpid())}}})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(top.Rows).To(HaveLen(1))
+		Expect(top.Rows[0]["pid"]).To(BeNumerically("==", os.Getpid()))
+		Expect(top.Rows[0]["command"]).NotTo(BeEmpty())
+		Expect(top.Display.Columns[0].Name).To(Equal("pid"))
+		Expect(top.Display.RowDetail).To(HaveLen(1))
+		Expect(top.Display.RowDetail[0]).NotTo(BeNil())
 	})
 })

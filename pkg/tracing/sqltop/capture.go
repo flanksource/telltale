@@ -9,15 +9,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/flanksource/commons-db/query/sqlactivity"
+	"github.com/flanksource/commons-db/recordstore/sampleframe"
 	"github.com/flanksource/commons/collections"
 	"github.com/flanksource/telltale/pkg/tracing"
 )
 
 // snapshot is one read of an engine: the server's time and its requests.
-type snapshot struct {
-	ServerTime time.Time
-	Rows       []Sample
-}
+type snapshot = sqlactivity.Snapshot
 
 type capture struct {
 	mu         sync.Mutex
@@ -64,10 +63,8 @@ func (c *capture) poll(ctx context.Context, out tracing.Emitter[Sample]) error {
 	if len(rows) > c.options.top() {
 		rows = rows[:c.options.top()]
 	}
-	for _, row := range rows {
-		if err := out.Emit(ctx, row); err != nil {
-			return err
-		}
+	if err := tracing.PublishFrame(ctx, out, sampleframe.Frame{Source: c.options.Connection, StartedAt: result.ServerTime, CompletedAt: result.ServerTime, Observed: active, Limit: c.options.top()}, rows); err != nil {
+		return err
 	}
 	c.polls++
 	out.Report(map[string]any{"engine": c.engine, "polls": c.polls, "active": active, "blocked": blocked, "recorded": len(rows)})
@@ -90,14 +87,14 @@ func (c *capture) keep(result snapshot) ([]Sample, error) {
 		}
 		seen[key] = true
 		row.Engine = c.engine
-		row.derive(result.ServerTime)
+		row.Derive(result.ServerTime)
 		if len(c.databases) > 0 && !collections.MatchItems(row.Database, c.databases...) {
 			continue
 		}
 		if len(c.text) > 0 && !collections.MatchItems(row.SQL, c.text...) {
 			continue
 		}
-		if row.ElapsedMs < milliseconds(c.minElapsed) {
+		if row.ElapsedMs < float64(c.minElapsed)/float64(time.Millisecond) {
 			continue
 		}
 		rows = append(rows, row)

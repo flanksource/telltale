@@ -58,6 +58,12 @@ func (t httpTransport) RoundTrip(request *http.Request) (*http.Response, error) 
 	return t.capture.RoundTrip(request)
 }
 
+// Unwrap and Rewrap let clients that reconfigure the concrete *http.Transport
+// (commons/http TLS, proxy and keep-alive settings) clone it and keep capture.
+func (t httpTransport) Unwrap() http.RoundTripper { return t.next }
+
+func (t httpTransport) Rewrap(next http.RoundTripper) http.RoundTripper { return Transport(next) }
+
 // Transport captures requests made through next when the HTTP probe is armed.
 func Transport(next http.RoundTripper) http.RoundTripper {
 	if next == nil {

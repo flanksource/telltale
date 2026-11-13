@@ -12,6 +12,7 @@ import (
 	"time"
 
 	dbcontext "github.com/flanksource/commons-db/context"
+	"github.com/flanksource/commons-db/recordstore/sampleframe"
 	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/target"
@@ -19,6 +20,7 @@ import (
 )
 
 type AgentSeam[P, R any] struct {
+	SampledBlobs bool
 	Probe        string
 	Dir          string
 	Registry     *agentclient.Registry
@@ -27,6 +29,7 @@ type AgentSeam[P, R any] struct {
 	Mutates      func(P) bool
 	DecodeRecord func(json.RawMessage) (R, error)
 	DecodeBlob   func(agentclient.Blob, map[string]string) ([]R, error)
+	CommitBlob   func(agentclient.Blob) error
 }
 
 type stateKey struct{}
@@ -221,7 +224,7 @@ func (s AgentSeam[P, R]) Checkpoint(ctx context.Context, raw json.RawMessage, ou
 			}
 		}
 		for _, blob := range result.Blobs {
-			if err := s.blob(ctx, blob, agent.Hello.Resource, out); err != nil {
+			if err := s.blob(ctx, blob, sampleResource(agent), out); err != nil {
 				return err
 			}
 		}
@@ -246,7 +249,7 @@ func (s AgentSeam[P, R]) Window(ctx context.Context, params P, raw json.RawMessa
 		select {
 		case blob := <-session.Blobs:
 			blob.CheckpointParams = raw
-			err = s.blob(ctx, blob, agent.Hello.Resource, out)
+			err = s.blob(ctx, blob, sampleResource(agent), out)
 		case ended := <-session.Ended:
 			err = fmt.Errorf("agent profile ended: %s", ended.Error)
 		case <-ctx.Done():
@@ -263,6 +266,7 @@ func (s AgentSeam[P, R]) Window(ctx context.Context, params P, raw json.RawMessa
 }
 
 func (s AgentSeam[P, R]) blob(ctx context.Context, blob agentclient.Blob, resource map[string]string, out tracing.Emitter[R]) error {
+	startedAt := time.Now().UTC()
 	if s.DecodeBlob == nil {
 		return fmt.Errorf("probe %s has no blob decoder", s.Probe)
 	}
@@ -270,12 +274,30 @@ func (s AgentSeam[P, R]) blob(ctx context.Context, blob agentclient.Blob, resour
 	if err != nil {
 		return err
 	}
+	if s.SampledBlobs {
+		if err := tracing.PublishFrame(ctx, out, sampleframe.Frame{Source: resource["telltale.agent.id"] + "/" + resource["process.pid"] + "/" + blob.Info.Name, StartedAt: startedAt, CompletedAt: time.Now().UTC(), Observed: len(rows)}, rows); err != nil {
+			return err
+		}
+		if s.CommitBlob != nil {
+			return s.CommitBlob(blob)
+		}
+		return nil
+	}
 	for _, row := range rows {
 		if err := out.Emit(ctx, row); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func sampleResource(agent *agentclient.Agent) map[string]string {
+	resource := maps.Clone(agent.Hello.Resource)
+	if resource == nil {
+		resource = map[string]string{}
+	}
+	resource["telltale.agent.id"] = agent.Hello.AgentID + "/" + agent.Hello.Started.UTC().Format(time.RFC3339Nano)
+	return resource
 }
 
 func (s AgentSeam[P, R]) emit(ctx context.Context, raw json.RawMessage, resource map[string]string, out tracing.Emitter[R]) error {
@@ -437,7 +459,7 @@ func (s AgentSeam[P, R]) read(ctx context.Context, state *capture, agent *agentc
 			}
 			state.reportDropped(agent, batch.Dropped, out.Report)
 		case blob := <-session.Blobs:
-			if err := s.blob(ctx, blob, agent.Hello.Resource, out); err != nil {
+			if err := s.blob(ctx, blob, sampleResource(agent), out); err != nil {
 				fail(err, false)
 				return
 			}
@@ -452,7 +474,7 @@ func (s AgentSeam[P, R]) read(ctx context.Context, state *capture, agent *agentc
 			for {
 				select {
 				case blob := <-session.Blobs:
-					if err := s.blob(ctx, blob, agent.Hello.Resource, out); err != nil {
+					if err := s.blob(ctx, blob, sampleResource(agent), out); err != nil {
 						fail(err, false)
 						return
 					}

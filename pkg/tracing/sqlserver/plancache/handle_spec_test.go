@@ -7,15 +7,26 @@ import (
 
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/query"
+	"github.com/flanksource/commons-db/recordstore/sampleframe"
 	"github.com/flanksource/telltale/pkg/tracing"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
 type recordingEmitter struct {
+	frames  []sampleframe.Frame
 	rows    []Sample
 	reports []any
 	err     error
+}
+
+func (e *recordingEmitter) EmitFrame(_ context.Context, frame sampleframe.Frame, rows []Sample) error {
+	if e.err != nil {
+		return e.err
+	}
+	e.frames = append(e.frames, frame)
+	e.rows = append(e.rows, rows...)
+	return nil
 }
 
 func (e *recordingEmitter) Emit(_ context.Context, s Sample) error {
@@ -223,6 +234,8 @@ var _ = Describe("plan cache capture", func() {
 		}
 		Expect(out.rows).To(HaveLen(1))
 		Expect(out.rows[0].PlanHandle).To(Equal(second.PlanHandle))
+		Expect(out.frames[0].Observed).To(Equal(2))
+		Expect(out.frames[0].Summary["activePlanLimit"]).To(Equal(1))
 	})
 	It("surfaces reader, emission and counter errors", func() {
 		failure := errors.New("read failed")

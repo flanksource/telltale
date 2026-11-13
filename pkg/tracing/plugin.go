@@ -20,6 +20,7 @@ import (
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
+	"github.com/flanksource/commons-db/recordstore/sampleframe"
 	"github.com/flanksource/telltale/pkg/tracing/target"
 )
 
@@ -153,6 +154,7 @@ type openOptions struct {
 // Handler is a TraceHandler as a TracePlugin, with the processing its records
 // get before they are stored.
 type Handler[P, R any] struct {
+	top          *TopSpec
 	tables       []ResultTable
 	handler      TraceHandler[P, R]
 	capabilities Capabilities
@@ -333,6 +335,16 @@ func (h *Handler[P, R]) Params() (*rpc.OpenAPISchema, error) {
 			property.Default = value
 		}
 	}
+	if connection := schema.Properties["connection"]; connection != nil {
+		endpoint := "/api/v1/connection"
+		if provider, ok := h.handler.(interface{ ConnectionTypes() []string }); ok {
+			endpoint += "?types=" + strings.Join(provider.ConnectionTypes(), ",")
+		}
+		if connection.Extensions == nil {
+			connection.Extensions = map[string]any{}
+		}
+		connection.Extensions["x-clicky-lookup"] = map[string]any{"url": endpoint, "filter": "connection", "searchParam": "__lookup_q"}
+	}
 	return schema, nil
 }
 
@@ -441,7 +453,14 @@ func (h *Handler[P, R]) open(ctx dbcontext.Context, options openOptions) (*sourc
 		return nil, err
 	}
 	src := newSource(options.stream, options.bufferRows, options.bufferBytes, schema.Options.Key, schema.Options.OnConflict == recordstore.OnConflictReplace)
-	emitter := &emitter[R]{source: src, process: pipeline(h.processors(schema))}
+	emitter := &emitter[R]{source: src, process: pipeline(h.processors(schema)), top: h.top}
+	if h.top != nil {
+		backend, ok := options.store.(sampleframe.Backend)
+		if !ok {
+			return nil, fmt.Errorf("Top capture requires an atomic sample backend")
+		}
+		emitter.frames = &sampleframe.Writer{Backend: backend, Schema: schema, Stream: options.stream}
+	}
 	if h.dedup != nil {
 		if window := h.dedup.window(params); window > 0 {
 			emitter.dedup = newDeduplicator(window, h.dedup.key)
@@ -473,7 +492,13 @@ func (h *Handler[P, R]) open(ctx dbcontext.Context, options openOptions) (*sourc
 	records := storedRecords[R]{store: options.store, stream: options.stream, jsonPaths: h.jsonPaths}
 	src.prepare(captureCtx, func(capture dbcontext.Context) error {
 		return h.handler.Handle(capture, params, emitter, records)
-	}, release)
+	}, func() error {
+		err := release()
+		if emitter.frames != nil {
+			err = errors.Join(err, emitter.frames.Close(context.WithoutCancel(captureCtx)))
+		}
+		return err
+	})
 	return src, nil
 }
 

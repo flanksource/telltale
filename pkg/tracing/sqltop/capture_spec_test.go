@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/flanksource/commons-db/query"
+	"github.com/flanksource/commons-db/recordstore/sampleframe"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -14,16 +15,26 @@ var serverTime = time.Date(2026, 11, 9, 10, 0, 0, 0, time.UTC)
 
 // recorder is an Emitter that keeps what a capture emits and reports.
 type recorder struct {
+	frames []sampleframe.Frame
 	rows   []Sample
 	report any
 }
 
-func (r *recorder) Emit(_ context.Context, row Sample) error { r.rows = append(r.rows, row); return nil }
-func (r *recorder) TryEmit(row Sample) bool                  { r.rows = append(r.rows, row); return true }
-func (r *recorder) Report(summary any)                       { r.report = summary }
-func (r *recorder) Warn(string)                              {}
+func (r *recorder) EmitFrame(_ context.Context, frame sampleframe.Frame, rows []Sample) error {
+	r.frames = append(r.frames, frame)
+	r.rows = append(r.rows, rows...)
+	return nil
+}
+
+func (r *recorder) Emit(_ context.Context, row Sample) error {
+	r.rows = append(r.rows, row)
+	return nil
+}
+func (r *recorder) TryEmit(row Sample) bool                   { r.rows = append(r.rows, row); return true }
+func (r *recorder) Report(summary any)                        { r.report = summary }
+func (r *recorder) Warn(string)                               {}
 func (r *recorder) Describe(string, ...query.SessionMetadata) {}
-func (r *recorder) Export(string, string)                    {}
+func (r *recorder) Export(string, string)                     {}
 
 func started(ago time.Duration) time.Time { return serverTime.Add(-ago) }
 
@@ -125,6 +136,7 @@ var _ = Describe("sql top capture", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(out.rows).To(BeEmpty())
 		Expect(out.report).To(HaveKeyWithValue("polls", 1))
+		Expect(out.frames).To(ConsistOf(HaveField("Observed", 0)))
 	})
 	DescribeTable("refuses a snapshot it cannot trust", func(result snapshot, message string) {
 		out, err := pollOnce(Options{}, result)
@@ -146,11 +158,4 @@ var _ = Describe("sql top capture", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(c.poll(context.Background(), &recorder{})).To(MatchError("sample sqlserver requests: login failed"))
 	})
-	DescribeTable("names a statement's command by its first keyword", func(statement, command string) {
-		Expect(commandOf(statement)).To(Equal(command))
-	},
-		Entry("a select", "  select 1", "SELECT"),
-		Entry("a call with parentheses", "vacuum(analyze) orders", "VACUUM"),
-		Entry("no statement", "   ", ""),
-	)
 })

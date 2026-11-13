@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/flanksource/commons-db/recordstore/sampleframe"
 	"github.com/google/gops/signal"
 	"github.com/google/pprof/profile"
 	"github.com/google/uuid"
@@ -49,12 +50,8 @@ func (p profiler) Checkpoint(ctx dbcontext.Context, params Params, records traci
 	if err != nil {
 		return fmt.Errorf("parse %s %s profile of %s: %w", request.Source, request.Profile, head.Key, err)
 	}
-	for _, sample := range Aggregate(head, parsed) {
-		if err := records.Emit(ctx, sample); err != nil {
-			return err
-		}
-	}
-	return nil
+	rows := Aggregate(head, parsed)
+	return tracing.PublishFrame(ctx, records, sampleframe.Frame{Source: fmt.Sprintf("%s/%d/%s", head.Key, head.PID, head.Profile), StartedAt: head.TakenAt, CompletedAt: time.Now().UTC(), Observed: len(rows)}, rows)
 }
 
 func (p profiler) agentCheckpoint(ctx context.Context, params Params, request CheckpointParams, records tracing.Emitter[Sample]) error {

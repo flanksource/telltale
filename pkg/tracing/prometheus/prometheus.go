@@ -16,6 +16,7 @@ import (
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
+	"github.com/flanksource/commons-db/recordstore/sampleframe"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/target"
 )
@@ -145,7 +146,7 @@ func (kind) Handle(ctx dbcontext.Context, params Params, out tracing.Emitter[Scr
 		}
 		out.Report(summary)
 		for _, scrape := range scrapes {
-			if err := out.Emit(ctx, scrape); err != nil {
+			if err := tracing.PublishFrame(ctx, out, sampleframe.Frame{Source: scrape.Endpoint, StartedAt: scrape.TakenAt, CompletedAt: scrape.TakenAt.Add(time.Duration(scrape.DurationMs * float64(time.Millisecond))), Observed: 1}, []Scrape{scrape}); err != nil {
 				if ctx.Err() != nil {
 					return nil
 				}
@@ -162,5 +163,5 @@ func (kind) Handle(ctx dbcontext.Context, params Params, out tracing.Emitter[Scr
 
 // NewKind is the prometheus kind over options.
 func NewKind(options KindOptions) *tracing.Handler[Params, Scrape] {
-	return tracing.NewHandler[Params, Scrape](kind{options: options}, tracing.Capabilities{Live: true}, target.Host)
+	return tracing.NewHandler[Params, Scrape](kind{options: options}, tracing.Capabilities{Live: true}, target.Host).WithTop(topSpec())
 }

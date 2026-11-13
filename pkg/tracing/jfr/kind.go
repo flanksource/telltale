@@ -31,7 +31,8 @@ func (b builtin) AgentAvailable(probe string, t target.Target) (bool, error) {
 func jfrAgent(p Params) seam.AgentSeam[Params, Sample] {
 	var mu sync.Mutex
 	watermarks := map[string]time.Time{}
-	return seam.AgentSeam[Params, Sample]{Probe: KindName, Target: func(p Params) target.Target { return p.Target }, ArmParams: func(p Params) (json.RawMessage, error) { return json.Marshal(p) }, DecodeBlob: func(blob agentclient.Blob, resource map[string]string) ([]Sample, error) {
+	pending := map[string]time.Time{}
+	return seam.AgentSeam[Params, Sample]{SampledBlobs: true, Probe: KindName, Target: func(p Params) target.Target { return p.Target }, ArmParams: func(p Params) (json.RawMessage, error) { return json.Marshal(p) }, DecodeBlob: func(blob agentclient.Blob, resource map[string]string) ([]Sample, error) {
 		if blob.Info.ContentType != protocol.ContentTypeJFR {
 			return nil, fmt.Errorf("JFR content type %q", blob.Info.ContentType)
 		}
@@ -42,13 +43,21 @@ func jfrAgent(p Params) seam.AgentSeam[Params, Sample] {
 			return nil, err
 		}
 		if profile.Latest.After(watermarks[blob.Info.Session]) {
-			watermarks[blob.Info.Session] = profile.Latest
+			pending[blob.Info.Session] = profile.Latest
 		}
 		rows := make([]Sample, len(profile.Samples))
 		for i, sample := range profile.Samples {
 			rows[i] = Sample{StackSample: sample, Resource: maps.Clone(resource)}
 		}
 		return rows, nil
+	}, CommitBlob: func(blob agentclient.Blob) error {
+		mu.Lock()
+		defer mu.Unlock()
+		if latest, exists := pending[blob.Info.Session]; exists {
+			watermarks[blob.Info.Session] = latest
+			delete(pending, blob.Info.Session)
+		}
+		return nil
 	}}
 }
 
@@ -82,5 +91,5 @@ func (b builtin) Checkpoint(ctx dbcontext.Context, p Params, out tracing.Emitter
 	return ctx.Value(agentKey{}).(seam.AgentSeam[Params, Sample]).Checkpoint(ctx, json.RawMessage(`{}`), out)
 }
 func Kind() *tracing.Handler[Params, Sample] {
-	return tracing.NewHandler[Params, Sample](builtin{native: profiler[Params]{recorder: NativeRecorder{}}}, tracing.Capabilities{Live: true}, target.Process, target.Agent).WithTruncation(maxStackBytes)
+	return tracing.NewHandler[Params, Sample](builtin{native: profiler[Params]{recorder: NativeRecorder{}}}, tracing.Capabilities{Live: true}, target.Process, target.Agent).WithTruncation(maxStackBytes).WithTop(topSpec())
 }

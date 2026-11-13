@@ -1,6 +1,7 @@
 package telltale
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/flanksource/commons/har"
+	commonshttp "github.com/flanksource/commons/http"
 	"github.com/flanksource/telltale/sdk/protocol"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -112,6 +114,37 @@ var _ = Describe("HTTP transport", func() {
 		var entry har.Entry
 		Expect(json.Unmarshal(batch.Items[0], &entry)).To(Succeed())
 		Expect(entry.Request.URL).To(Equal(server.URL))
+		Expect(entry.Response.Status).To(Equal(http.StatusOK))
+	})
+	It("captures a commons client configured for TLS after InstrumentDefaultTransport", func() {
+		original := http.DefaultTransport
+		DeferCleanup(func() { http.DefaultTransport = original })
+		const path = "/tls-items"
+		server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(w, `{"result":"ok"}`)
+		}))
+		defer server.Close()
+		agent := Loopback()
+		defer agent.Close()
+		stream, conn := openAgent(agent)
+		defer stream.Close()
+		Expect(conn.Send("arm", protocol.Arm{Session: "commons-http-test", Probe: "http", Params: json.RawMessage(`{}`)})).To(Succeed())
+		_, _, err := conn.Read()
+		Expect(err).NotTo(HaveOccurred())
+
+		InstrumentDefaultTransport()
+		response, err := commonshttp.NewClient().InsecureSkipVerify(true).R(context.Background()).Get(server.URL + path)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(response.AsString()).To(Equal(`{"result":"ok"}`))
+
+		frame, _, err := conn.Read()
+		Expect(err).NotTo(HaveOccurred())
+		var batch protocol.Records
+		Expect(json.Unmarshal(frame.Body, &batch)).To(Succeed())
+		Expect(batch.Items).To(HaveLen(1))
+		var entry har.Entry
+		Expect(json.Unmarshal(batch.Items[0], &entry)).To(Succeed())
+		Expect(entry.Request.URL).To(HaveSuffix(path))
 		Expect(entry.Response.Status).To(Equal(http.StatusOK))
 	})
 })

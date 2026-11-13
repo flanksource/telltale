@@ -2,7 +2,6 @@ package sqltop
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -10,6 +9,7 @@ import (
 	"github.com/flanksource/clicky"
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/models"
+	"github.com/flanksource/commons-db/query/sqlactivity"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/sqlconn"
 	"github.com/flanksource/telltale/pkg/tracing/target"
@@ -89,15 +89,14 @@ func (o Options) Validate() error {
 type handler struct{}
 type captureKey struct{}
 
-func (handler) Params() Params { return Params{Options: Options{Poll: defaultPoll.String(), Top: defaultTop}} }
+func (handler) Params() Params {
+	return Params{Options: Options{Poll: defaultPoll.String(), Top: defaultTop}}
+}
 
 // readers are the engine readers by connection type.
-var readers = map[string]struct {
-	engine string
-	read   func(context.Context, *sql.DB, bool) (snapshot, error)
-}{
-	models.ConnectionTypePostgres:  {EnginePostgres, readPostgres},
-	models.ConnectionTypeSQLServer: {EngineSQLServer, readSQLServer},
+var engines = map[string]string{
+	models.ConnectionTypePostgres:  EnginePostgres,
+	models.ConnectionTypeSQLServer: EngineSQLServer,
 }
 
 func (handler) Prepare(ctx dbcontext.Context, p Params, out tracing.Emitter[Sample]) (dbcontext.Context, func() error, error) {
@@ -109,9 +108,9 @@ func (handler) Prepare(ctx dbcontext.Context, p Params, out tracing.Emitter[Samp
 	if err != nil {
 		return ctx, nil, err
 	}
-	reader := readers[connType]
-	c, err := newCapture(p.Options, reader.engine, func(ctx context.Context, idle bool) (snapshot, error) {
-		return reader.read(ctx, pool, idle)
+	engine := engines[connType]
+	c, err := newCapture(p.Options, engine, func(ctx context.Context, idle bool) (snapshot, error) {
+		return sqlactivity.Read(ctx, pool, engine, sqlactivity.Filter{Idle: idle})
 	})
 	if err != nil {
 		release()
@@ -121,7 +120,7 @@ func (handler) Prepare(ctx dbcontext.Context, p Params, out tracing.Emitter[Samp
 		release()
 		return ctx, nil, err
 	}
-	out.Describe(fmt.Sprintf("%s running requests on %s", reader.engine, p.Connection))
+	out.Describe(fmt.Sprintf("%s running requests on %s", engine, p.Connection))
 	return ctx.WithValue(captureKey{}, c), func() error { release(); return nil }, nil
 }
 
@@ -176,5 +175,5 @@ func preparedCapture(ctx dbcontext.Context) (*capture, error) {
 }
 
 func Kind() *tracing.Handler[Params, Sample] {
-	return tracing.NewHandler[Params, Sample](handler{}, tracing.Capabilities{Follow: true}, target.Connection)
+	return tracing.NewHandler[Params, Sample](handler{}, tracing.Capabilities{Follow: true}, target.Connection).WithTop(topSpec())
 }

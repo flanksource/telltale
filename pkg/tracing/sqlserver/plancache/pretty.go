@@ -11,7 +11,7 @@ import (
 
 func (r Sample) Pretty() api.Text {
 	duration := time.Duration(r.AvgElapsedMs * float64(time.Millisecond))
-	t := clicky.Text(r.Database, "text-blue-500").Space().Append(fmt.Sprintf("%d executions", r.Executions), "text-muted").
+	t := clicky.Text(r.Database, "text-blue-500").Space().Append("CPU ", "text-muted").Add(api.Human(time.Duration(r.CPUMs*float64(time.Millisecond)))).Space().Append(fmt.Sprintf("%d executions", r.Executions), "text-muted").
 		Space().Append("avg ", "text-muted").Add(api.Human(duration, sqltext.DurationStyle(duration))).Space().Append(r.SQL, "font-mono max-w-[200ch]")
 	if r.Recompiled {
 		t = t.Space().Append("recompiled", "text-yellow-500")

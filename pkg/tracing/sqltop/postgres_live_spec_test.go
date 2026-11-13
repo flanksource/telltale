@@ -72,7 +72,7 @@ var _ = Describe("sql top on a live Postgres", func() {
 
 		Expect(out.rows).To(HaveLen(3))
 		for _, row := range out.rows {
-			Expect(row.SQL).NotTo(ContainSubstring(pollMarker), "the poller recorded its own backend")
+			Expect(row.SQL).NotTo(ContainSubstring("commons-db:sqlactivity"), "the poller recorded its own backend")
 			Expect(row.Engine).To(Equal(EnginePostgres))
 			Expect(row.Database).To(Equal(database))
 		}

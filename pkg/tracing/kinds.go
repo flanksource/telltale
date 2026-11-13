@@ -22,6 +22,7 @@ type KindResult struct {
 }
 
 type KindInfo struct {
+	Top          *TopSpec           `json:"top,omitempty"`
 	Name         string             `json:"name"`
 	Title        string             `json:"title"`
 	Capabilities Capabilities       `json:"capabilities"`
@@ -62,8 +63,30 @@ func (k *Kinds) RegisterKind(name string, plugin TracePlugin) error {
 	if _, err := plugin.Params(); err != nil {
 		return fmt.Errorf("trace kind %q: %w", name, err)
 	}
-	if _, err := plugin.Schema(name); err != nil {
+	schema, err := plugin.Schema(name)
+	if err != nil {
 		return fmt.Errorf("trace kind %q: %w", name, err)
+	}
+	if top := TopOf(plugin); top != nil {
+		if top.Result != "" {
+			found := false
+			for _, result := range plugin.ResultTables() {
+				if result.Name == top.Result {
+					schema, err = result.plugin.Schema(name + "_" + top.Result)
+					found = true
+					break
+				}
+			}
+			if err != nil {
+				return err
+			}
+			if !found {
+				return fmt.Errorf("Top result %q is not registered", top.Result)
+			}
+		}
+		if err := top.validate(schema); err != nil {
+			return fmt.Errorf("trace kind %q: %w", name, err)
+		}
 	}
 	if err := validateFormats(plugin.ExportFormats()); err != nil {
 		return fmt.Errorf("trace kind %q: %w", name, err)
@@ -123,6 +146,7 @@ func (k *Kinds) List() ([]KindInfo, error) {
 			return nil, fmt.Errorf("trace kind %q: %w", name, err)
 		}
 		infos = append(infos, KindInfo{
+			Top:  TopOf(plugin),
 			Name: name, Title: plugin.Title(), Capabilities: plugin.Capabilities(), Params: params, Columns: schema.Columns,
 			ExportFormats: plugin.ExportFormats(),
 		})

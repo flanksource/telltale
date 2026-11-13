@@ -234,5 +234,6 @@ func NewKind(addresses Addresses) *tracing.Handler[Params, Sample] {
 		}
 		return Aggregate(Sample{CheckpointID: uuid.NewString(), TakenAt: time.Now().UTC(), Reason: request.Reason, Source: "agent", PID: pid, Profile: blob.Info.Name}, parsed), nil
 	}}
-	return tracing.NewHandler[Params, Sample](profiler{addresses: addresses, agent: agent}, tracing.Capabilities{Live: true}, target.Process, target.Agent, target.Self)
+	agent.SampledBlobs = true
+	return tracing.NewHandler[Params, Sample](profiler{addresses: addresses, agent: agent}, tracing.Capabilities{Live: true}, target.Process, target.Agent, target.Self).WithTop(topSpec())
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/commons-db/recordstore/metrics"
+	"github.com/flanksource/commons-db/recordstore/sampleframe"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/groups"
 	"github.com/flanksource/telltale/pkg/tracing/process"
@@ -25,8 +26,8 @@ const MetricsTable = "process_metrics"
 type Identity struct {
 	Key              string                   `json:"key"`
 	ParentKey        string                   `json:"parentKey,omitempty"`
-	PID              int                      `json:"pid"`
-	PPID             int                      `json:"ppid"`
+	PID              int                      `json:"pid" filter:"terms"`
+	PPID             int                      `json:"ppid" filter:"terms"`
 	Name             string                   `json:"name"`
 	Command          string                   `json:"command"`
 	CWD              string                   `json:"cwd,omitempty"`
@@ -67,6 +68,7 @@ type StoreOptions struct {
 }
 
 type Store struct {
+	metricSeq  int64
 	mu         sync.Mutex
 	backend    recordstore.BatchAppender
 	stream     string
@@ -158,6 +160,16 @@ func (s *Store) Apply(ctx context.Context, o Observation) error {
 	}
 	batch.Entries = append(batch.Entries, recordstore.BatchEntry{Op: recordstore.BatchAppend, Kind: FacetsTable, Stream: s.stream + "-facets", Rows: events})
 	source := metrics.DynamicMetricSource{Table: s.metrics, Stream: s.stream + "-metrics"}
+	frameSchema, err := sampleframe.Schema(Kind + "_frames")
+	if err != nil {
+		return err
+	}
+	frame, err := recordstore.EncodeRow(sampleframe.Frame{ID: fmt.Sprintf("%s-%d", s.stream, o.Tick), Source: s.stream, Result: "metrics", Tick: o.Tick, StartedAt: o.At, CompletedAt: o.At, AfterSeq: s.metricSeq, ToSeq: s.metricSeq + int64(len(o.Metrics)), Observed: len(o.Metrics), Retained: len(o.Metrics)})
+	if err != nil {
+		return err
+	}
+	batch.Schemas = append(batch.Schemas, frameSchema)
+	batch.Entries = append(batch.Entries, recordstore.BatchEntry{Op: recordstore.BatchAppend, Kind: frameSchema.Kind, Stream: s.stream + "-frames", Rows: []recordstore.Row{frame}})
 	samples := slices.Clone(o.Metrics)
 	for i := range samples {
 		if _, ok := identities[samples[i].Entity]; !ok {
@@ -173,6 +185,7 @@ func (s *Store) Apply(ctx context.Context, o Observation) error {
 		return err
 	}
 	s.identities, s.facets, s.tick = identities, next, o.Tick
+	s.metricSeq += int64(len(samples))
 	return nil
 }
 

@@ -47,7 +47,9 @@ var _ = Describe("sql top on a live SQL Server", func() {
 		DeferCleanup(func() { _, _ = holder.conn.ExecContext(context.Background(), "IF @@TRANCOUNT > 0 ROLLBACK") })
 		background, cancel := context.WithCancel(context.Background())
 		DeferCleanup(cancel)
-		go func() { _, _ = waiter.conn.ExecContext(background, "UPDATE "+table+" SET value = value + 1 WHERE id = 1") }()
+		go func() {
+			_, _ = waiter.conn.ExecContext(background, "UPDATE "+table+" SET value = value + 1 WHERE id = 1")
+		}()
 		go func() { _, _ = sleeper.conn.ExecContext(background, "WAITFOR DELAY '00:00:30'") }()
 		Eventually(func() int {
 			var waiting int
@@ -62,7 +64,7 @@ var _ = Describe("sql top on a live SQL Server", func() {
 		DeferCleanup(stop)
 
 		for _, row := range out.rows {
-			Expect(row.SQL).NotTo(ContainSubstring(pollMarker), "the poller recorded its own session")
+			Expect(row.SQL).NotTo(ContainSubstring("commons-db:sqlactivity"), "the poller recorded its own session")
 			Expect(row.Engine).To(Equal(EngineSQLServer))
 		}
 		sleeping := sampleOf(out.rows, sleeper.pid)
