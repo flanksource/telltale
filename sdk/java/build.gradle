@@ -88,7 +88,16 @@ tasks.register('tomcatHarnessJar', com.github.jengelman.gradle.plugins.shadow.ta
     exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA', 'module-info.class'
     manifest { attributes('Main-Class':'com.flanksource.telltale.harness.TomcatHarness') }
 }
-test { useJUnitPlatform(); dependsOn 'war', 'exampleExtensionJar', 'tomcatHarnessJar' }
+test {
+    useJUnitPlatform()
+    dependsOn 'war', 'exampleExtensionJar', 'tomcatHarnessJar', 'diagnosticAgentJar'
+    // The diag agent attached as it is in a pod, so a test can redefine and
+    // retransform a live class through the real Instrumentation: how HotSpot
+    // treats those bytes is behaviour no bytecode assertion can stand in for.
+    jvmArgumentProviders.add({
+        ["-javaagent:" + tasks.named('diagnosticAgentJar').get().archiveFile.get().asFile.absolutePath]
+    } as CommandLineArgumentProvider)
+}
 sourceSets.test.java.srcDir 'examples'
 tasks.register('extensionApiJar', Jar) {
     archiveFileName = 'telltale-extension-api.jar'
