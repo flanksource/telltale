@@ -8,6 +8,8 @@ import (
 	"github.com/flanksource/clicky/entity"
 	"github.com/flanksource/clicky/rpc"
 	"github.com/flanksource/commons-db/models"
+	"github.com/flanksource/telltale"
+	"github.com/flanksource/telltale/internal/jvm"
 	"github.com/flanksource/telltale/sdk/protocol"
 )
 
@@ -23,6 +25,9 @@ func addConnectionPaths(spec *rpc.OpenAPISpec) {
 		"/api/v1/connection/{id}/browser/query":          {"POST"},
 		"/api/v1/connection/{id}/browser/filters/values": {"POST"},
 		"/api/agents":                                    {"GET"},
+		"/api/agents/{agent}/catalog":                    {"GET"},
+		"/api/agents/{agent}/call":                       {"POST"},
+		"/api/traces":                                    {"GET", "POST"},
 		"/api/traces/{run}/traces/{kind}/records":        {"GET"},
 	} {
 		item := rpc.OpenAPIPath{}
@@ -31,6 +36,19 @@ func addConnectionPaths(spec *rpc.OpenAPISpec) {
 			response := &rpc.OpenAPISchema{Type: "object"}
 			if path == "/api/agents" {
 				response = &rpc.OpenAPISchema{Type: "array", Items: rpc.SchemaForStruct(protocol.Hello{})}
+			}
+			if strings.HasSuffix(path, "/catalog") {
+				response = &rpc.OpenAPISchema{Type: "array", Items: &rpc.OpenAPISchema{Type: "object", AdditionalProperties: &rpc.OpenAPISchema{}}}
+			}
+			if path == "/api/agents/{agent}/call" {
+				response = &rpc.OpenAPISchema{}
+			}
+			if path == "/api/traces" {
+				response = rpc.SchemaForStruct(telltale.RunsList{})
+				if method == "POST" {
+					status = http.StatusCreated
+					response = rpc.SchemaForStruct(telltale.MountedRun{})
+				}
 			}
 			if path == "/api/v1/connection" && method == "GET" {
 				response = &rpc.OpenAPISchema{OneOf: []*rpc.OpenAPISchema{
@@ -52,7 +70,7 @@ func addConnectionPaths(spec *rpc.OpenAPISpec) {
 					op.Parameters = append(op.Parameters, rpc.OpenAPIParameter{Name: name, In: "query", Schema: &rpc.OpenAPISchema{Type: "string"}})
 				}
 			}
-			for _, name := range []string{"id", "run", "kind"} {
+			for _, name := range []string{"id", "run", "kind", "agent"} {
 				if strings.Contains(path, "{"+name+"}") {
 					op.Parameters = append(op.Parameters, rpc.OpenAPIParameter{Name: name, In: "path", Required: true, Schema: &rpc.OpenAPISchema{Type: "string"}})
 				}
@@ -61,6 +79,15 @@ func addConnectionPaths(spec *rpc.OpenAPISpec) {
 				body := &rpc.OpenAPISchema{Type: "object", AdditionalProperties: &rpc.OpenAPISchema{}}
 				if path == "/api/v1/connection" || path == "/api/v1/connection/{id}" {
 					body = rpc.SchemaForStruct(models.Connection{})
+				}
+				if path == "/api/agents/{agent}/call" {
+					body = rpc.SchemaForStruct(jvm.Request{})
+					delete(body.Properties, "agent")
+					body.Properties["params"] = &rpc.OpenAPISchema{Type: "object", AdditionalProperties: &rpc.OpenAPISchema{}}
+					body.Required = []string{"operation"}
+				}
+				if path == "/api/traces" {
+					body = rpc.SchemaForStruct(telltale.StartRequest{})
 				}
 				op.RequestBody = &rpc.OpenAPIRequestBody{Required: true, Content: map[string]rpc.OpenAPIMediaType{"application/json": {Schema: body}}}
 			}

@@ -75,6 +75,8 @@ func routes(options HandlerOptions, ui http.Handler) (http.Handler, error) {
 	root.Handle("/api/v1/agents/install/java", http.NewCrossOriginProtection().Handler(installer))
 	hub := agentclient.NewHub(agentclient.Default, agentclient.NewTokenStore(options.ConfigDirs))
 	root.HandleFunc("/api/agents", hub.List)
+	root.HandleFunc("GET /api/agents/{agent}/catalog", jvmHandler)
+	root.Handle("POST /api/agents/{agent}/call", http.NewCrossOriginProtection().Handler(http.HandlerFunc(jvmHandler)))
 	otel := otelHandler(tracequery.Service{DataDir: options.DataDir, Connections: options.Connections})
 	root.Handle("/api/otel", otel)
 	root.Handle("/api/otel/", otel)
@@ -130,7 +132,7 @@ func assetHandler(assets fs.FS) http.Handler {
 		info, err := fs.Stat(assets, path)
 		// A client route is the page: any path without an extension, and the
 		// /top/<program> pages, whose program names may hold dots.
-		if errors.Is(err, fs.ErrNotExist) && (!strings.Contains(path, ".") || strings.HasPrefix(path, "top/") || strings.HasPrefix(path, "arm/") || strings.HasPrefix(path, "records/")) && !strings.HasPrefix(path, "assets/") {
+		if errors.Is(err, fs.ErrNotExist) && (!strings.Contains(path, ".") || strings.HasPrefix(path, "top/") || strings.HasPrefix(path, "arm/") || strings.HasPrefix(path, "records/") || strings.HasPrefix(path, "jvm/")) && !strings.HasPrefix(path, "assets/") {
 			path = "index.html"
 		} else if err != nil || info.IsDir() {
 			http.NotFound(w, r)

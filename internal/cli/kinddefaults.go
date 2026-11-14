@@ -63,7 +63,7 @@ func bindJSONParam(flags *pflag.FlagSet, schema *rpc.OpenAPISchema, name string)
 		}
 		initial = string(raw)
 	}
-	value := flags.String(name, initial, paramUsage(schema)+" (JSON object)")
+	value := flags.String(name, initial, paramUsage(schema)+" (JSON "+schema.Type+")")
 	return func() any { return *value }, nil
 }
 

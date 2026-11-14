@@ -51,7 +51,7 @@ func NewRoot(version string) *cobra.Command {
 	serve.Flags().IntVar(&options.OTLP.MaxSpans, "otlp-max-spans", options.OTLP.MaxSpans, "Maximum spans per OTLP request")
 	serve.Flags().IntVar(&options.OTLP.MaxInflight, "otlp-max-inflight", options.OTLP.MaxInflight, "Maximum concurrent OTLP exports across both transports")
 	root.AddCommand(serve, newTraceCommand(), newConnectionCommand(), newRunCommand(), newTopCommand(), newRulesCommand(), newAgentsCommand())
-	root.AddCommand(newRecordsCommand(), newDefinitionsCommand(), newExplainCommand())
+	root.AddCommand(newRecordsCommand(), newDefinitionsCommand(), newExplainCommand(), newJVMCommand())
 	builtins, err := definition.Builtins()
 	if err != nil {
 		panic(err)

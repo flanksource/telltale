@@ -135,7 +135,7 @@ func bindParam(flags *pflag.FlagSet, schema *rpc.OpenAPISchema, path []string) (
 	if err := json.Unmarshal(encoded, &metadata); err != nil {
 		return paramFlag{}, err
 	}
-	if schema.Type == "object" {
+	if schema.Type == "object" || (schema.Type == "array" && schema.Items != nil && schema.Items.Type == "object") {
 		for key := range metadata {
 			if key != "title" && key != "description" && !strings.HasPrefix(key, "x-") {
 				delete(metadata, key)
@@ -166,6 +166,8 @@ func bindParamValue(flags *pflag.FlagSet, schema *rpc.OpenAPISchema, name string
 		return bindTypedParam(schema, func(value float64) *float64 { return flags.Float64(name, value, usage) })
 	case schema.Type == "array" && schema.Items != nil && schema.Items.Type == "string":
 		return bindTypedParam(schema, func(value []string) *[]string { return flags.StringSlice(name, value, usage) })
+	case schema.Type == "array" && schema.Items != nil && schema.Items.Type == "object":
+		return bindJSONParam(flags, schema, name)
 	case schema.Type == "object" && schema.AdditionalProperties != nil && schema.AdditionalProperties.Type == "string":
 		return bindMapParam(flags, schema, name)
 	case schema.Type == "object" && (schema.AdditionalProperties != nil || schema.Format == "json"):
@@ -298,6 +300,16 @@ func (p paramFlags) params() (json.RawMessage, error) {
 
 func (p paramFlag) read() (any, error) {
 	value := p.value()
+	if p.schema.Type == "array" && p.schema.Items != nil && p.schema.Items.Type == "object" {
+		var rows []map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(value.(string)), &rows); err != nil {
+			return nil, fmt.Errorf("--%s: expected a JSON array of objects: %w", p.flag.Name, err)
+		}
+		if rows == nil || slices.ContainsFunc(rows, func(row map[string]json.RawMessage) bool { return row == nil }) {
+			return nil, fmt.Errorf("--%s: expected a JSON array of objects", p.flag.Name)
+		}
+		return rows, nil
+	}
 	if p.schema.Type == "object" && (p.schema.AdditionalProperties != nil || p.schema.Format == "json") {
 		if p.schema.AdditionalProperties != nil && p.schema.AdditionalProperties.Type == "string" {
 			return readMapParam(value.([]string), p.flag.Name)
