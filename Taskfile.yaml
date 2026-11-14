@@ -118,9 +118,9 @@ tasks:
       - JFR_FILE={{.JFR_FILE}} go test ./pkg/tracing/jfr -run '^$' -bench BenchmarkCompression -benchtime {{.JFR_BENCHTIME}}
 
   java:build:
-    desc: Build the Java 8-compatible agent, WAR and extension artifacts
+    desc: Build the Java 8-compatible agent, WAR (also embedded for the tomcat deployer), extension artifacts and the Tomcat test harness
     cmds:
-      - ./sdk/java/gradlew -p sdk/java shadowJar war extensionApiJar exampleExtensionJar -PbuildVersion={{.VERSION}}
+      - ./sdk/java/gradlew -p sdk/java shadowJar war extensionApiJar exampleExtensionJar tomcatHarnessJar -PbuildVersion={{.VERSION}}
 
   java:test:
     desc: Test Java agent recording lifecycle

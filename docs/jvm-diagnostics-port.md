@@ -72,11 +72,71 @@ Installation verifies SHA-256 and stores immutable digest-named JARs under the a
 
 ## Standalone WAR
 
-Deploy `telltale-diag.war` and configure an absolute properties file using the servlet/context `configFile` parameter or `-Dtelltale.diag.config=/etc/telltale/diagnostics.properties`. Start from `sdk/java/examples/diagnostics.properties`. `tokenFile` holds a token of at least 16 characters, `runtimeDir` stores the extracted runtime, and `extensionsDir` enables extensions. Protect configuration/token files with filesystem permissions. Set `allowMutation=true` when required.
+A `Deployer` (below) hot-deploys the WAR with its configuration embedded as `WEB-INF/telltale-diag.properties`. To deploy it by hand instead, configure an absolute properties file using the servlet/context `configFile` parameter or `-Dtelltale.diag.config=/etc/telltale/diagnostics.properties`; an embedded and an external configuration together are an error. Start from `sdk/java/examples/diagnostics.properties`:
 
-Routes are `GET /health`, authenticated `GET /catalog`, `POST /call`, `POST /captures`, `POST /captures/{id}` (checkpoint/download) and `DELETE /captures/{id}` (finish/download). All except health require `Authorization: Bearer <token>`. Capture creation accepts `kind`, `params` and `allowMutation`. IDs belong to the WAR deployment; unloading it closes its captures while agent captures remain independent.
+- `issuer` and `audience`: the `iss` and `aud` every token must carry. The audience is the target id.
+- `jwks` (inline JWKS JSON) or `jwksFile` (an absolute path), and/or `jwksUrl`: the issuer's public keys. On an unknown `kid` the WAR re-reads `jwksUrl`, at most once every 30 seconds, so a key rotation needs no redeploy.
+- `runtimeDir` stores the extracted runtime, `extensionsDir` enables extensions and `allowMutation=true` allows writes.
+- `configDigest` is echoed by `/health` so a deployer can tell whether the WAR it finds has its provision.
+
+There is no shared token: the WAR holds only public keys, and `tokenFile` fails initialization. Unknown keys fail initialization too.
+
+Every execution request carries `X-Telltale-Authorization: Bearer <jwt>`. The Kubernetes apiserver deletes `Authorization` from every request it proxies (`pods/proxy`, `services/proxy`), so the token never relies on it, and it is never a query parameter. A direct connection may send `Authorization` instead; both present with different values is a 400. The token is an RS256 JWT with `kid`, `iss`, `aud`, `sub`, `exp` (60 seconds leeway) and a space-separated `scope`. RS256 is used because the agent runs on Java 8, which has no Ed25519. The WAR verifies each call and fails closed: a missing, malformed, wrongly signed, wrong-audience or expired token is 401, and a token without the route's scope is 403. Scopes are one table in the agent. Every catalog operation and `/hello` probe names its scope, and minters ask for exactly that:
+
+| Scope | Grants |
+| --- | --- |
+| `jvm:read` | `/hello`, `/catalog` and every read-only operation |
+| `jvm:trace` | `jvm_trace`, `jvm_jfr` and `jvm_notifications` captures, `jvm.probes.freeze` |
+| `jvm:instrument` | `jvm_redefine`, `jvm.classes.patch/instrument/restore/lease`, extension install/replace/unload |
+| `jvm:eval` | `jvm.groovy.eval`, `jvm.ognl.eval`, `jvm_ognl` captures |
+| `jvm:write` | `jvm.jmx.write/invoke`, `jvm.logging.set`, mutating extension operations |
+
+Routes:
+
+- `GET /health` needs no token. It answers `{status, apiVersion, configDigest}`.
+- `GET /hello` gives the agent API, probes and catalog. `GET /catalog` gives the catalog alone.
+- `POST /call` takes `{operation, params, allowMutation}`.
+- `POST /captures` takes `{kind, params, allowMutation}` and answers `{id, streaming, contentType, fileName}`.
+- `POST /captures/{id}` reads the capture so far and sets `X-Telltale-Complete`. `POST /captures/{id}/renew` extends its lease (204). `DELETE /captures/{id}` finishes it and returns the last reading.
+
+Capture IDs belong to the WAR deployment; unloading it closes its captures, while agent captures stay independent.
+
+The agent API version is `1`. A WAR that finds an older runtime already loaded in the JVM stays deployed, but answers `/health` with 503 `outdated` and refuses every other route. Restart the JVM to replace the runtime.
 
 The first adapter creates the JVM-wide `com.flanksource.telltale:type=Diagnostics` MBean in a loader outside the servlet application. Other adapters share it through JDK types. Mutation/extension-directory configuration must agree. Original bytes, probe buffers, leases and extensions survive servlet redeployment. Restart the JVM to replace this shared runtime version. Instrumentation attaches lazily when required: use a full JDK in `java.home`/`JAVA_HOME`, or `-Dtelltale.diag.jdk-home` to select a matching JDK. Attach restrictions are reported as errors.
+
+## Deployers
+
+A `Deployer` (`crds/telltale.flanksource.com_deployers.yaml`, Go package `pkg/deploy`) puts the agent into the JVMs a selector picks and owns their auth. Executions never install anything. They reach a deployed target with a short-lived token the deployer's issuer minted. `examples/deployers/orders.yaml` shows both kinds.
+
+- **`spec.selector`** has `kind`, `namespace`, `labels` and `container`.
+  - `kind` is `Deployment`, `StatefulSet` or `Pod`. `labels` match the workloads of that kind, and the targets are the running pods the workloads' own pod selectors match.
+  - `container` is the JVM container. A selector that matches no running pods, or names a container a pod lacks, is an error.
+  - Each target is named `deployer/<deployer>/<namespace>/<pod>`. That name is the audience of its tokens.
+- **`spec.javaContainer`** is keyed by `kind`, and each kind is a registry entry (`deploy.RegisterJavaContainer`) that validates its own fields.
+  - **`tomcat`** embeds commons-db `HTTPConnection` as the Tomcat manager login: `connection`, `username`/`password`, `bearer`, `oauth` and `tls`.
+    - `url` is a Go template rendered per target to the Tomcat base URL. It binds `.Pod.Name`, `.Pod.Namespace`, `.Pod.Labels`, `.Pod.IP`, `.Container` and `.Port "<name>"`. A binding the target lacks is an error, never `<no value>`.
+    - The rendered URL goes through commons-db `ResolveConnectionURL` (`proxy://`, `portforward://`, `svc://`, `http(s)://`).
+    - `url` is what the deploy uses: the manager upload and the `/health` probe. The deployer uploads a per-target `telltale-diag.war` to `<url><managerPath>/text/deploy?path=<contextPath>&update=true`. `managerPath` defaults to `/manager` and `contextPath` to `/telltale-diag`; `runtimeDir` is required.
+    - The manager login needs its `Authorization` header, which the apiserver deletes from proxied requests. So `url` is a `portforward://<pod>.<namespace>:<port>?kind=pod` or a direct `http(s)://` URL. A `proxy://` URL, or a literal apiserver `.../pods|services/<name>/proxy` URL, is refused when the deployer is decoded.
+    - `executionUrl` (optional, default `url`) is the base executions use, with `contextPath` appended ahead of any query. It may be `proxy://<pod>.<namespace>:<port>?kind=pod`, because the token travels in `X-Telltale-Authorization`. Executions use the connection's TLS and no manager login. The commons-db connection transport adds the apiserver's own credentials to proxy URLs.
+  - **`attach`** copies the agent jar with `kubectl exec` and attaches it to `pid`. It starts the agent's HTTP listener on `bind`:`port`, which serves the same routes and verification as the WAR. `url` is the listener's URL template.
+  - **`javaagent`** is registered but not implemented yet. A deployer naming it fails with that message.
+- **`spec.auth.issuer`** names the connection whose `signingKey` named secret (an RSA PEM key) signs tokens. Its reference is the tokens' `iss`.
+  - Agents are provisioned with the public JWKS only.
+  - `spec.auth.jwksUrl` names where the issuer runtime serves its JWKS (`auth.Issuer` is an `http.Handler`), so a rotated key is picked up on its first unknown `kid`.
+
+Deploying is idempotent. The deployer reads each target's `/health`, and a target already running agent API `1` with the same provision digest is left alone. A different provision is redeployed with `tomcat`. With `attach` it is an error, because an attached agent cannot be replaced without a JVM restart.
+
+Each target reports `{target, namespace, pod, container, state, agentAPIVersion, endpoint, error}`, where `state` is `deployed`, `outdated` or `failed`. `outdated` means the JVM still runs another agent API after the deploy; restart the JVM to replace it.
+
+`deploy.Connect` dials each deployed target over direct HTTP (`agentclient.DialHTTP`) into an agent registry. The agent ID is the target id, and its resource carries `telltale.deployer`, `telltale.target.id`, `k8s.namespace.name`, `k8s.pod.name` and `k8s.container.name`. Captures then name the target (`target.agent: <target id>`) or select it (`target.selector: {telltale.deployer: orders}`), never a URL.
+
+Arm, checkpoint, renew, disarm and calls run through the same `agentclient.Agent` and `seam.AgentSeam` as hub agents:
+
+- Each request carries a token for the scope the agent's `/hello` names.
+- Streaming captures are read every 250 ms and renewed every 30 seconds.
+- A capture ends complete when the agent sets `X-Telltale-Complete`.
 
 ## Verification
 
