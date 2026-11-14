@@ -8,7 +8,6 @@ public final class ClassOperations {
   private final DecompilerService decompiler = new DecompilerService();
   private final CompilerService compiler = new CompilerService();
   private final MethodPatchService methodPatches = new MethodPatchService();
-  private final InstrumentService instrumenter = new InstrumentService();
 
   public synchronized Map<String, Object> compile(JsonBody body) throws IOException {
     String className = body.required("class");
@@ -93,17 +92,15 @@ public final class ClassOperations {
     Class<?> target = liveClass(entry, className);
     JsonBody probe = body.object("probe");
     requireAgentVisibleTo(target);
-    AgentBridge.requireProbeApi();
-    if (Boolean.TRUE.equals(probe.fields().get("alloc"))) {
-      AgentBridge.requireProbeApiFor("alloc", AgentBridge.ALLOC_PROBE_API);
-    }
-    if (Boolean.TRUE.equals(probe.fields().get("gc"))) {
-      AgentBridge.requireProbeApiFor("gc", AgentBridge.GC_PROBE_API);
-    }
+    requireProbeApiFor(probe.fields());
 
     String probeKey = probe.required("key");
     String selector = body.required("method");
     MethodSelector.parse(selector);
+    // Read before this span's probe is opened: with it open, a live read would come back already
+    // carrying its weave, and that is not what a restore may put back.
+    byte[] original = patchService().preservedOriginal(entry);
+    ProbeWeaver weaver = ProbeWeaver.install(InstrumentationService.instrumentation());
     registerLease(body, entry, className);
     Map<String, Object> options = new LinkedHashMap<>(probe.fields());
     options.put("method", selector);
@@ -113,20 +110,20 @@ public final class ClassOperations {
       throw new IllegalStateException("cannot record " + className + ": " + opened.get("error"));
     }
 
+    // Armed by retransformation through the weaver, not by redefinition: a redefined class loses
+    // its probes to the next retransformation of it, whoever makes it (see ProbeWeaver). The weave
+    // rebuilds the class with EVERY span still recording on it — a class is rewritten whole.
     Map<String, Object> out;
-    InstrumentService.Result rewritten;
+    ProbeWeaver.Woven woven;
     try {
-      rewritten = armEveryOpenProbe(entry, target, className, probeKey);
-      out =
-          new LinkedHashMap<>(
-              patchService()
-                  .apply(
-                      index, entry, Collections.singletonMap(className, rewritten.getBytecode())));
+      woven = weaver.weave(target, probeKey);
+      out = new LinkedHashMap<>(patchService().woven(entry, original, woven.getBytecode()));
     } catch (RuntimeException e) {
       AgentBridge.releaseProbe(probeKey, entry.getLoaderHash(), className);
+      rearmSurvivors(weaver, entry, target, e);
       throw e;
     }
-    out.put("methods", methodRows(rewritten));
+    out.put("methods", methodRows(woven.arming(probeKey)));
     out.put("probeKey", probeKey);
     out.put("generation", opened.get("generation"));
     out.put("capacity", opened.get("capacity"));
@@ -136,59 +133,47 @@ public final class ClassOperations {
     return out;
   }
 
-  private InstrumentService.Result armEveryOpenProbe(
-      ClassIndex.Entry entry, Class<?> target, String className, String probeKey) {
-    byte[] bytecode = patchService().originalOf(entry);
-    if (bytecode == null) {
-      bytecode = liveBytecode(target);
-    }
-    InstrumentService.Result arming = null;
-    for (Map<String, Object> armed :
-        AgentBridge.probeArmingsOwnedBy(entry.getLoaderHash(), className)) {
-      InstrumentService.Result result =
-          instrumenter.instrument(armingRequest(className, bytecode, target, armed));
-      bytecode = result.getBytecode();
-      if (probeKey.equals(armed.get("key"))) {
-        arming = result;
+  /** The root-call filter options {@code probe} names, or null when it names none. */
+  public static String filterOptions(Map<String, Object> probe) {
+    StringBuilder named = new StringBuilder();
+    for (String option : Arrays.asList("minCost", "exceptionsOnly", "match")) {
+      if (probe.get(option) != null) {
+        named.append(named.length() == 0 ? "" : ", ").append(option);
       }
     }
-    if (arming == null) {
-      throw new IllegalStateException(
-          "the agent has no arming for probe "
-              + probeKey
-              + " on "
-              + className
-              + " immediately after opening it, so the rewrite could not be built."
-              + " The probe was closed underneath this request — a lapsed lease or a restore.");
-    }
-    return arming;
+    return named.length() == 0 ? null : named.toString();
   }
 
-  private static InstrumentService.Request armingRequest(
-      String className, byte[] bytecode, Class<?> target, Map<String, Object> armed) {
-    Object selector = armed.get("method");
-    if (!(selector instanceof String)) {
-      throw new IllegalStateException(
-          "probe "
-              + armed.get("key")
-              + " is recording on "
-              + className
-              + " but the agent has no selector for it, so the class cannot be rewritten without"
-              + " disarming it. It was armed by an older WAR; restore "
-              + className
-              + " and arm the spans again.");
+  /** Refuses each opt-in probe option the attached agent is too old to honour. */
+  private static void requireProbeApiFor(Map<String, Object> probe) {
+    AgentBridge.requireProbeApi();
+    if (Boolean.TRUE.equals(probe.get("alloc"))) {
+      AgentBridge.requireProbeApiFor("alloc", AgentBridge.ALLOC_PROBE_API);
     }
-    return new InstrumentService.Request(
-            className,
-            bytecode,
-            target.getClassLoader(),
-            MethodSelector.parse((String) selector),
-            String.valueOf(armed.get("key")))
-        .withArgs(Boolean.TRUE.equals(armed.get("args")))
-        .withReturn(Boolean.TRUE.equals(armed.get("return")))
-        .withException(Boolean.TRUE.equals(armed.get("exception")))
-        .withCalls(Boolean.TRUE.equals(armed.get("calls")))
-        .withPlatformCalls(Boolean.TRUE.equals(armed.get("platform")));
+    if (Boolean.TRUE.equals(probe.get("gc"))) {
+      AgentBridge.requireProbeApiFor("gc", AgentBridge.GC_PROBE_API);
+    }
+    String filters = filterOptions(probe);
+    if (filters != null) {
+      AgentBridge.requireProbeApiFor(filters, AgentBridge.FILTER_PROBE_API);
+    }
+  }
+
+  /**
+   * Re-weaves the spans an earlier arm put on the class, after this arm failed. A failed weave
+   * leaves the JVM's starting bytes in place, which carry no probes at all — so one span's failure
+   * would otherwise silently disarm every other span already recording on the class.
+   */
+  private static void rearmSurvivors(
+      ProbeWeaver weaver, ClassIndex.Entry entry, Class<?> target, RuntimeException failure) {
+    if (AgentBridge.probeKeysOwnedBy(entry.getLoaderHash(), entry.getName()).isEmpty()) {
+      return;
+    }
+    try {
+      weaver.weave(target, null);
+    } catch (RuntimeException rearm) {
+      failure.addSuppressed(rearm);
+    }
   }
 
   private static List<Map<String, Object>> methodRows(InstrumentService.Result rewritten) {
@@ -232,8 +217,11 @@ public final class ClassOperations {
       return out;
     }
 
+    // Closed FIRST: the restore is itself a class rebuild, and ProbeWeaver re-applies every probe
+    // still open on the class to whatever bytes a rebuild installs.
+    List<Map<String, Object>> probesClosed = AgentBridge.closeProbesOwnedBy(loaderHash, className);
     Map<String, Object> out = new LinkedHashMap<>(patchService().restore(index, entry));
-    out.put("probesClosed", AgentBridge.closeProbesOwnedBy(loaderHash, className));
+    out.put("probesClosed", probesClosed);
     return out;
   }
 

@@ -12,9 +12,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Two selectors on one class, armed under ONE key, rebuilt the way {@code
- * ClassesServlet.armEveryOpenProbe} rebuilds a class: each arming applied in turn to the bytes the
- * previous one produced.
+ * Two selectors on one class, armed under ONE key, rebuilt the way {@code ProbeWeaver.rebuild}
+ * rebuilds a class: each arming applied in turn to the bytes the previous one produced.
  *
  * <p>Run rather than inspected, for the reason {@link InstrumentServiceTest} gives: the JVM
  * verifies the twice-rewritten bytes as it defines them.

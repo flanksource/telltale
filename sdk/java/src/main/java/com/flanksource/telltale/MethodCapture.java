@@ -14,6 +14,9 @@ final class MethodCapture implements Capture {
   private boolean complete;
   private boolean more;
   private final List<Map<String, Object>> results = new ArrayList<>();
+  private final boolean filtered;
+  private long filteredCalls;
+  private long omittedEvents;
 
   @SuppressWarnings("unchecked")
   MethodCapture(ClassOperations classes, String kind, Map<String, Object> params, String key)
@@ -21,6 +24,7 @@ final class MethodCapture implements Capture {
     this.classes = classes;
     this.key = key;
     this.redefine = kind.equals("jvm_redefine");
+    this.filtered = !redefine && ClassOperations.filterOptions(params) != null;
     Object selected = redefine ? Collections.singletonList(params) : params.get("targets");
     if (!(selected instanceof List)
         || ((List<?>) selected).isEmpty()
@@ -91,6 +95,8 @@ final class MethodCapture implements Capture {
       event.add("probeSeq", event.remove("seq"));
       events.add(event);
     }
+    filteredCalls = ((Number) batch.get("filtered")).longValue();
+    omittedEvents = ((Number) batch.get("omitted")).longValue();
     long next = ((Number) batch.get("nextSeq")).longValue();
     more = next < ((Number) batch.get("writeSeq")).longValue();
     complete =
@@ -130,6 +136,15 @@ final class MethodCapture implements Capture {
     }
     closed = targets.isEmpty();
     if (failure != null) throw failure;
+  }
+
+  /** What the root-call filter withheld, as of the last read; null for an unfiltered capture. */
+  public synchronized Map<String, Object> report() {
+    if (!filtered) return null;
+    Map<String, Object> report = new LinkedHashMap<>();
+    report.put("filtered", filteredCalls);
+    report.put("omitted", omittedEvents);
+    return report;
   }
 
   public String contentType() {

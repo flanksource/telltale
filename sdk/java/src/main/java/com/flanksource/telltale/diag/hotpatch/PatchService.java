@@ -56,15 +56,24 @@ public final class PatchService {
   }
 
   /**
-   * The bytes {@code entry}'s class ran before anything patched it, or null when nothing has.
-   *
-   * <p>The only trustworthy input for rewriting an already-patched class. Reading the live bytes is
-   * not equivalent: {@link BytecodeSource#bytecodeOf} retransforms to read, and a JVM whose
-   * transformer chain rebuilds the class — seen on cycle — answers with the ORIGINAL bytes and
-   * reverts the patch on the way past.
+   * What {@code entry}'s class ran before anything patched it: the stash when it is already
+   * patched, the live bytes otherwise. Read BEFORE a probe is opened on the class, while the live
+   * read cannot yet include its weave.
    */
-  public byte[] originalOf(ClassIndex.Entry entry) {
-    return originals().get(key(entry.getLoaderHash(), entry.getName()));
+  public byte[] preservedOriginal(ClassIndex.Entry entry) {
+    return preservedOriginal(entry, entry.getName(), liveClass(entry));
+  }
+
+  /**
+   * Records a class {@link ProbeWeaver} just armed, the way {@link #apply} records a redefinition:
+   * the pre-patch bytes are stashed the first time, so {@link #restore} and the lease reaper can put
+   * them back, and the report is built from the bytes the weave installed rather than a read-back.
+   */
+  public Map<String, Object> woven(ClassIndex.Entry entry, byte[] original, byte[] woven) {
+    Map<String, byte[]> registry = originals();
+    String key = key(entry.getLoaderHash(), entry.getName());
+    registry.putIfAbsent(key, original);
+    return appliedStatus(entry, registry.get(key), woven);
   }
 
   /**

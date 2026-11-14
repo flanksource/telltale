@@ -95,6 +95,17 @@ public final class AgentBridge {
   /** The probe API generation that measures {@code gc}. */
   public static final int GC_PROBE_API = 9;
 
+  /** The probe API generation that filters root calls: minCost, exceptionsOnly and match. */
+  public static final int FILTER_PROBE_API = 10;
+
+  /**
+   * The probe API generation of the agent attached to this JVM, which is what a client must check
+   * before it asks for an option a later generation added.
+   */
+  public static int attachedProbeApi() {
+    return probeApiVersion(agent());
+  }
+
   /**
    * Refuses an opt-in probe {@code option} when the attached agent predates {@code version}, the
    * generation that implements it.
