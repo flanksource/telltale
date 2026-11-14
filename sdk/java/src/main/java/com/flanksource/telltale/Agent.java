@@ -24,6 +24,7 @@ public final class Agent {
   final String started = Instant.now().toString();
   final String remoteID = "java/" + UUID.randomUUID();
   private final ServerSocket listener;
+  private HttpListener http;
 
   private Agent(JsonObject options) throws Exception {
     config = options;
@@ -61,6 +62,11 @@ public final class Agent {
     accept.setDaemon(true);
     accept.start();
     if (config.has("url")) Hub.start(this, config.get("url").getAsString());
+    if (config.has("http")) {
+      if (!config.get("http").isJsonObject())
+        throw new IllegalArgumentException("Agent http must be an object");
+      http = HttpListener.start(JSON.fromJson(config.get("http"), java.util.Map.class));
+    }
   }
 
   private void accept() {
@@ -134,23 +140,7 @@ public final class Agent {
     resource.addProperty("process.pid", pid);
     resource.addProperty("service.name", Recording.value(config, "service", "java"));
     hello.add("resource", resource);
-    JsonObject probe = new JsonObject();
-    probe.addProperty("name", "jvm_jfr");
-    probe.addProperty("title", "JVM JFR");
-    probe.addProperty("checkpoints", true);
-    com.google.gson.JsonArray probes = new com.google.gson.JsonArray();
-    probes.add(probe);
-    for (String name :
-        new String[] {"jvm_trace", "jvm_redefine", "jvm_notifications", "jvm_ognl"}) {
-      JsonObject methodProbe = new JsonObject();
-      methodProbe.addProperty("name", name);
-      methodProbe.addProperty("title", name);
-      methodProbe.addProperty("checkpoints", true);
-      methodProbe.addProperty("mutates", !name.equals("jvm_notifications"));
-      methodProbe.addProperty("reverts", true);
-      probes.add(methodProbe);
-    }
-    hello.add("probes", probes);
+    hello.add("probes", JSON.toJsonTree(RuntimeService.probes()));
     hello.add("ops", JSON.toJsonTree(diagnostics.catalog()));
     return hello;
   }

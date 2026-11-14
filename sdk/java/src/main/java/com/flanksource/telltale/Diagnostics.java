@@ -12,7 +12,7 @@ public final class Diagnostics {
   }
 
   private final Map<String, Operation> operations = new LinkedHashMap<>();
-  private final Set<String> mutations = new HashSet<>();
+  private final Map<String, Scope> scopes = new HashMap<>();
   private final boolean allowMutation;
   private final JmxService jmx = new JmxService();
   private final Extensions extensions;
@@ -23,14 +23,14 @@ public final class Diagnostics {
   public Diagnostics(Map<String, Object> config) throws Exception {
     allowMutation = Boolean.TRUE.equals(config.get("allowMutation"));
     extensions = new Extensions(text(config, "extensionsDir", null));
-    register("jvm.extensions.list", false, p -> extensions.list());
-    register("jvm.extensions.install", true, p -> extensions.install(p, false));
-    register("jvm.extensions.replace", true, p -> extensions.install(p, true));
-    register("jvm.extensions.unload", true, p -> extensions.unload(required(p, "id")));
-    register("jvm.catalog", false, p -> catalog());
+    register("jvm.extensions.list", Scope.READ, p -> extensions.list());
+    register("jvm.extensions.install", Scope.INSTRUMENT, p -> extensions.install(p, false));
+    register("jvm.extensions.replace", Scope.INSTRUMENT, p -> extensions.install(p, true));
+    register("jvm.extensions.unload", Scope.INSTRUMENT, p -> extensions.unload(required(p, "id")));
+    register("jvm.catalog", Scope.READ, p -> catalog());
     register(
         "jvm.status",
-        false,
+        Scope.READ,
         p -> {
           Map<String, Object> status = new LinkedHashMap<>();
           status.put("allowMutation", allowMutation);
@@ -41,42 +41,42 @@ public final class Diagnostics {
                 new PatchService(InstrumentationService.instrumentation()).patches(index()));
           return status;
         });
-    register("jvm.jmx.search", false, p -> jmx.search(text(p, "pattern", "")));
-    register("jvm.jmx.info", false, p -> jmx.info(required(p, "objectName")));
+    register("jvm.jmx.search", Scope.READ, p -> jmx.search(text(p, "pattern", "")));
+    register("jvm.jmx.info", Scope.READ, p -> jmx.info(required(p, "objectName")));
     register(
         "jvm.jmx.read",
-        false,
+        Scope.READ,
         p ->
             p.containsKey("attribute")
                 ? jmx.read(required(p, "objectName"), required(p, "attribute"))
                 : jmx.readAll(required(p, "objectName")));
     register(
         "jvm.jmx.write",
-        true,
+        Scope.WRITE,
         p -> {
           jmx.write(required(p, "objectName"), required(p, "attribute"), p.get("value"));
           return Collections.singletonMap("applied", true);
         });
     register(
         "jvm.jmx.invoke",
-        true,
+        Scope.WRITE,
         p ->
             jmx.invoke(
                 required(p, "objectName"),
                 required(p, "operation"),
                 list(p, "args").toArray(),
                 list(p, "signature").toArray(new String[0])));
-    register("jvm.metrics", false, p -> new JvmMetricsService().snapshot());
+    register("jvm.metrics", Scope.READ, p -> new JvmMetricsService().snapshot());
     register(
         "jvm.threads",
-        false,
+        Scope.READ,
         p ->
             new ThreadDumpService()
                 .snapshot(((Number) p.getOrDefault("sampleMs", 100)).intValue()));
-    register("jvm.threads.dump", false, p -> new ThreadDumpService().dump());
+    register("jvm.threads.dump", Scope.READ, p -> new ThreadDumpService().dump());
     register(
         "jvm.threads.stack",
-        false,
+        Scope.READ,
         p -> {
           Object id = p.get("id");
           if (!(id instanceof Number)) throw new IllegalArgumentException("id must be an integer");
@@ -87,10 +87,10 @@ public final class Diagnostics {
             throw new IllegalArgumentException("id must be a 64-bit integer", error);
           }
         });
-    register("jvm.logging.list", false, p -> new LoggingService().loggers());
+    register("jvm.logging.list", Scope.READ, p -> new LoggingService().loggers());
     register(
         "jvm.logging.set",
-        true,
+        Scope.WRITE,
         p -> {
           if (!(p.get("name") instanceof String))
             throw new IllegalArgumentException("name must be a string (empty names the root)");
@@ -100,7 +100,7 @@ public final class Diagnostics {
         });
     register(
         "jvm.classes",
-        false,
+        Scope.READ,
         p ->
             index()
                 .page(
@@ -109,44 +109,44 @@ public final class Diagnostics {
                     ((Number) p.getOrDefault("limit", 200)).intValue(),
                     ((Number) p.getOrDefault("offset", 0)).intValue(),
                     Boolean.TRUE.equals(p.get("includePlatform"))));
-    register("jvm.loaders", false, p -> index().loaders());
+    register("jvm.loaders", Scope.READ, p -> index().loaders());
     register(
         "jvm.groovy.eval",
-        true,
+        Scope.EVAL,
         p -> {
           ClassLoader application = loader(p);
           try (Extensions.BindingsLease bindings = extensions.bindings(application)) {
             return Scripts.evaluate(p, application, jmx, bindings.values);
           }
         });
-    register("jvm.ognl.eval", true, p -> OgnlEvaluation.evaluate(p, loader(p)));
-    register("jvm.classes.source", false, p -> classes.source(new JsonBody(p)));
+    register("jvm.ognl.eval", Scope.EVAL, p -> OgnlEvaluation.evaluate(p, loader(p)));
+    register("jvm.classes.source", Scope.READ, p -> classes.source(new JsonBody(p)));
     register(
         "jvm.classes.bytecode",
-        false,
+        Scope.READ,
         p ->
             Collections.singletonMap(
                 "bytecode", Base64.getEncoder().encodeToString(classes.bytecode(new JsonBody(p)))));
-    register("jvm.classes.compile", false, p -> classes.compile(new JsonBody(p)));
-    register("jvm.classes.patch", true, p -> classes.patch(new JsonBody(p)));
-    register("jvm.classes.instrument", true, p -> classes.instrument(new JsonBody(p)));
-    register("jvm.classes.restore", true, p -> classes.restore(new JsonBody(p)));
-    register("jvm.classes.lease", true, p -> classes.lease(new JsonBody(p)));
+    register("jvm.classes.compile", Scope.READ, p -> classes.compile(new JsonBody(p)));
+    register("jvm.classes.patch", Scope.INSTRUMENT, p -> classes.patch(new JsonBody(p)));
+    register("jvm.classes.instrument", Scope.INSTRUMENT, p -> classes.instrument(new JsonBody(p)));
+    register("jvm.classes.restore", Scope.INSTRUMENT, p -> classes.restore(new JsonBody(p)));
+    register("jvm.classes.lease", Scope.INSTRUMENT, p -> classes.lease(new JsonBody(p)));
     register(
         "jvm.classes.patches",
-        false,
+        Scope.READ,
         p -> new PatchService(InstrumentationService.instrumentation()).patches(index()));
-    register("jvm.probes.read", false, p -> classes.probes(new JsonBody(p)));
-    register("jvm.probes.list", false, p -> classes.probeKeys());
-    register("jvm.probes.freeze", true, p -> classes.freezeProbe(new JsonBody(p)));
-    register("jvm.notifications.list", false, p -> notifications.list());
+    register("jvm.probes.read", Scope.READ, p -> classes.probes(new JsonBody(p)));
+    register("jvm.probes.list", Scope.READ, p -> classes.probeKeys());
+    register("jvm.probes.freeze", Scope.TRACE, p -> classes.freezeProbe(new JsonBody(p)));
+    register("jvm.notifications.list", Scope.READ, p -> notifications.list());
   }
 
-  public synchronized void register(String name, boolean mutates, Operation operation) {
+  public synchronized void register(String name, Scope scope, Operation operation) {
     if (operations.containsKey(name))
       throw new IllegalArgumentException("duplicate operation: " + name);
     operations.put(name, operation);
-    if (mutates) mutations.add(name);
+    scopes.put(name, Objects.requireNonNull(scope, "scope"));
   }
 
   public synchronized List<Map<String, Object>> catalog() {
@@ -156,12 +156,23 @@ public final class Diagnostics {
           OperationSpec.named(name)
               .parameters(DiagnosticSchemas.parameters(name))
               .result(DiagnosticSchemas.result(name))
-              .mutates(mutations.contains(name))
+              .mutates(scopes.get(name).mutates())
               .descriptor();
+      spec.put("scope", scopes.get(name).wire());
       result.add(spec);
     }
     result.addAll(extensions.catalog());
     return result;
+  }
+
+  /** The scope a caller needs for an operation; unknown operations fail closed. */
+  public Scope scope(String name) {
+    if (name.startsWith("extension.")) return extensions.scope(name);
+    synchronized (this) {
+      Scope scope = scopes.get(name);
+      if (scope == null) throw new IllegalArgumentException("unknown operation: " + name);
+      return scope;
+    }
   }
 
   public Object call(String name, Map<String, Object> params, boolean callerMutation)
@@ -173,7 +184,7 @@ public final class Diagnostics {
     synchronized (this) {
       operation = operations.get(name);
       if (operation == null) throw new IllegalArgumentException("unknown operation: " + name);
-      if (mutations.contains(name) && (!allowMutation || !callerMutation))
+      if (scopes.get(name).mutates() && (!allowMutation || !callerMutation))
         throw new IllegalStateException("mutation disabled for " + name);
     }
     return operation.call(params);

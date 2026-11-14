@@ -41,8 +41,11 @@ public final class InstrumentationService {
   /** Holder class parked on the system class path by the attached agent. */
   public static final String AGENT_CLASS = "com.flanksource.telltale.diag.agent.DiagAgent";
 
-  /** Agent jar bundled into the WAR by the {@code agentJar} Gradle task. */
-  public static final String AGENT_RESOURCE = "/telltale-diag-agent.jar";
+  /**
+   * Agent jar bundled into the runtime by the {@code diagnosticAgentJar} Gradle task, under a
+   * non-jar name so the shadow plugin keeps it whole.
+   */
+  public static final String AGENT_RESOURCE = "/telltale-diag-agent.bin";
 
   /** Main class of {@link #AGENT_RESOURCE}, run by the attaching JDK process. */
   private static final String ATTACH_MAIN = "com.flanksource.telltale.diag.agent.AttachMain";

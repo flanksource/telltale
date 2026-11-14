@@ -101,6 +101,7 @@ final class Extensions implements AutoCloseable {
       if (!item.failed)
         for (OperationSpec operation : item.context.operations.values()) {
           Map<String, Object> spec = operation.descriptor();
+          spec.put("scope", Scope.forExtension(operation.mutates).wire());
           spec.put("extension", item.extension.id());
           result.add(spec);
         }
@@ -164,6 +165,14 @@ final class Extensions implements AutoCloseable {
     persist(planned);
     loaded.remove(id);
     return Collections.singletonMap("unloaded", id);
+  }
+
+  synchronized Scope scope(String name) {
+    for (Loaded item : loaded.values()) {
+      OperationSpec operation = item.context.operations.get(name);
+      if (operation != null) return Scope.forExtension(operation.mutates);
+    }
+    throw new IllegalArgumentException("unknown operation: " + name);
   }
 
   Object call(String name, Map<String, Object> params, boolean allowed) throws Exception {

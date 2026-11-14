@@ -22,6 +22,21 @@ final class RuntimeClient {
     }
   }
 
+  /** The registered runtime's API version; a runtime without {@code describe} predates it (0). */
+  static int apiVersion() throws Exception {
+    for (MBeanOperationInfo operation :
+        ManagementFactory.getPlatformMBeanServer()
+            .getMBeanInfo(new ObjectName(RuntimeService.NAME))
+            .getOperations())
+      if (operation.getName().equals("describe")) {
+        Object value = ((Map<?, ?>) request("describe", Collections.emptyMap())).get("apiVersion");
+        if (!(value instanceof Number))
+          throw new IllegalStateException("diagnostic runtime describe returned no apiVersion");
+        return ((Number) value).intValue();
+      }
+    return 0;
+  }
+
   @SuppressWarnings("unchecked")
   List<Map<String, Object>> catalog() throws Exception {
     return (List<Map<String, Object>>) request("catalog", Collections.emptyMap());
