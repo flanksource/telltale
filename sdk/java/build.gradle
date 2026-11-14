@@ -1,6 +1,7 @@
 plugins {
     id 'java'
-    id 'com.github.johnrengelman.shadow' version '8.1.1'
+    id 'war'
+    id 'com.gradleup.shadow' version '8.3.6'
 }
 
 group = 'com.flanksource.telltale'
@@ -8,17 +9,70 @@ version = providers.gradleProperty('buildVersion').getOrElse('dev')
 repositories { mavenCentral() }
 java { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
 tasks.withType(JavaCompile).configureEach { if (JavaVersion.current().isJava9Compatible()) options.release = 8 }
+sourceSets { servlet { java.srcDir 'src/war/java' } }
+configurations { bridgeRuntime }
 dependencies {
     implementation 'com.google.code.gson:gson:2.11.0'
     implementation 'org.java-websocket:Java-WebSocket:1.6.0'
     implementation 'tools.profiler:async-profiler:4.6'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.18.3'
+    implementation 'ognl:ognl:3.3.4'
+    implementation 'org.benf:cfr:0.152'
+    implementation 'org.ow2.asm:asm:9.11.1'
+    implementation 'org.ow2.asm:asm-tree:9.11.1'
+    implementation 'org.ow2.asm:asm-commons:9.11.1'
+    implementation 'org.javassist:javassist:3.29.0-GA'
+    implementation 'org.apache.groovy:groovy:4.0.33'
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.5'
+    testRuntimeOnly 'org.junit.vintage:junit-vintage-engine:5.10.5'
+    testImplementation 'org.apache.tomcat.embed:tomcat-embed-core:9.0.123'
+    testImplementation 'javax.annotation:javax.annotation-api:1.3.2'
+    servletCompileOnly 'javax.servlet:javax.servlet-api:3.1.0'
+    bridgeRuntime 'com.fasterxml.jackson.core:jackson-databind:2.18.3'
 }
 shadowJar {
+    dependsOn 'diagnosticAgentJar'
+    from({ tasks.named('diagnosticAgentJar').get().archiveFile })
     archiveFileName = 'telltale-agent.jar'
     destinationDirectory = file('../../pkg/agentinstall/java/assets')
     relocate 'com.google.gson', 'com.flanksource.telltale.shaded.gson'
     relocate 'org.java_websocket', 'com.flanksource.telltale.shaded.websocket'
     relocate 'org.slf4j', 'com.flanksource.telltale.shaded.slf4j'
-    manifest { attributes('Premain-Class':'com.flanksource.telltale.Agent', 'Agent-Class':'com.flanksource.telltale.Agent', 'Main-Class':'com.flanksource.telltale.Attach', 'Implementation-Version':project.version) }
+    relocate 'com.fasterxml.jackson', 'com.flanksource.telltale.shaded.jackson'
+    relocate 'org.objectweb.asm', 'com.flanksource.telltale.shaded.asm'
+    relocate 'ognl', 'com.flanksource.telltale.shaded.ognl'
+    relocate 'javassist', 'com.flanksource.telltale.shaded.javassist'
+    manifest { attributes('Premain-Class':'com.flanksource.telltale.Agent', 'Agent-Class':'com.flanksource.telltale.Agent', 'Main-Class':'com.flanksource.telltale.Attach', 'Implementation-Version':project.version, 'Can-Redefine-Classes':'true', 'Can-Retransform-Classes':'true') }
+}
+tasks.register('diagnosticAgentJar', com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar) {
+    archiveFileName = 'telltale-diag-agent.jar'
+    destinationDirectory = layout.buildDirectory.dir('bridge')
+    configurations = [project.configurations.bridgeRuntime]
+    from(sourceSets.main.output) { include 'com/flanksource/telltale/diag/agent/**', 'com/flanksource/telltale/diag/graph/**' }
+    relocate 'com.fasterxml.jackson', 'com.flanksource.telltale.shaded.jackson'
+    manifest { attributes('Agent-Class':'com.flanksource.telltale.diag.agent.DiagAgent','Premain-Class':'com.flanksource.telltale.diag.agent.DiagAgent','Can-Redefine-Classes':'true','Can-Retransform-Classes':'true') }
+}
+war {
+    dependsOn shadowJar, servletClasses
+    archiveFileName = 'telltale-diag.war'
+    destinationDirectory = layout.buildDirectory.dir('libs')
+    classpath = files(sourceSets.servlet.output)
+    webXml = file('src/war/web.xml')
+    from(tasks.shadowJar.archiveFile) { into 'WEB-INF/runtime' }
+}
+test { useJUnitPlatform(); dependsOn 'war', 'exampleExtensionJar' }
+sourceSets.test.java.srcDir 'examples'
+tasks.register('extensionApiJar', Jar) {
+    archiveFileName = 'telltale-extension-api.jar'
+    from sourceSets.main.output
+    include 'com/flanksource/telltale/DiagnosticExtension.class'
+    include 'com/flanksource/telltale/ExtensionContext*.class'
+    include 'com/flanksource/telltale/OperationSpec*.class'
+}
+tasks.register('exampleExtensionJar', Jar) {
+    dependsOn testClasses
+    archiveFileName = 'telltale-example-extension.jar'
+    from(sourceSets.test.output) { include 'example/ExampleExtension.class' }
+    from('examples/resources')
 }

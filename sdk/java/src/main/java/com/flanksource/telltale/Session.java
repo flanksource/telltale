@@ -10,10 +10,24 @@ final class Session implements AutoCloseable {
   private final Agent agent;
   private final Wire wire;
   private final boolean remote;
-  private final Map<String, Recording> recordings = new HashMap<>();
+  private final java.util.concurrent.ThreadPoolExecutor calls =
+      new java.util.concurrent.ThreadPoolExecutor(
+          4,
+          4,
+          0,
+          java.util.concurrent.TimeUnit.SECONDS,
+          new java.util.concurrent.ArrayBlockingQueue<Runnable>(64),
+          runnable -> {
+            Thread thread = new Thread(runnable, "telltale-operation");
+            thread.setDaemon(true);
+            return thread;
+          });
+  private final Map<String, Capture> recordings = new HashMap<>();
   private final Map<String, Long> sequences = new HashMap<>();
   private final Map<String, Long> transferred = new HashMap<>();
   private final Map<String, Long> byteLimits = new HashMap<>();
+  private final Map<String, java.util.List<java.util.concurrent.ScheduledFuture<?>>> scheduled =
+      new HashMap<>();
   private final java.util.concurrent.ScheduledExecutorService deadlines =
       java.util.concurrent.Executors.newSingleThreadScheduledExecutor(
           r -> {
@@ -52,6 +66,17 @@ final class Session implements AutoCloseable {
   private synchronized void dispatch(JsonObject frame) throws Exception {
     String kind = frame.get("t").getAsString();
     JsonObject body = frame.getAsJsonObject("body");
+    if (kind.equals("call")) {
+      try {
+        calls.execute(() -> operation(body));
+      } catch (java.util.concurrent.RejectedExecutionException error) {
+        JsonObject result = new JsonObject();
+        result.add("callId", body.get("callId"));
+        result.addProperty("error", "too many active or queued operations");
+        wire.send("result", result, null);
+      }
+      return;
+    }
     if (kind.equals("ping")) {
       wire.send("pong", new JsonObject(), null);
       return;
@@ -66,8 +91,10 @@ final class Session implements AutoCloseable {
     else throw new IllegalArgumentException("Unsupported frame: " + kind);
     try {
       if (kind.equals("arm")) {
-        if (!body.get("probe").getAsString().equals("jvm_jfr"))
-          throw new IllegalArgumentException("Unsupported probe");
+        String probe = body.get("probe").getAsString();
+        if (!java.util.Arrays.asList(
+                "jvm_jfr", "jvm_trace", "jvm_redefine", "jvm_notifications", "jvm_ognl")
+            .contains(probe)) throw new IllegalArgumentException("Unsupported probe");
         if (recordings.containsKey(id)) throw new IllegalArgumentException("Duplicate session");
         long delay = 0;
         if (body.has("stopAt")) {
@@ -80,46 +107,94 @@ final class Session implements AutoCloseable {
             && body.getAsJsonObject("limits").has("maxBytes")
             && body.getAsJsonObject("limits").get("maxBytes").getAsLong() < 0)
           throw new IllegalArgumentException("Capture byte limit must not be negative");
-        recordings.put(id, new Recording(body.getAsJsonObject("params")));
+        Capture capture =
+            agent.diagnostics.capture(
+                probe,
+                parameters(body),
+                id,
+                body.has("allowMutation") && body.get("allowMutation").getAsBoolean());
+        recordings.put(id, capture);
+        java.util.List<java.util.concurrent.ScheduledFuture<?>> jobs = new java.util.ArrayList<>();
+        scheduled.put(id, jobs);
+        jobs.add(
+            deadlines.scheduleWithFixedDelay(
+                () -> {
+                  synchronized (Session.this) {
+                    if (!recordings.containsKey(id)) return;
+                    try {
+                      capture.renew();
+                    } catch (Exception error) {
+                      failCapture(id, error);
+                    }
+                  }
+                },
+                30,
+                30,
+                java.util.concurrent.TimeUnit.SECONDS));
+        if (capture.streaming())
+          jobs.add(
+              deadlines.scheduleWithFixedDelay(
+                  () -> {
+                    synchronized (Session.this) {
+                      if (!recordings.containsKey(id)) return;
+                      try {
+                        sendBlob(id, "", capture, capture.dump());
+                        if (capture.complete()) {
+                          finishCapture(id);
+                          JsonObject end = new JsonObject();
+                          end.addProperty("session", id);
+                          end.addProperty("complete", true);
+                          wire.send("ended", end, null);
+                        }
+                      } catch (Exception error) {
+                        failCapture(id, error);
+                      }
+                    }
+                  },
+                  250,
+                  250,
+                  java.util.concurrent.TimeUnit.MILLISECONDS));
         if (body.has("limits") && body.getAsJsonObject("limits").has("maxBytes"))
           byteLimits.put(id, body.getAsJsonObject("limits").get("maxBytes").getAsLong());
         if (delay > 0) {
-          deadlines.schedule(
-              () -> {
-                synchronized (Session.this) {
-                  if (!recordings.containsKey(id)) return;
-                  JsonObject end = new JsonObject();
-                  end.addProperty("session", id);
-                  try (Recording r = recordings.remove(id)) {
-                    sendBlob(id, "", r.dump());
-                  } catch (Exception error) {
-                    end.addProperty("error", error.toString());
-                  }
-                  try {
-                    wire.send("ended", end, null);
-                    sequences.remove(id);
-                    transferred.remove(id);
-                    byteLimits.remove(id);
-                  } catch (Exception error) {
-                    System.err.println(
-                        "telltale deadline response failed: " + error.getClass().getSimpleName());
-                  }
-                }
-              },
-              delay,
-              java.util.concurrent.TimeUnit.MILLISECONDS);
+          jobs.add(
+              deadlines.schedule(
+                  () -> {
+                    synchronized (Session.this) {
+                      if (!recordings.containsKey(id)) return;
+                      JsonObject end = new JsonObject();
+                      end.addProperty("session", id);
+                      try {
+                        finishCapture(id);
+                        end.addProperty("complete", true);
+                      } catch (Exception error) {
+                        end.addProperty("error", error.toString());
+                      }
+                      try {
+                        wire.send("ended", end, null);
+                        sequences.remove(id);
+                        transferred.remove(id);
+                        byteLimits.remove(id);
+                        cancelJobs(id);
+                      } catch (Exception error) {
+                        System.err.println(
+                            "telltale deadline response failed: "
+                                + error.getClass().getSimpleName());
+                      }
+                    }
+                  },
+                  delay,
+                  java.util.concurrent.TimeUnit.MILLISECONDS));
         }
       } else {
-        Recording recording = recordings.get(id);
+        Capture recording = recordings.get(id);
         if (recording == null) throw new IllegalArgumentException("Unknown session");
         if (kind.equals("checkpoint")) {
           String checkpoint = body.get("id").getAsString();
           response.addProperty("id", checkpoint);
-          sendBlob(id, checkpoint, recording.dump());
+          sendBlob(id, checkpoint, recording, recording.dump());
         } else {
-          try (Recording ending = recordings.remove(id)) {
-            sendBlob(id, "", ending.dump());
-          }
+          finishCapture(id);
         }
       }
     } catch (Exception error) {
@@ -133,14 +208,16 @@ final class Session implements AutoCloseable {
       sequences.remove(id);
       transferred.remove(id);
       byteLimits.remove(id);
+      cancelJobs(id);
     }
   }
 
-  private void sendBlob(String id, String checkpoint, byte[] data) throws Exception {
+  private void sendBlob(String id, String checkpoint, Capture capture, byte[] data)
+      throws Exception {
     long bytes = transferred.containsKey(id) ? transferred.get(id) : 0;
     long limit = byteLimits.containsKey(id) ? byteLimits.get(id) : 0;
     if (limit > 0 && data.length > limit - bytes)
-      throw new IllegalStateException("JFR capture byte limit exceeded");
+      throw new IllegalStateException("Capture byte limit exceeded");
     transferred.put(id, bytes + data.length);
     long sequence = sequences.containsKey(id) ? sequences.get(id) + 1 : 1;
     sequences.put(id, sequence);
@@ -148,16 +225,29 @@ final class Session implements AutoCloseable {
     blob.addProperty("session", id);
     blob.addProperty("checkpoint", checkpoint);
     blob.addProperty("seq", sequence);
-    blob.addProperty("name", "recording.jfr");
-    blob.addProperty("contentType", "application/x-jfr");
+    blob.addProperty("name", capture.fileName());
+    blob.addProperty("contentType", capture.contentType());
     blob.addProperty("len", data.length);
     wire.send("blob", blob, data);
   }
 
+  private void finishCapture(String id) throws Exception {
+    try (Capture capture = recordings.remove(id)) {
+      if (capture == null) throw new IllegalArgumentException("Unknown session " + id);
+      sendBlob(id, "", capture, capture.finish());
+    } finally {
+      cancelJobs(id);
+      sequences.remove(id);
+      transferred.remove(id);
+      byteLimits.remove(id);
+    }
+  }
+
   public synchronized void close() throws Exception {
+    calls.shutdownNow();
     deadlines.shutdownNow();
     Exception failure = null;
-    for (Recording r : recordings.values()) {
+    for (Capture r : recordings.values()) {
       try {
         r.close();
       } catch (Exception e) {
@@ -167,5 +257,65 @@ final class Session implements AutoCloseable {
     }
     recordings.clear();
     if (failure != null) throw failure;
+  }
+
+  private void failCapture(String id, Exception error) {
+    cancelJobs(id);
+    sequences.remove(id);
+    transferred.remove(id);
+    byteLimits.remove(id);
+    Capture capture = recordings.remove(id);
+    if (capture != null) {
+      try {
+        capture.close();
+      } catch (Exception cleanup) {
+        error.addSuppressed(cleanup);
+      }
+    }
+    JsonObject result = new JsonObject();
+    result.addProperty("session", id);
+    result.addProperty("error", error.toString());
+    try {
+      wire.send("ended", result, null);
+    } catch (Exception failure) {
+      System.err.println("telltale capture failure: " + failure);
+    }
+  }
+
+  private void cancelJobs(String id) {
+    java.util.List<java.util.concurrent.ScheduledFuture<?>> jobs = scheduled.remove(id);
+    if (jobs != null) for (java.util.concurrent.ScheduledFuture<?> job : jobs) job.cancel(false);
+  }
+
+  private void operation(JsonObject body) {
+    JsonObject result = new JsonObject();
+    result.add("callId", body.get("callId"));
+    try {
+      Object value =
+          agent.diagnostics.call(
+              body.get("op").getAsString(),
+              parameters(body),
+              body.has("allowMutation") && body.get("allowMutation").getAsBoolean());
+      result.add("value", Agent.JSON.toJsonTree(value));
+    } catch (Exception error) {
+      result.addProperty("error", error.toString());
+    }
+    try {
+      wire.send("result", result, null);
+    } catch (Exception error) {
+      System.err.println("telltale operation response failed: " + error);
+    }
+  }
+
+  @SuppressWarnings("unchecked")
+  private static Map<String, Object> parameters(JsonObject body) throws Exception {
+    if (!body.has("params")) return new java.util.LinkedHashMap<>();
+    Map<String, Object> params =
+        com.flanksource.telltale.diag.Json.read(
+            new java.io.ByteArrayInputStream(
+                body.get("params").toString().getBytes(StandardCharsets.UTF_8)),
+            Map.class);
+    if (params == null) throw new IllegalArgumentException("params must be an object");
+    return params;
   }
 }

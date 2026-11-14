@@ -146,9 +146,10 @@ type Disarm struct {
 	Session string `json:"session"`
 }
 type Ended struct {
-	Session string `json:"session"`
-	Error   string `json:"error,omitempty"`
-	Dropped uint64 `json:"dropped"`
+	Session  string `json:"session"`
+	Error    string `json:"error,omitempty"`
+	Dropped  uint64 `json:"dropped"`
+	Complete bool   `json:"complete,omitempty"`
 }
 type Call struct {
 	CallID        string          `json:"callId"`
