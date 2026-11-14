@@ -28,6 +28,7 @@ require (
 	github.com/flanksource/telltale/sdk/captain v0.0.2
 	github.com/flanksource/telltale/sdk/clicky v0.0.2
 	github.com/flanksource/telltale/sdk/commonsdb v0.0.2
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/cel-go v0.31.0
 	github.com/google/gops v0.3.29
 	github.com/google/pprof v0.0.0-20260507013755-92041b743c96
@@ -241,7 +242,6 @@ require (
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/gofrs/flock v0.13.0 // indirect
-	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect

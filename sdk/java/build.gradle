@@ -9,7 +9,10 @@ version = providers.gradleProperty('buildVersion').getOrElse('dev')
 repositories { mavenCentral() }
 java { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
 tasks.withType(JavaCompile).configureEach { if (JavaVersion.current().isJava9Compatible()) options.release = 8 }
-sourceSets { servlet { java.srcDir 'src/war/java' } }
+sourceSets {
+    servlet { java.srcDir 'src/war/java' }
+    harness { java.srcDir 'src/harness/java' }
+}
 configurations { bridgeRuntime }
 dependencies {
     implementation 'com.google.code.gson:gson:2.11.0'
@@ -29,11 +32,15 @@ dependencies {
     testImplementation 'org.apache.tomcat.embed:tomcat-embed-core:9.0.123'
     testImplementation 'javax.annotation:javax.annotation-api:1.3.2'
     servletCompileOnly 'javax.servlet:javax.servlet-api:3.1.0'
+    harnessImplementation 'org.apache.tomcat.embed:tomcat-embed-core:9.0.123'
+    harnessImplementation 'javax.annotation:javax.annotation-api:1.3.2'
     bridgeRuntime 'com.fasterxml.jackson.core:jackson-databind:2.18.3'
 }
 shadowJar {
     dependsOn 'diagnosticAgentJar'
-    from({ tasks.named('diagnosticAgentJar').get().archiveFile })
+    // Shadow unpacks a .jar it is given, so the bridge ships as an opaque
+    // resource that InstrumentationService stages back to a jar to self-attach.
+    from({ tasks.named('diagnosticAgentJar').get().archiveFile }) { rename { 'telltale-diag-agent.bin' } }
     archiveFileName = 'telltale-agent.jar'
     destinationDirectory = file('../../pkg/agentinstall/java/assets')
     relocate 'com.google.gson', 'com.flanksource.telltale.shaded.gson'
@@ -60,8 +67,28 @@ war {
     classpath = files(sourceSets.servlet.output)
     webXml = file('src/war/web.xml')
     from(tasks.shadowJar.archiveFile) { into 'WEB-INF/runtime' }
+    finalizedBy 'embedWar'
 }
-test { useJUnitPlatform(); dependsOn 'war', 'exampleExtensionJar' }
+// The Go deployer embeds the WAR next to telltale-agent.jar (gitignored assets dir).
+tasks.register('embedWar') {
+    def source = tasks.war.archiveFile
+    def target = file('../../pkg/agentinstall/java/assets/telltale-diag.war')
+    inputs.file(source)
+    outputs.file(target)
+    doLast {
+        java.nio.file.Files.createDirectories(target.parentFile.toPath())
+        java.nio.file.Files.copy(source.get().asFile.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+    }
+}
+tasks.register('tomcatHarnessJar', com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar) {
+    archiveFileName = 'telltale-tomcat-harness.jar'
+    destinationDirectory = layout.buildDirectory.dir('libs')
+    configurations = [project.configurations.harnessRuntimeClasspath]
+    from(sourceSets.harness.output)
+    exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA', 'module-info.class'
+    manifest { attributes('Main-Class':'com.flanksource.telltale.harness.TomcatHarness') }
+}
+test { useJUnitPlatform(); dependsOn 'war', 'exampleExtensionJar', 'tomcatHarnessJar' }
 sourceSets.test.java.srcDir 'examples'
 tasks.register('extensionApiJar', Jar) {
     archiveFileName = 'telltale-extension-api.jar'
