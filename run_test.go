@@ -18,6 +18,7 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing/httpproxy"
 	"github.com/flanksource/telltale/pkg/tracing/processcapture"
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -74,6 +75,10 @@ var _ = Describe("running a command under trace", func() {
 		Expect(output).To(Equal("traced"))
 		Expect(result.Captures).To(HaveLen(1))
 		Expect(result.Captures[0].Kind).To(Equal(httpproxy.Kind))
+		Expect(result.Captures[0].Target).To(Equal(target.Target{Seam: target.Proxy}))
+		stored, err := telltale.ReadManifest(result.Dir)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(stored.Captures[0].Target).To(Equal(result.Captures[0].Target))
 		Expect(result.Captures[0].Summary).To(HaveKeyWithValue("count", BeNumerically("==", 1)))
 	})
 

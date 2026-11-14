@@ -34,6 +34,21 @@ spec:
       pprof:
         - profile: mutex
     jvm:
+      notifications:
+        - agent: {selector: {service.name: example}}
+          mbean: 'java.lang:type=GarbageCollector,*'
+      expressions:
+        - agent: {selector: {service.name: example}}
+          expression: '@java.lang.Runtime@getRuntime().freeMemory()'
+          intervalMs: 1000
+      methods:
+        - agent: {selector: {service.name: example}}
+          targets: [{class: example.Worker, method: compute}]
+      redefine:
+        - agent: {selector: {service.name: example}}
+          class: example.Worker
+          method: compute
+          source: 'public int compute() { return 7; }'
       flightRecorder:
         - settings: profile
       asyncProfiler:

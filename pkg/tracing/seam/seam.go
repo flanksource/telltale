@@ -396,6 +396,16 @@ func (s AgentSeam[P, R]) Handle(ctx dbcontext.Context, params P, out tracing.Emi
 				return fmt.Errorf("discover late agents: %w", err)
 			}
 		case failure := <-errs:
+			if failure.err == nil {
+				state.mu.Lock()
+				delete(state.sessions, failure.agent)
+				remaining := len(state.sessions)
+				state.mu.Unlock()
+				if remaining == 0 && len(s.Target(params).Selector) == 0 {
+					return nil
+				}
+				continue
+			}
 			if !failure.departed || len(s.Target(params).Selector) == 0 {
 				return failure.err
 			}
@@ -494,6 +504,8 @@ func (s AgentSeam[P, R]) read(ctx context.Context, state *capture, agent *agentc
 			state.reportDropped(agent, end.Dropped, out.Report)
 			if end.Error != "" {
 				fail(fmt.Errorf("agent %s ended: %s", agent.Hello.AgentID, end.Error), true)
+			} else if end.Complete {
+				fail(nil, true)
 			} else {
 				fail(fmt.Errorf("agent %s ended unexpectedly", agent.Hello.AgentID), true)
 			}

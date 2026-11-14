@@ -3066,6 +3066,50 @@ spec:
                         title: async-profiler
                         type: array
                         x-kubernetes-list-type: atomic
+                      expressions:
+                        items:
+                          properties:
+                            agent:
+                              description: Read through a connected agent instead
+                                of the execution's process
+                              nullable: true
+                              properties:
+                                id:
+                                  title: Agent ID
+                                  type: string
+                                selector:
+                                  additionalProperties:
+                                    type: string
+                                  description: Agent resource attributes to match
+                                  title: Selector
+                                  type: object
+                                wait:
+                                  description: Wait for a matching agent to connect
+                                  title: Wait
+                                  type: boolean
+                              title: Agent
+                              type: object
+                            expression:
+                              title: OGNL expression
+                              type: string
+                            intervalMs:
+                              format: int32
+                              title: Interval in milliseconds
+                              type: integer
+                            loader:
+                              title: Application loader hash
+                              type: string
+                            name:
+                              description: Names the capture's session; empty takes
+                                <definition>-<section>-<group>-<type>-<n>
+                              title: Name
+                              type: string
+                          required:
+                          - expression
+                          type: object
+                        title: Periodic OGNL
+                        type: array
+                        x-kubernetes-list-type: atomic
                       flightRecorder:
                         description: Starts a JFR recording
                         items:
@@ -3109,6 +3153,190 @@ spec:
                               type: boolean
                           type: object
                         title: Flight Recorder
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      methods:
+                        items:
+                          properties:
+                            agent:
+                              description: Read through a connected agent instead
+                                of the execution's process
+                              nullable: true
+                              properties:
+                                id:
+                                  title: Agent ID
+                                  type: string
+                                selector:
+                                  additionalProperties:
+                                    type: string
+                                  description: Agent resource attributes to match
+                                  title: Selector
+                                  type: object
+                                wait:
+                                  description: Wait for a matching agent to connect
+                                  title: Wait
+                                  type: boolean
+                              title: Agent
+                              type: object
+                            alloc:
+                              title: Allocation counters
+                              type: boolean
+                            arg-chars:
+                              format: int32
+                              title: String character limit
+                              type: integer
+                            args:
+                              title: Arguments
+                              type: boolean
+                            calls:
+                              title: Nested calls
+                              type: boolean
+                            events:
+                              format: int32
+                              title: Event limit
+                              type: integer
+                            exception:
+                              title: Exceptions
+                              type: boolean
+                            expand:
+                              format: int32
+                              title: Object graph depth
+                              type: integer
+                            gc:
+                              title: GC counters
+                              type: boolean
+                            name:
+                              description: Names the capture's session; empty takes
+                                <definition>-<section>-<group>-<type>-<n>
+                              title: Name
+                              type: string
+                            platform:
+                              title: Platform calls
+                              type: boolean
+                            return:
+                              title: Return values
+                              type: boolean
+                            targets:
+                              items:
+                                properties:
+                                  class:
+                                    title: Class
+                                    type: string
+                                  loader:
+                                    title: Class loader
+                                    type: string
+                                  method:
+                                    title: Method
+                                    type: string
+                                required:
+                                - class
+                                - method
+                                type: object
+                              title: Methods
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          required:
+                          - targets
+                          type: object
+                        title: Watch or trace methods
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      notifications:
+                        items:
+                          properties:
+                            agent:
+                              description: Read through a connected agent instead
+                                of the execution's process
+                              nullable: true
+                              properties:
+                                id:
+                                  title: Agent ID
+                                  type: string
+                                selector:
+                                  additionalProperties:
+                                    type: string
+                                  description: Agent resource attributes to match
+                                  title: Selector
+                                  type: object
+                                wait:
+                                  description: Wait for a matching agent to connect
+                                  title: Wait
+                                  type: boolean
+                              title: Agent
+                              type: object
+                            capacity:
+                              format: int32
+                              title: Buffer capacity
+                              type: integer
+                            mbean:
+                              title: MBean or ObjectName pattern
+                              type: string
+                            name:
+                              description: Names the capture's session; empty takes
+                                <definition>-<section>-<group>-<type>-<n>
+                              title: Name
+                              type: string
+                            types:
+                              items:
+                                type: string
+                              title: Notification type prefixes
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          required:
+                          - mbean
+                          type: object
+                        title: JMX notifications and GC
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      redefine:
+                        items:
+                          properties:
+                            agent:
+                              description: Read through a connected agent instead
+                                of the execution's process
+                              nullable: true
+                              properties:
+                                id:
+                                  title: Agent ID
+                                  type: string
+                                selector:
+                                  additionalProperties:
+                                    type: string
+                                  description: Agent resource attributes to match
+                                  title: Selector
+                                  type: object
+                                wait:
+                                  description: Wait for a matching agent to connect
+                                  title: Wait
+                                  type: boolean
+                              title: Agent
+                              type: object
+                            class:
+                              title: Class
+                              type: string
+                            classpath:
+                              title: Compile classpath
+                              type: string
+                            loader:
+                              title: Class loader
+                              type: string
+                            method:
+                              description: Empty replaces the whole class
+                              title: Method
+                              type: string
+                            name:
+                              description: Names the capture's session; empty takes
+                                <definition>-<section>-<group>-<type>-<n>
+                              title: Name
+                              type: string
+                            source:
+                              title: Source
+                              type: string
+                          required:
+                          - class
+                          - source
+                          type: object
+                        title: Redefine Java code
                         type: array
                         x-kubernetes-list-type: atomic
                     title: JVM

@@ -29,6 +29,7 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing/process"
 	"github.com/flanksource/telltale/pkg/tracing/prometheus"
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 )
 
 // Dir is where a data dir keeps its runs' trace stores, one directory each.
@@ -347,11 +348,19 @@ func (h *Host) Start(options StartOptions) (*Capture, error) {
 	if err := Validate(h.runtime.Kinds, options.Kind, options.Params); err != nil {
 		return nil, err
 	}
+	var selection struct {
+		Target target.Target `json:"target"`
+	}
+	if len(options.Params) > 0 {
+		if err := json.Unmarshal(options.Params, &selection); err != nil {
+			return nil, fmt.Errorf("read %s capture target: %w", options.Kind, err)
+		}
+	}
 	managed, err := h.runtime.Start(h.ctx, tracing.StartRequest{Kind: options.Kind, Params: options.Params, Labels: options.Labels})
 	if err != nil {
 		return nil, fmt.Errorf("start %s trace: %w", options.Kind, err)
 	}
-	return &Capture{host: h, kind: options.Kind, managed: managed}, nil
+	return &Capture{host: h, kind: options.Kind, managed: managed, target: selection.Target}, nil
 }
 
 // Summarize is the kind's summary of ref's window; it always has `count`.

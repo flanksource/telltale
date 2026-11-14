@@ -30,8 +30,12 @@ type InstrumentGo struct {
 }
 
 type InstrumentJVM struct {
-	FlightRecorder []FlightRecorder `json:"flightRecorder,omitempty" clicky:"title=Flight Recorder,desc=Starts a JFR recording" telltale:"kind=jvm_jfr"`
-	AsyncProfiler  []AsyncProfiler  `json:"asyncProfiler,omitempty" clicky:"title=async-profiler,desc=Attaches async-profiler" telltale:"kind=jvm_jfr"`
+	Notifications  []JVMNotifications `json:"notifications,omitempty" clicky:"title=JMX notifications and GC" telltale:"kind=jvm_notifications,seam=agent"`
+	Expressions    []JVMExpression    `json:"expressions,omitempty" clicky:"title=Periodic OGNL" telltale:"kind=jvm_ognl,seam=agent"`
+	Methods        []JVMMethods       `json:"methods,omitempty" clicky:"title=Watch or trace methods" telltale:"kind=jvm_trace,seam=agent"`
+	Redefine       []JVMRedefine      `json:"redefine,omitempty" clicky:"title=Redefine Java code" telltale:"kind=jvm_redefine,seam=agent"`
+	FlightRecorder []FlightRecorder   `json:"flightRecorder,omitempty" clicky:"title=Flight Recorder,desc=Starts a JFR recording" telltale:"kind=jvm_jfr"`
+	AsyncProfiler  []AsyncProfiler    `json:"asyncProfiler,omitempty" clicky:"title=async-profiler,desc=Attaches async-profiler" telltale:"kind=jvm_jfr"`
 }
 
 type InstrumentSQLServer struct {

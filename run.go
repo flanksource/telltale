@@ -152,7 +152,7 @@ func (r *Run) Info() RunInfo {
 	}
 	captures := make([]CaptureResult, 0, len(r.captures))
 	for _, capture := range r.captures {
-		captures = append(captures, CaptureResult{Kind: capture.Kind(), Ref: capture.Ref(0, 0)})
+		captures = append(captures, CaptureResult{Kind: capture.Kind(), Ref: capture.Ref(0, 0), Target: capture.Target()})
 	}
 	info := RunInfo{
 		RunID: r.ID(), Dir: r.Dir(), Status: StatusRunning, Command: r.options.Command, PID: r.options.PID, StartedAt: r.startedAt,
@@ -427,7 +427,7 @@ func commandExitCode(err error, program string) (int, error) {
 func (r *Run) summarize(ctx context.Context) ([]CaptureResult, error) {
 	results := make([]CaptureResult, len(r.captures))
 	for index, capture := range r.captures {
-		results[index] = CaptureResult{Kind: capture.Kind(), Ref: capture.Ref(0, 0)}
+		results[index] = CaptureResult{Kind: capture.Kind(), Ref: capture.Ref(0, 0), Target: capture.Target()}
 	}
 	var errs []error
 	for index, capture := range r.captures {

@@ -18,6 +18,7 @@ import (
 	"github.com/flanksource/commons-db/connection/store"
 	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/tracing"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 )
 
 // TraceSpec is one capture to arm: a trace kind and its params.
@@ -145,6 +146,7 @@ type CaptureResult struct {
 	Kind    string           `json:"kind"`
 	Ref     tracing.TraceRef `json:"ref"`
 	Summary map[string]any   `json:"summary,omitempty"`
+	Target  target.Target    `json:"target,omitzero"`
 }
 
 // ManifestFile is the file a finished run leaves its Result in, in its store.
