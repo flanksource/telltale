@@ -10,6 +10,10 @@ The target seam determines what is observed: `process` follows a command or PID,
 | [goprof](/traces/goprof) | Go profiles at checkpoints |
 | [http](/traces/http) | HTTP exchanges |
 | [jvm_jfr](/traces/jvm_jfr) | JVM profiling samples |
+| [jvm_notifications](/traces/jvm_notifications) | JMX notifications and garbage collections |
+| [jvm_ognl](/traces/jvm_ognl) | Periodic expression samples |
+| [jvm_redefine](/traces/jvm_redefine) | Temporary Java replacements and restoration |
+| [jvm_trace](/traces/jvm_trace) | Method values and nested calls |
 | [llm](/traces/llm) | Instrumented LLM provider calls |
 | [logs](/traces/logs) | Application logs |
 | [process](/traces/process) | Process startup metadata, resource deltas and numeric metrics |

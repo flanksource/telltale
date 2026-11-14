@@ -1,0 +1,13 @@
+# jvm_trace
+
+import { KindReference } from '../_components/KindReference';
+
+Watch arguments, return values and exceptions, or trace nested method calls in a connected Java agent. Select one to eight methods and use a loader hash when a class name is ambiguous.
+
+```sh
+telltale run jvm_trace --agent 1234 --allow-mutation --duration 10s --targets '[{"class":"example.Worker","method":"compute"}]' --args --return --exception --calls
+```
+
+The agent must be installed with mutation enabled. Captures restore original bytecode when stopped, disconnected, expired or completed at their event limit. The JVM also owns a renewable lease for abandoned captures. See [JVM diagnostics](/jvm-diagnostics-port) for installation, leases and the standalone WAR.
+
+<KindReference kind="jvm_trace" />

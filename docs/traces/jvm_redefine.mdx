@@ -1,0 +1,13 @@
+# jvm_redefine
+
+import { KindReference } from '../_components/KindReference';
+
+Compile replacement Java source against a live class and apply it for a capture. Stopping the capture restores its original bytes. Use the JVM diagnostics class browser to inspect source and preview compilation before applying a replacement.
+
+```sh
+telltale run jvm_redefine --agent 1234 --allow-mutation --duration 10s --class example.Worker --method compute --source 'public static double compute(long value) { return 7.0; }'
+```
+
+The agent must allow mutation. The replacement must match the selected method or class structure; compile errors are returned without applying bytecode. A renewable JVM lease restores abandoned patches. See [JVM diagnostics](/jvm-diagnostics-port).
+
+<KindReference kind="jvm_redefine" />
