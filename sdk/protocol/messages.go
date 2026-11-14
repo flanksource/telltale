@@ -63,12 +63,16 @@ type ProbeSpec struct {
 	Checkpoints  bool            `json:"checkpoints"`
 	Mutates      bool            `json:"mutates"`
 	Reverts      bool            `json:"reverts"`
+	// Scope is the token scope a direct-HTTP agent requires to arm the probe.
+	Scope string `json:"scope,omitempty"`
 }
 type OpSpec struct {
 	Name         string          `json:"name"`
 	ParamsSchema json.RawMessage `json:"paramsSchema,omitempty"`
 	ResultSchema json.RawMessage `json:"resultSchema,omitempty"`
 	Mutates      bool            `json:"mutates"`
+	// Scope is the token scope a direct-HTTP agent requires to call the operation.
+	Scope string `json:"scope,omitempty"`
 }
 type Limits struct {
 	MaxRecords int64   `json:"maxRecords,omitempty"`
