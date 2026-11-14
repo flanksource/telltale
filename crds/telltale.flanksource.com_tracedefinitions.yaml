@@ -3198,6 +3198,10 @@ spec:
                             exception:
                               title: Exceptions
                               type: boolean
+                            exceptionsOnly:
+                              description: Keep only root calls that threw
+                              title: Exceptions only
+                              type: boolean
                             expand:
                               format: int32
                               title: Object graph depth
@@ -3205,6 +3209,51 @@ spec:
                             gc:
                               title: GC counters
                               type: boolean
+                            match:
+                              description: Keep only root calls whose rendered argument
+                                or return value matches every predicate
+                              items:
+                                properties:
+                                  index:
+                                    format: int32
+                                    title: Argument index
+                                    type: integer
+                                  "on":
+                                    enum:
+                                    - arg
+                                    - return
+                                    title: Subject
+                                    type: string
+                                  op:
+                                    description: regex is a Java regular expression
+                                      found anywhere in the value
+                                    enum:
+                                    - equals
+                                    - contains
+                                    - regex
+                                    title: Operator
+                                    type: string
+                                  path:
+                                    description: Dotted child labels inside the value
+                                      such as customer.name
+                                    title: Path
+                                    type: string
+                                  value:
+                                    title: Value
+                                    type: string
+                                required:
+                                - "on"
+                                - op
+                                - value
+                                type: object
+                              title: Value matches
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            minCost:
+                              description: Keep only root calls that ran at least
+                                this long such as 250ms
+                              title: Minimum cost
+                              type: string
                             name:
                               description: Names the capture's session; empty takes
                                 <definition>-<section>-<group>-<type>-<n>

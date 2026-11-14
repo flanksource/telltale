@@ -26,6 +26,7 @@ final class Session implements AutoCloseable {
   private final Map<String, Long> sequences = new HashMap<>();
   private final Map<String, Long> transferred = new HashMap<>();
   private final Map<String, Long> byteLimits = new HashMap<>();
+  private final Map<String, Map<String, Object>> reported = new HashMap<>();
   private final Map<String, java.util.List<java.util.concurrent.ScheduledFuture<?>>> scheduled =
       new HashMap<>();
   private final java.util.concurrent.ScheduledExecutorService deadlines =
@@ -175,6 +176,7 @@ final class Session implements AutoCloseable {
                         sequences.remove(id);
                         transferred.remove(id);
                         byteLimits.remove(id);
+                        reported.remove(id);
                         cancelJobs(id);
                       } catch (Exception error) {
                         System.err.println(
@@ -208,6 +210,7 @@ final class Session implements AutoCloseable {
       sequences.remove(id);
       transferred.remove(id);
       byteLimits.remove(id);
+      reported.remove(id);
       cancelJobs(id);
     }
   }
@@ -229,6 +232,18 @@ final class Session implements AutoCloseable {
     blob.addProperty("contentType", capture.contentType());
     blob.addProperty("len", data.length);
     wire.send("blob", blob, data);
+    sendReport(id, capture);
+  }
+
+  /** Sends the capture's report after the blob it describes, when it changed since the last. */
+  private void sendReport(String id, Capture capture) throws Exception {
+    Map<String, Object> summary = capture.report();
+    if (summary == null || summary.equals(reported.get(id))) return;
+    reported.put(id, summary);
+    JsonObject report = new JsonObject();
+    report.addProperty("session", id);
+    report.add("summary", Agent.JSON.toJsonTree(summary));
+    wire.send("report", report, null);
   }
 
   private void finishCapture(String id) throws Exception {
@@ -240,6 +255,7 @@ final class Session implements AutoCloseable {
       sequences.remove(id);
       transferred.remove(id);
       byteLimits.remove(id);
+      reported.remove(id);
     }
   }
 
@@ -264,6 +280,7 @@ final class Session implements AutoCloseable {
     sequences.remove(id);
     transferred.remove(id);
     byteLimits.remove(id);
+    reported.remove(id);
     Capture capture = recordings.remove(id);
     if (capture != null) {
       try {

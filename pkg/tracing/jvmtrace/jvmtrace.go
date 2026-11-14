@@ -11,6 +11,7 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/seam"
 	"github.com/flanksource/telltale/pkg/tracing/target"
+	"github.com/flanksource/telltale/sdk/protocol"
 )
 
 const Kind = "jvm_trace"
@@ -33,9 +34,101 @@ type Options struct {
 	Chars     int            `json:"arg-chars,omitempty" clicky:"title=String character limit"`
 	GC        bool           `json:"gc,omitempty" clicky:"title=GC counters"`
 	Alloc     bool           `json:"alloc,omitempty" clicky:"title=Allocation counters"`
+	// Root-call filters: the agent holds each outermost call on its thread and
+	// publishes it, with everything nested in it, only when it qualifies.
+	MinCost        string       `json:"minCost,omitempty" clicky:"title=Minimum cost,desc=Keep only root calls that ran at least this long such as 250ms"`
+	ExceptionsOnly bool         `json:"exceptionsOnly,omitempty" clicky:"title=Exceptions only,desc=Keep only root calls that threw"`
+	Match          []ValueMatch `json:"match,omitempty" clicky:"title=Value matches,desc=Keep only root calls whose rendered argument or return value matches every predicate"`
+}
+
+// ValueMatch tests one rendered value of a root call: argument Index, or the
+// return value, optionally narrowed by a dotted Path of child labels.
+type ValueMatch struct {
+	On    MatchOn `json:"on" clicky:"required,title=Subject"`
+	Index int     `json:"index" clicky:"title=Argument index"`
+	Path  string  `json:"path,omitempty" clicky:"title=Path,desc=Dotted child labels inside the value such as customer.name"`
+	Op    MatchOp `json:"op" clicky:"required,title=Operator,desc=regex is a Java regular expression found anywhere in the value"`
+	Value string  `json:"value" clicky:"required,title=Value"`
+}
+
+// MatchOn is which value of a root call a ValueMatch tests.
+type MatchOn string
+
+func (MatchOn) JSONSchema() map[string]any {
+	return map[string]any{"type": "string", "enum": []any{"arg", "return"}}
+}
+
+// MatchOp is how a ValueMatch compares the rendered value.
+type MatchOp string
+
+func (MatchOp) JSONSchema() map[string]any {
+	return map[string]any{"type": "string", "enum": []any{"equals", "contains", "regex"}}
+}
+
+// FilterProbeAPI is the jvm_trace probe generation that implements MinCost,
+// ExceptionsOnly and Match.
+const FilterProbeAPI = 10
+
+func (o Options) filtered() bool {
+	return o.MinCost != "" || o.ExceptionsOnly || len(o.Match) > 0
+}
+
+// CompatibleWith refuses filters an agent advertising spec cannot honour. An
+// older agent ignores unknown options, so it would return every call as though
+// each had matched.
+func (o Options) CompatibleWith(spec protocol.ProbeSpec) error {
+	if o.filtered() && spec.Version < FilterProbeAPI {
+		return fmt.Errorf("minCost, exceptionsOnly and match need jvm_trace probe API v%d, and the agent implements v%d; its agent jar cannot be replaced while the JVM runs, so restart the JVM to filter calls, or trace without filters", FilterProbeAPI, spec.Version)
+	}
+	return nil
+}
+
+func (o Options) validateFilters() error {
+	if o.MinCost != "" {
+		cost, err := time.ParseDuration(o.MinCost)
+		if err != nil || cost < 0 {
+			return fmt.Errorf("minCost must be a non-negative duration such as 250ms, got %q", o.MinCost)
+		}
+	}
+	for _, m := range o.Match {
+		if err := m.validate(o); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m ValueMatch) validate(o Options) error {
+	switch m.Op {
+	case "equals", "contains", "regex":
+	default:
+		return fmt.Errorf("match op must be equals, contains or regex, got %q", m.Op)
+	}
+	switch m.On {
+	case "arg":
+		if !o.Args {
+			return fmt.Errorf("a match on arg needs args, or the agent never renders the value it would test")
+		}
+		if m.Index < 0 {
+			return fmt.Errorf("match index must be a non-negative argument position, got %d", m.Index)
+		}
+	case "return":
+		if !o.Return {
+			return fmt.Errorf("a match on return needs return, or the agent never renders the value it would test")
+		}
+		if m.Index != 0 {
+			return fmt.Errorf("a match on return takes no index, got %d", m.Index)
+		}
+	default:
+		return fmt.Errorf("match on must be arg or return, got %q", m.On)
+	}
+	return nil
 }
 
 func (o Options) Validate() error {
+	if err := o.validateFilters(); err != nil {
+		return err
+	}
 	if len(o.Targets) == 0 || len(o.Targets) > 8 {
 		return fmt.Errorf("targets must contain one to eight methods")
 	}
@@ -84,6 +177,7 @@ type Event struct {
 	GCPauseMs  *int64            `json:"gcPauseMs,omitempty"`
 	Unwound    int               `json:"unwound,omitempty"`
 	Truncated  bool              `json:"truncated,omitempty"`
+	Omitted    int               `json:"omitted,omitempty"`
 	Dropped    int64             `json:"dropped,omitempty"`
 	Resource   map[string]string `json:"resource,omitempty"`
 }
@@ -129,6 +223,6 @@ func (h handler) Checkpoint(ctx dbcontext.Context, _ Params, out tracing.Emitter
 }
 
 func NewKind(registry *agentclient.Registry) *tracing.Handler[Params, Event] {
-	agent := seam.AgentSeam[Params, Event]{Probe: Kind, Registry: registry, Target: func(p Params) target.Target { return p.Target }, Mutates: func(Params) bool { return true }, ArmParams: func(p Params) (json.RawMessage, error) { return json.Marshal(p.Options) }, DecodeBlob: Decode}
+	agent := seam.AgentSeam[Params, Event]{Probe: Kind, Registry: registry, Target: func(p Params) target.Target { return p.Target }, Mutates: func(Params) bool { return true }, ArmParams: func(p Params) (json.RawMessage, error) { return json.Marshal(p.Options) }, Compatible: func(p Params, spec protocol.ProbeSpec) error { return p.CompatibleWith(spec) }, DecodeBlob: Decode}
 	return tracing.NewHandler[Params, Event](handler{agent: agent}, tracing.Capabilities{Live: true}, target.Agent)
 }

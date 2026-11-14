@@ -15,6 +15,9 @@ import java.util.*;
 final class RuntimeHttp {
   static final String JSON_TYPE = "application/json; charset=UTF-8";
   static final String COMPLETE_HEADER = "X-Telltale-Complete";
+
+  /** What the capture withheld (e.g. jvm_trace {filtered, omitted}), as JSON, when it says. */
+  static final String REPORT_HEADER = "X-Telltale-Report";
   private static final int MAX_ARTIFACT = 64 * 1024 * 1024;
   private static final String CAPTURES = "/captures/";
 
@@ -107,11 +110,15 @@ final class RuntimeHttp {
     if (!renew && method.equals("POST")) {
       Map<String, Object> reply = artifact(capture, (byte[]) runtime.captureAction("captureDump", id));
       headers(reply).put(COMPLETE_HEADER, Boolean.toString(capture.complete()));
+      putReport(reply, capture);
       return reply;
     }
     if (!renew && method.equals("DELETE")) {
       try {
-        return artifact(capture, (byte[]) runtime.captureAction("captureFinish", id));
+        Map<String, Object> reply =
+            artifact(capture, (byte[]) runtime.captureAction("captureFinish", id));
+        putReport(reply, capture);
+        return reply;
       } finally {
         runtime.captureAction("captureClose", id);
       }
@@ -159,6 +166,12 @@ final class RuntimeHttp {
     headers(reply)
         .put("Content-Disposition", "attachment; filename=\"" + capture.fileName() + "\"");
     return reply;
+  }
+
+  /** Carries the capture's report beside the artifact it describes, when it has one. */
+  private static void putReport(Map<String, Object> reply, Capture capture) {
+    Map<String, Object> report = capture.report();
+    if (report != null) headers(reply).put(REPORT_HEADER, Agent.JSON.toJson(report));
   }
 
   private static Map<String, Object> json(int status, Object value) {

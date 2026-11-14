@@ -65,6 +65,9 @@ type ProbeSpec struct {
 	Reverts      bool            `json:"reverts"`
 	// Scope is the token scope a direct-HTTP agent requires to arm the probe.
 	Scope string `json:"scope,omitempty"`
+	// Version is the generation of parameters the probe accepts; zero for a
+	// probe that does not version them, or an agent that predates versioning.
+	Version int `json:"version,omitempty"`
 }
 type OpSpec struct {
 	Name         string          `json:"name"`

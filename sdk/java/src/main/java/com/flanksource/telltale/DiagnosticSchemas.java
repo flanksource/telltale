@@ -36,6 +36,16 @@ final class DiagnosticSchemas {
       }
       schema.put("properties", properties);
     }
+    if (name.equals("jvm.heap.histogram")) {
+      Map<String, Object> properties = new LinkedHashMap<>();
+      add(properties, "collectedAt", "string");
+      add(properties, "live", "boolean");
+      add(properties, "totalInstances", "integer");
+      add(properties, "totalBytes", "integer");
+      add(properties, "matched", "integer");
+      add(properties, "rows", "array");
+      schema.put("properties", properties);
+    }
     return schema;
   }
 
@@ -119,6 +129,15 @@ final class DiagnosticSchemas {
       case "jvm.threads":
         add(properties, "sampleMs", "integer");
         break;
+      case "jvm.heap.histogram":
+        add(properties, "top", "integer");
+        add(properties, "classPattern", "string");
+        add(properties, "live", "boolean");
+        describe(properties, "top", "Rows to return, largest first (default 100).");
+        describe(properties, "classPattern", "Glob over class names, e.g. com.example.*");
+        describe(
+            properties, "live", "Count only reachable objects. Forces a full GC on this JVM first.");
+        break;
       case "jvm.threads.stack":
         field(properties, required, "id", "integer");
         break;
@@ -144,6 +163,11 @@ final class DiagnosticSchemas {
       Map<String, Object> properties, List<String> required, String name, String type) {
     add(properties, name, type);
     required.add(name);
+  }
+
+  @SuppressWarnings("unchecked")
+  private static void describe(Map<String, Object> properties, String name, String description) {
+    ((Map<String, Object>) properties.get(name)).put("description", description);
   }
 
   private static void add(Map<String, Object> properties, String name, String type) {

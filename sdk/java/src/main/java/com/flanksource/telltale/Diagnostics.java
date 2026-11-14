@@ -74,6 +74,7 @@ public final class Diagnostics {
             new ThreadDumpService()
                 .snapshot(((Number) p.getOrDefault("sampleMs", 100)).intValue()));
     register("jvm.threads.dump", Scope.READ, p -> new ThreadDumpService().dump());
+    register("jvm.heap.histogram", Scope.READ, p -> new HeapHistogramService().histogram(p));
     register(
         "jvm.threads.stack",
         Scope.READ,

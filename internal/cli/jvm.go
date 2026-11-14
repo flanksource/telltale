@@ -3,6 +3,7 @@ package cli
 import (
 	"encoding/json"
 	"github.com/flanksource/telltale/internal/jvm"
+	jvmops "github.com/flanksource/telltale/pkg/tracing/jvm"
 	"github.com/spf13/cobra"
 	"os"
 )
@@ -40,8 +41,38 @@ func newJVMCommand() *cobra.Command {
 		command.Flags().BoolVar(&request.AllowMutation, "allow-mutation", false, "Allow this call to change the runtime")
 		root.AddCommand(command)
 	}
-	root.AddCommand(newJVMScriptCommand(), newJVMExtensionsCommand())
+	root.AddCommand(newJVMScriptCommand(), newJVMExtensionsCommand(), newJVMHeapHistogramCommand())
 	return root
+}
+
+func newJVMHeapHistogramCommand() *cobra.Command {
+	var request jvm.Request
+	var params jvmops.HeapHistogramParams
+	command := &cobra.Command{Use: "heap-histogram", Short: "List the heap's classes by retained bytes (GC.class_histogram)", Args: cobra.NoArgs}
+	command.Flags().StringVar(&request.Agent, "agent", "", "Connected Java agent ID")
+	command.Flags().IntVar(&params.Top, "top", 0, "Rows to return, largest first (0 for the agent's default of 100)")
+	command.Flags().StringVar(&params.ClassPattern, "class-pattern", "", "Glob over class names, such as com.example.*")
+	command.Flags().BoolVar(&params.Live, "live", false, "Count only reachable objects; forces a full GC on the JVM first")
+	command.RunE = func(cmd *cobra.Command, _ []string) error {
+		if err := params.Validate(); err != nil {
+			return err
+		}
+		var err error
+		if request.Params, err = json.Marshal(params); err != nil {
+			return err
+		}
+		request.Operation = jvmops.HeapHistogramOp
+		value, err := jvm.Call(cmd.Context(), request)
+		if err != nil {
+			return err
+		}
+		histogram, err := jvmops.DecodeHeapHistogram(value)
+		if err != nil {
+			return err
+		}
+		return printRecords(cmd, histogram)
+	}
+	return command
 }
 
 func newJVMScriptCommand() *cobra.Command {

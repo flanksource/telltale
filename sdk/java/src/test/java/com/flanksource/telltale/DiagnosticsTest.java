@@ -25,6 +25,26 @@ public class DiagnosticsTest {
   }
 
   @Test
+  @SuppressWarnings("unchecked")
+  public void catalogsTheHeapHistogramAsAReadWithTypedParameters() throws Exception {
+    Diagnostics runtime = new Diagnostics(Collections.emptyMap());
+    Map<String, Object> spec = null;
+    for (Map<String, Object> operation : runtime.catalog()) {
+      if ("jvm.heap.histogram".equals(operation.get("name"))) spec = operation;
+    }
+    assertNotNull("jvm.heap.histogram is in the catalog", spec);
+    assertEquals(Boolean.FALSE, spec.get("mutates"));
+    assertEquals("jvm:read", spec.get("scope"));
+    Map<String, Object> properties =
+        (Map<String, Object>) ((Map<String, Object>) spec.get("paramsSchema")).get("properties");
+    assertEquals(new HashSet<>(Arrays.asList("top", "classPattern", "live")), properties.keySet());
+    Map<String, Object> result =
+        (Map<String, Object>)
+            runtime.call("jvm.heap.histogram", Collections.singletonMap("top", 2), false);
+    assertEquals(2, ((List<?>) result.get("rows")).size());
+  }
+
+  @Test
   public void readsOneThreadsStackAndRejectsFractionalIds() throws Exception {
     Diagnostics runtime = new Diagnostics(Collections.emptyMap());
     Map<?, ?> result =

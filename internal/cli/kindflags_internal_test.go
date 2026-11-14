@@ -39,6 +39,11 @@ var _ = Describe("a kind's params as flags", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(params).To(MatchJSON(`{"targets":[{"class":"example.Worker","method":"compute","loader":"4ac"}]}`))
 	})
+	It("reads root-call filters as flags", func() {
+		params, err := parsed(kindSchema("jvm_trace"), "--targets", `[{"class":"example.Worker","method":"compute"}]`, "--min-cost", "250ms", "--exceptions-only", "--match", `[{"on":"arg","index":1,"path":"customer.name","op":"regex","value":"^acme"}]`)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(params).To(MatchJSON(`{"targets":[{"class":"example.Worker","method":"compute"}],"minCost":"250ms","exceptionsOnly":true,"match":[{"on":"arg","index":1,"path":"customer.name","op":"regex","value":"^acme"}]}`))
+	})
 	It("refuses non-object entries in target arrays", func() {
 		for _, value := range []string{`[null]`, `["wrong"]`, `null`, `{}`} {
 			_, err := parsed(kindSchema("jvm_trace"), "--targets", value)

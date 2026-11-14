@@ -25,7 +25,9 @@ Dedicated pages at `/jvm/{agent}/instrument`, `/jvm/{agent}/traces` and `/jvm/{a
 
 Traces keeps an agent-specific catalog beside runtime probe inspection. Notifications keeps the recording form, durable history, event stream and subscriber queue/drop counts together. The Records tab reuses the existing query browser, including the method call tree for JVM traces. Run responses and saved manifests carry each capture's target. Selector-based captures and older recordings without a target remain available through All runs instead of being attributed to a JVM by guesswork.
 
-Operation families include `jvm.jmx.*`, `jvm.metrics`, `jvm.threads*`, `jvm.logging.*`, `jvm.classes*`, `jvm.loaders`, `jvm.probes.*`, `jvm.ognl.eval`, `jvm.groovy.eval` and `jvm.extensions.*`. Use the live catalog for parameters. `jvm.classes.source` returns source, descriptors and line mappings. `jvm.classes.bytecode` returns base64 class bytes. `jvm.classes.compile` previews compilation without applying bytecode.
+Operation families include `jvm.jmx.*`, `jvm.metrics`, `jvm.threads*`, `jvm.logging.*`, `jvm.classes*`, `jvm.loaders`, `jvm.probes.*`, `jvm.ognl.eval`, `jvm.groovy.eval` and `jvm.extensions.*`. Use the live catalog for parameters. `jvm.classes.source` returns source, descriptors and line mappings. `jvm.classes.bytecode` returns base64 class bytes. `jvm.classes.compile` previews compilation without applying bytecode. `jvm.heap.histogram` (`telltale jvm heap-histogram`) returns the heap's classes by retained bytes from `GC.class_histogram`: `top` rows (default 100), `classPattern` as a glob over class names, and `live` to count only reachable objects, which forces a full GC first.
+
+Instrumented classes are armed by retransformation through a retransform-capable transformer, so a later retransformation of the class by another agent (an APM agent, Arthas) or by a bytecode read re-applies every probe still armed on it instead of dropping them.
 
 Captures share the existing run API, definitions, checkpoints and record stores:
 

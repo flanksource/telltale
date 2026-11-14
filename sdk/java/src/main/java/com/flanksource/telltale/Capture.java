@@ -15,6 +15,14 @@ interface Capture extends AutoCloseable {
     return false;
   }
 
+  /**
+   * Figures about the capture as a whole — what it withheld, rather than what it recorded — sent as
+   * a {@code report} frame after each blob that changed them; null when the capture has none.
+   */
+  default java.util.Map<String, Object> report() {
+    return null;
+  }
+
   default void renew() throws Exception {}
 
   default void freeze() throws Exception {}

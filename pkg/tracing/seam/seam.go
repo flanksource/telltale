@@ -17,6 +17,7 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/target"
 	telltale "github.com/flanksource/telltale/sdk"
+	"github.com/flanksource/telltale/sdk/protocol"
 )
 
 type AgentSeam[P, R any] struct {
@@ -27,6 +28,9 @@ type AgentSeam[P, R any] struct {
 	Target       func(P) target.Target
 	ArmParams    func(P) (json.RawMessage, error)
 	Mutates      func(P) bool
+	// Compatible refuses params the agent's advertised probe cannot honour,
+	// before anything is armed; nil accepts every agent advertising the probe.
+	Compatible   func(P, protocol.ProbeSpec) error
 	DecodeRecord func(json.RawMessage) (R, error)
 	DecodeBlob   func(agentclient.Blob, map[string]string) ([]R, error)
 	CommitBlob   func(agentclient.Blob) error
@@ -160,7 +164,25 @@ func (s AgentSeam[P, R]) Prepare(ctx dbcontext.Context, params P, out tracing.Em
 	return ctx.WithValue(stateKey{}, state), func() error { return s.release(state) }, nil
 }
 
+func (s AgentSeam[P, R]) compatible(agent *agentclient.Agent, params P) error {
+	if s.Compatible == nil {
+		return nil
+	}
+	for _, spec := range agent.Hello.Probes {
+		if spec.Name == s.Probe {
+			if err := s.Compatible(params, spec); err != nil {
+				return fmt.Errorf("arm %s on %s: %w", s.Probe, agent.Hello.AgentID, err)
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("agent %s does not advertise probe %s", agent.Hello.AgentID, s.Probe)
+}
+
 func (s AgentSeam[P, R]) arm(ctx context.Context, state *capture, agent *agentclient.Agent, params P) error {
+	if err := s.compatible(agent, params); err != nil {
+		return err
+	}
 	data := json.RawMessage(`{}`)
 	var err error
 	if s.ArmParams != nil {
@@ -496,6 +518,13 @@ func (s AgentSeam[P, R]) read(ctx context.Context, state *capture, agent *agentc
 						}
 					}
 					state.reportDropped(agent, batch.Dropped, out.Report)
+				case report := <-session.Reports:
+					// The agent reports after the blob it describes; one sent with
+					// the final blob is still queued when the capture ends.
+					if err := state.mergeReport(report.Summary, out.Report); err != nil {
+						fail(err, false)
+						return
+					}
 				default:
 					goto drained
 				}

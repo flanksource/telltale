@@ -94,6 +94,15 @@ final class RuntimeClient {
         }
       }
 
+      @SuppressWarnings("unchecked")
+      public Map<String, Object> report() {
+        try {
+          return (Map<String, Object>) request("captureReport", Collections.singletonMap("id", id));
+        } catch (Exception error) {
+          throw new IllegalStateException("read capture report", error);
+        }
+      }
+
       public String contentType() {
         return (String) description.get("contentType");
       }

@@ -63,6 +63,13 @@ public final class RuntimeService implements DynamicMBean {
       probe.put("mutates", !name.equals("jvm_notifications"));
       probe.put("reverts", true);
       probe.put("scope", Scope.forCapture(name).wire());
+      // The generation of what jvm_trace accepts, so a client asking for an option a later
+      // generation added is refused before it arms rather than handed a capture that ignored it.
+      // The bundled generation, as describe() reports it: hello must not need the diag agent
+      // attached, and an older agent already on the system class path is still refused at arm
+      // time by ClassOperations' requireProbeApiFor.
+      if (name.equals("jvm_trace"))
+        probe.put("version", com.flanksource.telltale.diag.agent.DiagAgent.PROBE_API_VERSION);
       probes.add(probe);
     }
     return probes;
@@ -212,6 +219,8 @@ public final class RuntimeService implements DynamicMBean {
           return capture.dump();
         case "captureComplete":
           return capture.complete();
+        case "captureReport":
+          return capture.report();
         case "captureFinish":
           return capture.finish();
         case "captureRenew":
