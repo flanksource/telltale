@@ -21,14 +21,16 @@ import (
 )
 
 type Options struct {
-	Destination Destination `json:"destination"`
-	PID         int         `json:"pid"`
-	Directory   string      `json:"directory"`
-	JavaHome    string      `json:"javaHome,omitempty"`
-	HubURL      string      `json:"hubUrl,omitempty"`
-	TokenFile   string      `json:"tokenFile,omitempty"`
-	Service     string      `json:"service"`
-	DryRun      bool        `json:"dryRun,omitempty"`
+	Destination   Destination `json:"destination"`
+	PID           int         `json:"pid"`
+	Directory     string      `json:"directory"`
+	JavaHome      string      `json:"javaHome,omitempty"`
+	HubURL        string      `json:"hubUrl,omitempty"`
+	TokenFile     string      `json:"tokenFile,omitempty"`
+	Service       string      `json:"service"`
+	DryRun        bool        `json:"dryRun,omitempty"`
+	AllowMutation bool        `json:"allowMutation,omitempty"`
+	ExtensionsDir string      `json:"extensionsDir,omitempty"`
 }
 
 type Result struct {
@@ -114,7 +116,7 @@ func (i Installer) Install(ctx context.Context, o Options) (Result, error) {
 				return result, dialErr
 			}
 			defer func() { _ = client.Close() }()
-			if client.Hello.Resource["telltale.artifact.sha256"] != result.SHA256 || client.Hello.Service != o.Service || client.Hello.Resource["telltale.hub.url"] != o.HubURL {
+			if client.Hello.Resource["telltale.artifact.sha256"] != result.SHA256 || client.Hello.Service != o.Service || client.Hello.Resource["telltale.hub.url"] != o.HubURL || client.Hello.Resource["telltale.allowMutation"] != strconv.FormatBool(o.AllowMutation) || client.Hello.Resource["telltale.extensionsDir"] != o.ExtensionsDir {
 				return result, fmt.Errorf("an incompatible agent is already installed; restart the JVM before changing its agent")
 			}
 			result.Agent = client.Hello.AgentID
@@ -170,10 +172,13 @@ func (i Installer) Install(ctx context.Context, o Options) (Result, error) {
 			return result, fmt.Errorf("agent token is invalid")
 		}
 	}
-	config := map[string]any{"token": secret, "service": o.Service}
+	config := map[string]any{"token": secret, "service": o.Service, "allowMutation": o.AllowMutation}
+	if o.ExtensionsDir != "" {
+		config["extensionsDir"] = o.ExtensionsDir
+	}
 	installIdentity := sha256.Sum256(append([]byte(fmt.Sprintf("%+v/%d/", o.Destination, o.PID)), identity...))
 	installationID := hex.EncodeToString(installIdentity[:])
-	config["resource"] = map[string]string{"telltale.install.id": installationID, "telltale.artifact.sha256": result.SHA256, "telltale.hub.url": o.HubURL}
+	config["resource"] = map[string]string{"telltale.install.id": installationID, "telltale.artifact.sha256": result.SHA256, "telltale.hub.url": o.HubURL, "telltale.allowMutation": strconv.FormatBool(o.AllowMutation), "telltale.extensionsDir": o.ExtensionsDir}
 	if o.HubURL != "" {
 		config["url"] = o.HubURL
 	}
