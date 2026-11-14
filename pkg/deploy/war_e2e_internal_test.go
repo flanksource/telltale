@@ -256,4 +256,30 @@ var _ = Describe("telltale-diag.war over direct HTTP", Label("jvm"), func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(patches).To(MatchJSON(`[]`), "the capture restored the traced class")
 	})
+
+	It("reports how many root calls a minCost filter withheld over direct HTTP", func() {
+		issuer, err := auth.NewIssuer("e2e-issuer", signingKey())
+		Expect(err).ToNot(HaveOccurred())
+		target := harnessTarget()
+		endpoint := startHarness(target, Provision{Issuer: issuer.Name(), JWKS: issuer.JWKS()})
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		agent, err := agentclient.DialHTTP(ctx, agentclient.HTTPEndpoint{ID: target.ID, URL: endpoint, Client: listenerClient(), Tokens: auth.Tokens{Issuer: issuer, Subject: "e2e", TTL: time.Minute}})
+		Expect(err).ToNot(HaveOccurred())
+		registry := agentclient.NewRegistry()
+		Expect(registry.Add(agent)).To(Succeed())
+		DeferCleanup(agent.Close)
+
+		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{jvmtrace.Kind: jvmtrace.NewKind(registry)})
+		// No Math.sqrt call runs for an hour, so the filter withholds every root
+		// call the harness makes and the capture ends at its deadline.
+		params, err := json.Marshal(map[string]any{"target": map[string]any{"seam": "agent", "agent": target.ID, "allowMutation": true},
+			"targets": []map[string]string{{"class": harnessWorkload, "method": "compute"}}, "minCost": "1h"})
+		Expect(err).ToNot(HaveOccurred())
+		stopAt := time.Now().Add(3 * time.Second)
+		managed, err := env.Runtime.Start(dbcontext.New().Wrap(ctx), tracing.StartRequest{Kind: jvmtrace.Kind, Params: params, StopAt: &stopAt})
+		Expect(err).ToNot(HaveOccurred())
+		report := tracingtest.Summary(tracingtest.Ended(managed.Session())).Report
+		Expect(report).To(HaveKeyWithValue("filtered", BeNumerically(">", 0)), "the WAR's X-Telltale-Report reached the capture report: %v", report)
+	})
 })
