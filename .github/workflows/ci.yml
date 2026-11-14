@@ -53,6 +53,7 @@ jobs:
             .bin/telltale
             webapp/dist
             pkg/agentinstall/java/assets
+            sdk/java/build/libs
 
   # test runs the suites in parallel shards. --ignore pkg keeps the root
   # module's own packages; the SDK modules are their own roots, so that shard
@@ -183,7 +184,7 @@ jobs:
         with:
           distribution: temurin
           java-version: ${{ matrix.java }}
-      - run: ./sdk/java/gradlew -p sdk/java test shadowJar
+      - run: ./sdk/java/gradlew -p sdk/java test shadowJar war extensionApiJar exampleExtensionJar
 
   release:
     needs: [build, test, test-web, lint, java-compatibility]
