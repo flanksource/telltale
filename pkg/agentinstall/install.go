@@ -31,6 +31,36 @@ type Options struct {
 	DryRun        bool        `json:"dryRun,omitempty"`
 	AllowMutation bool        `json:"allowMutation,omitempty"`
 	ExtensionsDir string      `json:"extensionsDir,omitempty"`
+	// HTTP starts the agent's HTTP listener, which executions reach directly
+	// with a token the listener verifies; it needs no hub.
+	HTTP *HTTPListener `json:"http,omitempty"`
+}
+
+// HTTPListener is the attached agent's direct-HTTP endpoint and the key its
+// executions are verified with. It carries no shared secret.
+type HTTPListener struct {
+	Bind         string          `json:"bind"`
+	Port         int             `json:"port"`
+	PortFile     string          `json:"portFile,omitempty"`
+	Issuer       string          `json:"issuer"`
+	Audience     string          `json:"audience"`
+	JWKS         json.RawMessage `json:"jwks,omitempty"`
+	JWKSURL      string          `json:"jwksUrl,omitempty"`
+	ConfigDigest string          `json:"configDigest,omitempty"`
+}
+
+func (h HTTPListener) validate() error {
+	switch {
+	case h.Bind == "":
+		return fmt.Errorf("agent HTTP listener bind address is required")
+	case h.Port < 0 || h.Port > 65535:
+		return fmt.Errorf("agent HTTP listener port %d is out of range", h.Port)
+	case h.Issuer == "" || h.Audience == "":
+		return fmt.Errorf("agent HTTP listener requires an issuer and an audience")
+	case len(h.JWKS) == 0 && h.JWKSURL == "":
+		return fmt.Errorf("agent HTTP listener requires jwks or jwksUrl")
+	}
+	return nil
 }
 
 type Result struct {
@@ -52,8 +82,13 @@ func (o Options) Validate() error {
 	if !strings.HasPrefix(o.Directory, "/") || strings.ContainsAny(o.Directory, "\x00\n\r") {
 		return fmt.Errorf("an absolute installation directory is required")
 	}
-	if o.Destination.Kind != "local" && (o.HubURL == "" || o.TokenFile == "") {
-		return fmt.Errorf("remote installation requires hub URL and agent token file")
+	if o.HTTP != nil {
+		if err := o.HTTP.validate(); err != nil {
+			return err
+		}
+	}
+	if o.Destination.Kind != "local" && o.HTTP == nil && (o.HubURL == "" || o.TokenFile == "") {
+		return fmt.Errorf("remote installation requires an HTTP listener, or a hub URL and agent token file")
 	}
 	if o.HubURL != "" {
 		u, err := url.Parse(o.HubURL)
@@ -182,6 +217,9 @@ func (i Installer) Install(ctx context.Context, o Options) (Result, error) {
 	if o.HubURL != "" {
 		config["url"] = o.HubURL
 	}
+	if o.HTTP != nil {
+		config["http"] = o.HTTP
+	}
 	if o.Destination.Kind == "local" {
 		root, rootErr := os.UserConfigDir()
 		if rootErr != nil {
@@ -207,6 +245,11 @@ func (i Installer) Install(ctx context.Context, o Options) (Result, error) {
 	_, err = transport.Run(ctx, i.Runtime.Attach(Attachment{PID: o.PID, Artifact: result.Jar, Config: configPath}), nil)
 	if err != nil {
 		return result, fmt.Errorf("attach Java agent (requires compatible JDK Attach API and permission to attach): %w", err)
+	}
+	if o.Destination.Kind != "local" && o.HubURL == "" {
+		// A hub-less agent is ready when its listener answers, which only the
+		// caller can reach: the deployer reads its /health.
+		return result, nil
 	}
 	return await(ctx, o, result, installationID)
 }
