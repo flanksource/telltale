@@ -112,6 +112,9 @@ final class ProbeJson {
     if (event.truncated) {
       json.writeBooleanField("truncated", true);
     }
+    if (event.omitted > 0) {
+      json.writeNumberField("omitted", event.omitted);
+    }
     json.writeEndObject();
   }
 

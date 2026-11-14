@@ -8,6 +8,7 @@ import { JvmMBeans } from "./JvmMBeans";
 import { JvmClasses } from "./JvmClasses";
 import { JvmLogging, JvmPatches, JvmThreads } from "./JvmInspectors";
 import { JvmMetrics } from "./JvmMetrics";
+import { JvmHeapHistogram } from "./JvmHeapHistogram";
 import { JvmInstrument } from "./JvmInstrument";
 import { JvmTraces } from "./JvmTraces";
 import { JvmNotifications } from "./JvmNotifications";
@@ -15,7 +16,7 @@ import { surfaceHref } from "./captures";
 
 const surfaces = [
   ["JMX", "jvm.jmx.search"], ["Classes", "jvm.classes"], ["OGNL", "jvm.ognl.eval"], ["Groovy", "jvm.groovy.eval"],
-  ["Threads", "jvm.threads"], ["Metrics", "jvm.metrics"], ["Logging", "jvm.logging.list"], ["Patches", "jvm.classes.patches"], ["Extensions", "jvm.extensions.list"],
+  ["Threads", "jvm.threads"], ["Heap", "jvm.heap.histogram"], ["Metrics", "jvm.metrics"], ["Logging", "jvm.logging.list"], ["Patches", "jvm.classes.patches"], ["Extensions", "jvm.extensions.list"],
   ["Instrument", "instrument"], ["Traces", "traces"], ["Notifications", "notifications"],
 ];
 
@@ -104,6 +105,7 @@ function OperationSurface({ agent, operation }: { agent: string; operation: Oper
     : operation.name === "jvm.logging.list" ? <JvmLogging agent={agent} />
     : operation.name === "jvm.classes.patches" ? <JvmPatches agent={agent} />
     : operation.name === "jvm.metrics" ? <JvmMetrics agent={agent} />
-    : operation.name === "jvm.threads" ? <JvmThreads agent={agent} /> : undefined;
+    : operation.name === "jvm.threads" ? <JvmThreads agent={agent} />
+    : operation.name === "jvm.heap.histogram" ? <JvmHeapHistogram agent={agent} /> : undefined;
   return guided ? <div className="space-y-4">{guided}<details><summary className="cursor-pointer text-sm">Advanced operation</summary><div className="mt-3"><OperationForm agent={agent} operation={operation} /></div></details></div> : <OperationForm agent={agent} operation={operation} />;
 }

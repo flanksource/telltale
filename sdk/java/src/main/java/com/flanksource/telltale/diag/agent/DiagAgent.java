@@ -91,8 +91,14 @@ public final class DiagAgent {
    * <p>v9 added {@code gc}: {@code gcCount} and {@code gcPauseMs} on the events that close a frame,
    * and the span's figure on every read. Gated the same way: only a span asking for {@code gc}
    * needs v9.
+   *
+   * <p>v10 added root-call filters: {@code minCost}, {@code exceptionsOnly} and {@code match}. A
+   * filtered probe holds each root call on its thread and publishes it only when it qualifies,
+   * counting the rest as {@code filtered} on every read. Nothing injected changed; gated like
+   * {@code alloc} and {@code gc}, because a v9 agent would ignore the options and hand back every
+   * call as though each had matched.
    */
-  public static final int PROBE_API_VERSION = 9;
+  public static final int PROBE_API_VERSION = 10;
 
   /** Set by {@link #agentmain}; read reflectively from the webapp classloader. */
   public static volatile Instrumentation INSTRUMENTATION;
@@ -278,6 +284,9 @@ public final class DiagAgent {
     if (config.gcError != null) {
       return "gc was requested but cannot be measured: " + config.gcError;
     }
+    if (config.filterError != null) {
+      return "the call filter cannot be evaluated: " + config.filterError;
+    }
     return null;
   }
 
@@ -305,6 +314,17 @@ public final class DiagAgent {
           + join.gc
           + "; every target of a span is armed with the same gc";
     }
+    String opened = open.filter == null ? "none" : open.filter.describe();
+    String joining = join.filter == null ? "none" : join.filter.describe();
+    if (!opened.equals(joining)) {
+      return "probe key "
+          + key
+          + " is open with filter "
+          + opened
+          + " and this join asked for "
+          + joining
+          + "; every target of a span is armed with the same filter";
+    }
     return null;
   }
 
@@ -316,6 +336,15 @@ public final class DiagAgent {
     if (config.gc) {
       result.put("gc", Boolean.TRUE);
     }
+    if (config.filter != null) {
+      result.put("filter", config.filter.describe());
+    }
+  }
+
+  /** What the filter withheld: calls decided against, and events cut from kept calls. */
+  private static void putFiltered(Map<String, Object> result, ProbeRing ring) {
+    result.put("filtered", Long.valueOf(ring.filteredCount()));
+    result.put("omitted", Long.valueOf(ring.omittedCount()));
   }
 
   /**
@@ -365,6 +394,7 @@ public final class DiagAgent {
     end.put("writeSeq", Long.valueOf(ring.writeSeq()));
     end.put("capacity", Integer.valueOf(ring.capacity));
     putSpanGc(end, ring);
+    putFiltered(end, ring);
     ring.close();
     rememberClosed(key, end);
     return end;
@@ -605,6 +635,7 @@ public final class DiagAgent {
     result.put("dropped", Long.valueOf(batch.dropped));
     result.put("truncated", Boolean.valueOf(batch.truncated));
     result.put("suppressed", Long.valueOf(ring.suppressedCount()));
+    putFiltered(result, ring);
     result.put("degraded", Boolean.valueOf(ring.isDegraded()));
     result.put("capacity", Integer.valueOf(ring.capacity));
     putSpanGc(result, ring);
@@ -646,10 +677,18 @@ public final class DiagAgent {
       }
       try {
         ProbeThreadState state = state();
-        ValueGraph.Node[] rendered = renderArgs(ring, state, args);
+        ProbeFilter filter = ring.config.filter;
+        ProbePending held = filter == null ? null : state.pending(ring);
+        int depth = state.depth();
+        // A filtered probe's root renders its arguments even when the ring is
+        // degraded: the predicate needs them, and only a kept call is retained.
+        // A call already rejected renders nothing more.
+        boolean root = filter != null && (held == null || depth <= held.rootDepth);
+        boolean rejected = held != null && !root && held.rejected;
+        ValueGraph.Node[] rendered =
+            renderArgs(ring, state, rejected ? null : args, root && filter.hasArgPredicates());
         long frame = state.nextFrame();
         long parent = state.parentFrame(ring.config.maxDepth);
-        int depth = state.depth();
         // After the arguments are rendered, so the snapshot is not charged
         // to the method it describes.
         long startAlloc = allocated(ring);
@@ -659,7 +698,7 @@ public final class DiagAgent {
         long startNanos = System.nanoTime();
         state.push(
             frame, startNanos, startAlloc, startGcCount, startGcMillis, ring.config.maxDepth);
-        ring.add(
+        ProbeEvent event =
             ProbeEvent.enter(
                 ring.now(),
                 state.threadId,
@@ -674,7 +713,14 @@ public final class DiagAgent {
                 line,
                 rendered,
                 state.renderedBytes,
-                state.truncated));
+                state.truncated);
+        if (filter == null) {
+          ring.add(event);
+        } else if (!root) {
+          held.hold(event);
+        } else {
+          holdRoot(ring, state, held, event, filter.matchesArgs(rendered));
+        }
         return frame;
       } finally {
         ring.endWrite();
@@ -704,18 +750,32 @@ public final class DiagAgent {
             // includes rendering what the method returned.
             state.markReturn(frame, allocated(ring));
           }
-          ValueGraph.Node rendered = renderValue(ring, state, value);
-          ring.add(
-              ProbeEvent.returned(
-                  ring.now(),
-                  state.threadId,
-                  state.threadName,
-                  key,
-                  state.depth(),
-                  frame,
-                  rendered,
-                  state.renderedBytes,
-                  state.truncated));
+          ProbeFilter filter = ring.config.filter;
+          ProbePending held = filter == null ? null : state.pending(ring);
+          boolean root = held != null && held.rootFrame == frame;
+          if (filter == null || (held != null && !held.rejected)) {
+            ValueGraph.Node rendered =
+                renderValue(ring, state, value, root && filter.hasReturnPredicates());
+            ProbeEvent event =
+                ProbeEvent.returned(
+                    ring.now(),
+                    state.threadId,
+                    state.threadName,
+                    key,
+                    state.depth(),
+                    frame,
+                    rendered,
+                    state.renderedBytes,
+                    state.truncated);
+            if (filter == null) {
+              ring.add(event);
+            } else if (root) {
+              held.returnMatched = filter.matchesReturn(rendered);
+              held.close(event);
+            } else {
+              held.hold(event);
+            }
+          }
         } finally {
           ring.endWrite();
         }
@@ -742,7 +802,9 @@ public final class DiagAgent {
         long startNanos = state.popTo(frame);
         long allocBytes = ProbeAllocation.delta(state.poppedAlloc(), endAlloc);
         String rendered = describeThrowable(ring, state, error);
-        ring.add(
+        publishClose(
+            ring,
+            state,
             ProbeEvent.thrown(
                 ring.now(),
                 state.threadId,
@@ -756,7 +818,8 @@ public final class DiagAgent {
                 ProbeAllocation.delta(state.poppedGcCount(), endGcCount),
                 ProbeAllocation.delta(state.poppedGcMillis(), endGcMillis),
                 state.lastUnwound(),
-                state.truncated));
+                state.truncated),
+            true);
       } finally {
         ring.endWrite();
       }
@@ -782,7 +845,9 @@ public final class DiagAgent {
         long endGcCount = gc == null ? -1L : gc.collections();
         long endGcMillis = gc == null ? -1L : gc.collectionMillis();
         long startNanos = state.popTo(frame);
-        ring.add(
+        publishClose(
+            ring,
+            state,
             ProbeEvent.exited(
                 ring.now(),
                 state.threadId,
@@ -794,12 +859,70 @@ public final class DiagAgent {
                 ProbeAllocation.delta(state.poppedAlloc(), endAlloc),
                 ProbeAllocation.delta(state.poppedGcCount(), endGcCount),
                 ProbeAllocation.delta(state.poppedGcMillis(), endGcMillis),
-                state.lastUnwound()));
+                state.lastUnwound()),
+            false);
       } finally {
         ring.endWrite();
       }
     } catch (Throwable ignored) {
       // As above.
+    }
+  }
+
+  // ---------------------------------------------------------- call filters
+
+  /**
+   * Starts holding a filtered probe's root call on this thread. A call the probe was still holding
+   * here is one whose close was lost (an exception escaping uninstrumented code, a probe opened
+   * mid-call): it can never be decided, so it is counted as filtered and let go.
+   */
+  private static void holdRoot(
+      ProbeRing ring,
+      ProbeThreadState state,
+      ProbePending abandoned,
+      ProbeEvent enter,
+      boolean argsMatched) {
+    if (abandoned != null) {
+      state.release(abandoned);
+      ring.filter();
+    }
+    ProbePending call = new ProbePending(ring, enter.frame, enter.depth, !argsMatched);
+    state.hold(call);
+    call.hold(enter);
+  }
+
+  /**
+   * Publishes an event that closes a frame. For a filtered probe it is held with its call, and the
+   * root's own close decides the whole call: published in order, or counted as {@code filtered}.
+   */
+  private static void publishClose(
+      ProbeRing ring, ProbeThreadState state, ProbeEvent event, boolean threw) {
+    ProbeFilter filter = ring.config.filter;
+    if (filter == null) {
+      ring.add(event);
+      return;
+    }
+    ProbePending held = state.pending(ring);
+    if (held == null) {
+      // A frame entered before this probe opened: there is no call to decide.
+      return;
+    }
+    if (event.frame != held.rootFrame) {
+      if (event.depth > held.rootDepth) {
+        held.hold(event);
+        return;
+      }
+      // Unwound past the root: its own close was lost and never comes.
+      state.release(held);
+      ring.filter();
+      return;
+    }
+    held.close(event);
+    state.release(held);
+    if (!held.rejected && filter.keeps(event.durationNs, threw, held.returnMatched)) {
+      held.publish();
+    } else {
+      ring.filter();
     }
   }
 
@@ -827,10 +950,12 @@ public final class DiagAgent {
    * budgets, and an object passed twice is shown once.
    */
   private static ValueGraph.Node[] renderArgs(
-      ProbeRing ring, ProbeThreadState state, Object[] args) {
+      ProbeRing ring, ProbeThreadState state, Object[] args, boolean evenIfDegraded) {
     state.truncated = false;
     state.renderedBytes = 0L;
-    if (args == null || ProbeConfig.ARGS_NONE.equals(ring.config.argMode) || ring.isDegraded()) {
+    if (args == null
+        || ProbeConfig.ARGS_NONE.equals(ring.config.argMode)
+        || (ring.isDegraded() && !evenIfDegraded)) {
       return null;
     }
     int count = Math.min(args.length, ring.config.maxArgs);
@@ -848,10 +973,12 @@ public final class DiagAgent {
     return rendered;
   }
 
-  private static ValueGraph.Node renderValue(ProbeRing ring, ProbeThreadState state, Object value) {
+  private static ValueGraph.Node renderValue(
+      ProbeRing ring, ProbeThreadState state, Object value, boolean evenIfDegraded) {
     state.truncated = false;
     state.renderedBytes = 0L;
-    if (ProbeConfig.ARGS_NONE.equals(ring.config.argMode) || ring.isDegraded()) {
+    if (ProbeConfig.ARGS_NONE.equals(ring.config.argMode)
+        || (ring.isDegraded() && !evenIfDegraded)) {
       return null;
     }
     ValueGraph graph = new ValueGraph(ring.config.graph);

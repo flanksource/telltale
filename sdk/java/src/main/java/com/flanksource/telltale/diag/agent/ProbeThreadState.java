@@ -73,6 +73,32 @@ final class ProbeThreadState {
     depth = 0;
     lastUnwound = 0;
     returnAlloc = -1L;
+    // A held call's frames are gone with the rest; it can never end.
+    pending.clear();
+  }
+
+  /**
+   * The root calls filtered probes hold on this thread, one per probe at most and usually none. A
+   * list rather than one slot: two filtered spans may nest on one thread.
+   */
+  private final java.util.ArrayList<ProbePending> pending = new java.util.ArrayList<ProbePending>(2);
+
+  /** The call {@code ring} is holding on this thread, or null. */
+  ProbePending pending(ProbeRing ring) {
+    for (int i = 0; i < pending.size(); i++) {
+      if (pending.get(i).ring == ring) {
+        return pending.get(i);
+      }
+    }
+    return null;
+  }
+
+  void hold(ProbePending call) {
+    pending.add(call);
+  }
+
+  void release(ProbePending call) {
+    pending.remove(call);
   }
 
   /** Set when the last rendered value hit a length cap. */

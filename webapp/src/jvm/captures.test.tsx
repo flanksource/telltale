@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { agentRecordings, defaultProbeOptions, methodCaptureRequest, readMethodTargets, writeMethodTargets, surfaceHref } from "./captures";
+import { agentRecordings, defaultProbeOptions, filterError, methodCaptureRequest, readMethodTargets, writeMethodTargets, surfaceHref } from "./captures";
 import type { RunTraces } from "../traces/api";
 
 it("round trips multiple concrete method selections while preserving unrelated URL filters", () => {
@@ -23,6 +23,31 @@ it("uses native capture parameters with explicit consent, duration and preserved
   expect(methodCaptureRequest({ agent: "java/demo", targets, options: { ...defaultProbeOptions, calls: true }, duration: "5m", allowed: true })).toEqual({
     duration: "5m", traces: { jvm_trace: { enabled: true, target: { seam: "agent", agent: "java/demo", allowMutation: true }, targets, args: true, return: true, exception: true, calls: true, platform: false, events: 1000, expand: 3, "arg-chars": 16384, gc: false, alloc: false } },
   });
+});
+
+it("sends root-call filters only when set, with a return match carrying no index", () => {
+  const targets = [{ class: "example.Worker", method: "compute", loader: "" }];
+  const options = { ...defaultProbeOptions, minCost: " 250ms ", exceptionsOnly: true, match: [
+    { on: "arg" as const, index: 1, path: " customer.name ", op: "regex" as const, value: "^acme" },
+    { on: "return" as const, index: 3, path: "", op: "contains" as const, value: "sent" },
+  ] };
+  expect(methodCaptureRequest({ agent: "demo", targets, options, duration: "5m", allowed: true }).traces?.jvm_trace).toMatchObject({
+    minCost: "250ms", exceptionsOnly: true,
+    match: [{ on: "arg", index: 1, path: "customer.name", op: "regex", value: "^acme" }, { on: "return", index: 0, op: "contains", value: "sent" }],
+  });
+  const unfiltered = methodCaptureRequest({ agent: "demo", targets, options: defaultProbeOptions, duration: "5m", allowed: true }).traces?.jvm_trace;
+  for (const key of ["minCost", "exceptionsOnly", "match"]) expect(unfiltered).not.toHaveProperty(key);
+});
+
+it.each([
+  [{ minCost: "fast" }, "Minimum cost"],
+  [{ args: false, match: [{ on: "arg" as const, index: 0, path: "", op: "equals" as const, value: "x" }] }, "record arguments"],
+  [{ return: false, match: [{ on: "return" as const, index: 0, path: "", op: "equals" as const, value: "x" }] }, "record return values"],
+  [{ match: [{ on: "arg" as const, index: -1, path: "", op: "equals" as const, value: "x" }] }, "argument index"],
+])("refuses a filter the agent could not evaluate: %o", (override, reason) => {
+  const options = { ...defaultProbeOptions, ...override };
+  expect(filterError(options)).toContain(reason);
+  expect(() => methodCaptureRequest({ agent: "demo", targets: [{ class: "example.Worker", method: "compute", loader: "" }], options, duration: "5m", allowed: true })).toThrow(reason);
 });
 
 it("omits an unresolved optional loader so inline definition validation preserves the native target shape", () => {

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { RouterProvider, useMemoryRouter } from "@flanksource/clicky-ui/rpc";
 import { afterEach, expect, it, vi } from "vitest";
 import { JvmInstrument } from "./JvmInstrument";
@@ -32,6 +32,34 @@ it("instruments the selected overload with consent and preserves the recording s
   fireEvent.click(start);
   await waitFor(() => expect(request).toHaveBeenCalledWith("/api/traces", expect.objectContaining({ method: "POST", body: expect.stringContaining('"method":"compute(J)D"') })));
   expect(new URLSearchParams(window.location.search).get("recording")).toBe("recording");
+});
+
+it("sends the root-call filters from the instrument form and blocks a match it cannot evaluate", async () => {
+  window.history.replaceState(null, "", "/jvm/demo/instrument?class=example.Worker&method=compute&loader=12ab");
+  vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
+  const request = vi.fn(async (url: string, options?: RequestInit) => {
+    if (url.startsWith("/api/traces") && options?.method === "POST") return new Response(JSON.stringify({ runId: "filtered", mount: "/api/traces/filtered", status: "running", captures: [] }));
+    if (url.startsWith("/api/traces")) return new Response(JSON.stringify({ runs: [] }));
+    const operation = JSON.parse(options?.body as string).operation;
+    if (operation === "jvm.loaders") return new Response(JSON.stringify([{ hash: "12ab", label: "Application", classCount: 1 }]));
+    return new Response(JSON.stringify({ total: 0, classes: [] }));
+  });
+  vi.stubGlobal("fetch", request);
+  function Harness() { return <RouterProvider adapter={useMemoryRouter(window.location.pathname + window.location.search)}><JvmInstrument agent="demo" /></RouterProvider>; }
+  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><Harness /></QueryClientProvider>);
+  fireEvent.click(screen.getByLabelText("Allow method instrumentation"));
+  fireEvent.change(screen.getByLabelText("Minimum cost"), { target: { value: "250ms" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add value match" }));
+  const match = screen.getByRole("group", { name: "Match 1" });
+  fireEvent.change(within(match).getByLabelText("Text"), { target: { value: "SubmitTask" } });
+  fireEvent.click(screen.getByLabelText("Arguments"));
+  expect(await screen.findByRole("alert")).toHaveTextContent("record arguments");
+  const start = screen.getByRole("button", { name: "Instrument method" });
+  expect(start).toBeDisabled();
+  fireEvent.click(screen.getByLabelText("Arguments"));
+  await waitFor(() => expect(start).toBeEnabled());
+  fireEvent.click(start);
+  await waitFor(() => expect(request).toHaveBeenCalledWith("/api/traces", expect.objectContaining({ method: "POST", body: expect.stringContaining('"minCost":"250ms","match":[{"on":"arg","op":"equals","value":"SubmitTask","index":0}]') })));
 });
 
 it("records the MBean handed off from JMX and stops a capture restored from its URL", async () => {

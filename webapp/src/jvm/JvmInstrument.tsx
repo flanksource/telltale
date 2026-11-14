@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button, SegmentedControl, Workspace } from "@flanksource/clicky-ui/components";
-import { defaultProbeOptions, methodCaptureRequest, readMethodTargets, writeMethodTargets } from "./captures";
+import { defaultProbeOptions, filterError, methodCaptureRequest, readMethodTargets, writeMethodTargets } from "./captures";
+import { JvmCallFilters } from "./JvmCallFilters";
 import { fieldClass } from "./diagnostics";
 import { MutationChoice } from "./MutationChoice";
 import { JvmMethodTargets } from "./JvmMethodTargets";
@@ -16,7 +17,8 @@ export function JvmInstrument({ agent }: { agent: string }) {
   const [selected, setSelected] = useState(() => new URLSearchParams(window.location.search).get("recording") ?? "");
   const { query, recordings, start, stop } = useRecordings(agent, "jvm_trace");
   const active = recordings.find(row => row.run.runId === selected);
-  const ready = allowed && !!duration.trim() && targets.length > 0 && targets.every(row => row.class.trim() && row.method.trim() && !row.loader.startsWith("~"));
+  const invalidFilter = filterError(options);
+  const ready = allowed && !invalidFilter && !!duration.trim() && targets.length > 0 && targets.every(row => row.class.trim() && row.method.trim() && !row.loader.startsWith("~"));
   const configuration = <form className="space-y-4" onSubmit={event => { event.preventDefault(); start.mutate(methodCaptureRequest({ agent, targets, options, duration, allowed }), { onSuccess: run => setSelected(run.runId) }); }}>
     <JvmMethodTargets agent={agent} targets={targets} onChange={next => { setTargets(next); const search = writeMethodTargets(window.location.search, next); window.history.replaceState(null, "", `${window.location.pathname}?${search}`); }} />
     <div className="space-y-2"><h3 className="text-sm font-medium">Mode</h3><SegmentedControl aria-label="Instrumentation mode" value={options.calls ? "trace" : "watch"} options={[{ id: "watch", label: "Watch values" }, { id: "trace", label: "Trace nested calls" }]} onChange={mode => setOptions(current => ({ ...current, calls: mode === "trace", args: mode === "watch", return: mode === "watch", platform: false }))} /></div>
@@ -29,6 +31,8 @@ export function JvmInstrument({ agent }: { agent: string }) {
       </fieldset>
       <fieldset className="space-y-3"><legend className="mb-2 text-sm font-medium">Automatic restore</legend><label className="block text-sm">Capture duration<input required className={fieldClass} value={duration} onChange={event => setDuration(event.target.value)} /></label><p className="text-xs text-muted-foreground">For example, 30s or 5m. Original bytecode returns when the capture stops, reaches its budget or its duration ends. Closing this page leaves the server-owned capture running.</p><MutationChoice label="Allow method instrumentation" checked={allowed} onChange={setAllowed} /></fieldset>
     </div>
+    <JvmCallFilters filters={options} onChange={filters => setOptions(current => ({ ...current, ...filters }))} />
+    {invalidFilter && <p role="alert" className="text-sm">{invalidFilter}</p>}
     {start.error && <p role="alert" className="text-sm">{start.error.message}</p>}
     <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3"><p className="text-xs text-muted-foreground">Methods run their original bodies and report values and timings.</p><Button type="submit" disabled={!ready || start.isPending}>{start.isPending ? "Instrumenting…" : targets.length > 1 ? `Instrument ${targets.length} methods` : "Instrument method"}</Button></div>
   </form>;

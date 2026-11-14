@@ -126,6 +126,12 @@ final class ProbeEvent {
   /** True when any rendered text in this event hit a length cap. */
   final boolean truncated;
 
+  /**
+   * On the last event of a filtered call that outgrew its thread's buffer: how many of the call's
+   * events were left out between its head and its close. See {@link ProbePending}.
+   */
+  final int omitted;
+
   private ProbeEvent(
       long ts,
       long threadId,
@@ -148,7 +154,8 @@ final class ProbeEvent {
       long gcCount,
       long gcPauseMs,
       int unwound,
-      boolean truncated) {
+      boolean truncated,
+      int omitted) {
     this.ts = ts;
     this.threadId = threadId;
     this.thread = thread;
@@ -171,6 +178,15 @@ final class ProbeEvent {
     this.gcPauseMs = gcPauseMs;
     this.unwound = unwound;
     this.truncated = truncated;
+    this.omitted = omitted;
+  }
+
+  /** This event, carrying how many events of its call were omitted. */
+  ProbeEvent omitting(int count) {
+    return new ProbeEvent(
+        ts, threadId, thread, kind, key, depth, frame, parent, className, method, descriptor, line,
+        args, value, valueBytes, error, durationNs, allocBytes, gcCount, gcPauseMs, unwound,
+        truncated, count);
   }
 
   static ProbeEvent enter(
@@ -210,7 +226,8 @@ final class ProbeEvent {
         -1L,
         -1L,
         0,
-        truncated);
+        truncated,
+        0);
   }
 
   static ProbeEvent returned(
@@ -245,7 +262,8 @@ final class ProbeEvent {
         -1L,
         -1L,
         0,
-        truncated);
+        truncated,
+        0);
   }
 
   static ProbeEvent thrown(
@@ -284,7 +302,8 @@ final class ProbeEvent {
         gcCount,
         gcPauseMs,
         unwound,
-        truncated);
+        truncated,
+        0);
   }
 
   static ProbeEvent exited(
@@ -321,7 +340,8 @@ final class ProbeEvent {
         gcCount,
         gcPauseMs,
         unwound,
-        false);
+        false,
+        0);
   }
 
   /**

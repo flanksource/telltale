@@ -12,6 +12,9 @@ export interface PatchRow extends Record<string, unknown> { class: string; loade
 export interface ProbeOwner { key: string; owners: string[] }
 export interface ThreadRow extends Record<string, unknown> { id: number; name: string; state: string; cpuPercent: number | null; cpuTimeMs: number | null; lockName: string | null; lockOwnerId: number | null; lockOwnerName: string | null; daemon: boolean }
 export interface Threads { sampledMs: number; cpuTimeEnabled: boolean; deadlocked: number[]; threads: ThreadRow[] }
+export interface HeapClass extends Record<string, unknown> { rank: number; className: string; instances: number; bytes: number; loader?: string }
+/** jvm.heap.histogram: whole-heap totals, and the classes matching the pattern cut to top, largest first. */
+export interface HeapHistogram { collectedAt: string; live: boolean; totalInstances: number; totalBytes: number; matched: number; rows: HeapClass[] }
 export interface ThreadStack { thread: ThreadRow; text: string; frames: Array<{ className: string; methodName: string; lineNumber: number }> }
 
 export async function inspect<T>(agent: string, operation: string, params: Record<string, unknown> = {}): Promise<T> {

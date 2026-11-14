@@ -107,6 +107,15 @@ final class ProbeConfig {
   /** Why {@link #gc} was asked for and cannot be honoured; the open is refused with it. */
   final String gcError;
 
+  /**
+   * Which root calls are published ({@code minCost}, {@code exceptionsOnly}, {@code match}), or
+   * null when every call is. Per-open intent, never a system property.
+   */
+  final ProbeFilter filter;
+
+  /** Why the filter asked for cannot be evaluated; the open is refused with it. */
+  final String filterError;
+
   private ProbeConfig(
       int ringCapacity,
       int maxEvents,
@@ -120,7 +129,8 @@ final class ProbeConfig {
       GraphLimits graph,
       int argChars,
       boolean alloc,
-      boolean gc) {
+      boolean gc,
+      Map<String, Object> options) {
     this.ringCapacity = ringCapacity;
     this.maxEvents = maxEvents;
     this.maxKeys = maxKeys;
@@ -156,6 +166,15 @@ final class ProbeConfig {
     }
     this.gcCounters = counters;
     this.gcError = gcFailure;
+    ProbeFilter resolvedFilter = null;
+    String filterFailure = null;
+    try {
+      resolvedFilter = ProbeFilter.resolve(options);
+    } catch (IllegalArgumentException invalid) {
+      filterFailure = reason(invalid);
+    }
+    this.filter = resolvedFilter;
+    this.filterError = filterFailure;
   }
 
   private static String reason(Throwable unusable) {
@@ -194,7 +213,8 @@ final class ProbeConfig {
         graph,
         argChars,
         boolOption(options, "alloc", false),
-        boolOption(options, "gc", false));
+        boolOption(options, "gc", false),
+        options);
   }
 
   /**

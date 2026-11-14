@@ -116,6 +116,8 @@ final class ProbeRing {
   private volatile boolean degraded;
   private final AtomicInteger writers = new AtomicInteger();
   private final AtomicLong suppressed = new AtomicLong();
+  private final AtomicLong filtered = new AtomicLong();
+  private final AtomicLong omitted = new AtomicLong();
 
   ProbeRing(String key, String owner, ProbeConfig config) {
     this.key = key;
@@ -189,6 +191,29 @@ final class ProbeRing {
 
   long suppressedCount() {
     return suppressed.get();
+  }
+
+  /** A root call its filter decided against, or that was abandoned unfinished. */
+  void filter() {
+    filtered.incrementAndGet();
+  }
+
+  long filteredCount() {
+    return filtered.get();
+  }
+
+  /** Events left out of published calls that outgrew their thread's buffer. */
+  void omitted(int count) {
+    omitted.addAndGet(count);
+  }
+
+  long omittedCount() {
+    return omitted.get();
+  }
+
+  /** This ring's share of the JVM-wide byte budget, which also bounds a held call. */
+  long budgetBytes() {
+    return budgetBytes;
   }
 
   long writeSeq() {
