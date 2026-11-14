@@ -81,6 +81,7 @@ type httpCapture struct {
 	seq      uint64
 	sent     int64
 	maxBytes int64
+	report   string
 }
 
 func (t *httpTransport) probeScope(name string) (string, error) {
@@ -217,7 +218,23 @@ func (t *httpTransport) stream(s *Session, c *httpCapture) (bool, error) {
 	if !deliver(s.Blobs, blob) {
 		s.dropped.Add(1)
 	}
+	t.deliverReport(s, c, dump.Report)
 	return dump.Complete, nil
+}
+
+// deliverReport hands the session a report that changed since the last one,
+// after the blob it describes, as the agent sends report frames over the hub.
+func (t *httpTransport) deliverReport(s *Session, c *httpCapture, report json.RawMessage) {
+	if report == nil {
+		return
+	}
+	t.mu.Lock()
+	changed := string(report) != c.report
+	c.report = string(report)
+	t.mu.Unlock()
+	if changed && !deliver(s.Reports, protocol.Report{Session: s.ID, Summary: report}) {
+		s.dropped.Add(1)
+	}
 }
 
 func (t *httpTransport) blob(s *Session, c *httpCapture, checkpoint string, data []byte) (Blob, error) {
@@ -238,8 +255,11 @@ func (t *httpTransport) end(s *Session, c *httpCapture, cause error, complete bo
 	err := t.request(func(ctx context.Context) (err error) { final, err = t.client.Finish(ctx, c.scope, c.ID); return err })
 	if err == nil {
 		var blob Blob
-		if blob, err = t.blob(s, c, "", final.Data); err == nil && !deliver(s.Blobs, blob) {
-			s.dropped.Add(1)
+		if blob, err = t.blob(s, c, "", final.Data); err == nil {
+			if !deliver(s.Blobs, blob) {
+				s.dropped.Add(1)
+			}
+			t.deliverReport(s, c, final.Report)
 		}
 	}
 	t.mu.Lock()
@@ -270,6 +290,7 @@ func (t *httpTransport) checkpoint(ctx context.Context, s *Session, params json.
 		return CheckpointResult{}, err
 	}
 	blob.CheckpointParams = params
+	t.deliverReport(s, c, dump.Report)
 	return CheckpointResult{Blobs: []Blob{blob}}, nil
 }
 

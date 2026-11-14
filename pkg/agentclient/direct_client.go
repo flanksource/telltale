@@ -26,6 +26,11 @@ const ScopeRead = "jvm:read"
 // so the token never travels in Authorization, nor in a query parameter.
 const TokenHeader = "X-Telltale-Authorization"
 
+// ReportHeader carries, beside a capture dump, the JSON object the capture
+// reports about what it withheld (jvm_trace: filtered, omitted): over direct
+// HTTP what a report frame carries over the hub.
+const ReportHeader = "X-Telltale-Report"
+
 // maxArtifact bounds a capture dump read from an agent.
 const maxArtifact = 64 << 20
 
@@ -74,6 +79,8 @@ type Capture struct {
 type Dump struct {
 	Data     []byte
 	Complete bool
+	// Report is the capture's report object, nil when the agent sent none.
+	Report json.RawMessage
 }
 
 func (c HTTPClient) validate() error {
@@ -195,7 +202,23 @@ func (c HTTPClient) artifact(ctx context.Context, method, path, scope string) (D
 	if len(data) > maxArtifact {
 		return Dump{}, fmt.Errorf("%s %s: capture exceeds %d bytes", method, path, maxArtifact)
 	}
-	return Dump{Data: data, Complete: response.Header.Get("X-Telltale-Complete") == "true"}, nil
+	report, err := captureReport(response.Header)
+	if err != nil {
+		return Dump{}, fmt.Errorf("%s %s: %w", method, path, err)
+	}
+	return Dump{Data: data, Complete: response.Header.Get("X-Telltale-Complete") == "true", Report: report}, nil
+}
+
+func captureReport(header http.Header) (json.RawMessage, error) {
+	raw := header.Get(ReportHeader)
+	if raw == "" {
+		return nil, nil
+	}
+	var values map[string]any
+	if err := json.Unmarshal([]byte(raw), &values); err != nil || values == nil {
+		return nil, fmt.Errorf("malformed %s header %q: want a JSON object", ReportHeader, raw)
+	}
+	return json.RawMessage(raw), nil
 }
 
 func (c HTTPClient) json(ctx context.Context, method, path, scope string, body, into any) error {

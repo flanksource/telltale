@@ -43,10 +43,12 @@ func (r *recordingTokens) Token(_ context.Context, audience, scope string) (stri
 type fakeAgent struct {
 	apiVersion    int
 	completeAfter int
-	mu            sync.Mutex
-	dumps         int
-	renewed       int
-	finished      bool
+	// report, when set, rides every dump and the final reading as X-Telltale-Report.
+	report   string
+	mu       sync.Mutex
+	dumps    int
+	renewed  int
+	finished bool
 }
 
 func (f *fakeAgent) handler() http.Handler {
@@ -85,6 +87,7 @@ func (f *fakeAgent) handler() http.Handler {
 		f.mu.Unlock()
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("X-Telltale-Complete", map[bool]string{true: "true", false: "false"}[complete])
+		f.writeReport(w)
 		_, _ = io.WriteString(w, `{"events":[]}`)
 	}))
 	mux.HandleFunc("POST /captures/c1/renew", scoped("jvm:trace", func(w http.ResponseWriter, _ *http.Request) {
@@ -97,9 +100,16 @@ func (f *fakeAgent) handler() http.Handler {
 		f.mu.Lock()
 		f.finished = true
 		f.mu.Unlock()
+		f.writeReport(w)
 		_, _ = io.WriteString(w, `{"events":["final"]}`)
 	}))
 	return mux
+}
+
+func (f *fakeAgent) writeReport(w http.ResponseWriter) {
+	if f.report != "" {
+		w.Header().Set(agentclient.ReportHeader, f.report)
+	}
 }
 
 func dialFake(fake *fakeAgent, tokens agentclient.TokenSource) (*agentclient.Agent, error) {
@@ -149,6 +159,34 @@ var _ = Describe("Direct HTTP agents", func() {
 		fake.mu.Lock()
 		defer fake.mu.Unlock()
 		Expect(fake.finished).To(BeTrue(), "a completed capture is finished on the agent")
+	})
+
+	It("delivers the capture's X-Telltale-Report as a session report, once per change", func() {
+		const report = `{"filtered":41,"omitted":3}`
+		fake := &fakeAgent{apiVersion: agentclient.AgentAPIVersion, completeAfter: 3, report: report}
+		agent, err := dialFake(fake, &recordingTokens{})
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(agent.Close)
+		session, err := agent.Arm(context.Background(), agentclient.ArmRequest{Probe: "jvm_trace", Params: json.RawMessage(`{}`), Mutates: true, AllowMutation: true})
+		Expect(err).ToNot(HaveOccurred())
+		var ended protocol.Ended
+		Eventually(session.Ended, 2*time.Second).Should(Receive(&ended))
+		Expect(ended).To(And(HaveField("Complete", true), HaveField("Error", "")))
+		Expect(session.Reports).To(HaveLen(1), "three dumps and the final reading carried one unchanged report")
+		Expect(<-session.Reports).To(And(HaveField("Session", session.ID), HaveField("Summary", MatchJSON(report))))
+	})
+
+	It("ends a capture with an error when its X-Telltale-Report is not a JSON object", func() {
+		fake := &fakeAgent{apiVersion: agentclient.AgentAPIVersion, report: `filtered=41`}
+		agent, err := dialFake(fake, &recordingTokens{})
+		Expect(err).ToNot(HaveOccurred())
+		DeferCleanup(agent.Close)
+		session, err := agent.Arm(context.Background(), agentclient.ArmRequest{Probe: "jvm_trace", Params: json.RawMessage(`{}`), Mutates: true, AllowMutation: true})
+		Expect(err).ToNot(HaveOccurred())
+		var ended protocol.Ended
+		Eventually(session.Ended, 2*time.Second).Should(Receive(&ended))
+		Expect(ended).To(And(HaveField("Complete", false), HaveField("Error", ContainSubstring("malformed X-Telltale-Report"))))
+		Expect(session.Reports).To(BeEmpty())
 	})
 
 	It("answers a checkpoint with a dump and returns the final dump on disarm", func() {
