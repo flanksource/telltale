@@ -1,7 +1,7 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { once } from "node:events";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { connect } from "node:net";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -42,6 +42,56 @@ afterAll(async () => {
 });
 
 describe("agents API", () => {
+  it("serves the live JVM catalog, preserves script integers and hot-loads an extension", async () => {
+    await run("javac", ["-d", testDir, "pkg/agentinstall/testdata/Workload.java"]);
+    const config = join(testDir, "java-agent.json");
+    await writeFile(config, JSON.stringify({ url: apiURL, token, service: "api-jvm", allowMutation: true, extensionsDir: join(testDir, "extensions") }));
+    const child = spawn("java", [`-javaagent:${join(process.cwd(), "pkg/agentinstall/java/assets/telltale-agent.jar")}=${config}`, "-cp", testDir, "Workload"]);
+    let output = "";
+    child.stderr.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+    try {
+      let id: string | undefined;
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const agents = await (await fetch(`${apiURL}/api/agents`)).json() as Array<{ agentId: string; service: string }>;
+        id = agents.find(agent => agent.service === "api-jvm")?.agentId;
+        if (id || child.exitCode !== null) break;
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      expect(id, output).toBeDefined();
+      const base = `${apiURL}/api/agents/${encodeURIComponent(id!)}`;
+      const catalog = await (await fetch(`${base}/catalog`)).json() as Array<{ name: string; paramsSchema: unknown }>;
+      expect(catalog).toContainEqual(expect.objectContaining({ name: "jvm.groovy.eval", paramsSchema: expect.objectContaining({ required: ["source"] }) }));
+      const execute = (body: string) => fetch(`${base}/call`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+      const denied = await execute('{"operation":"jvm.groovy.eval","params":{"source":"return 7"}}');
+      expect(denied.status).toBe(400);
+      const integer = await execute('{"operation":"jvm.groovy.eval","allowMutation":true,"params":{"source":"return args.id","args":{"id":9007199254740993}}}');
+      expect(integer.status).toBe(200);
+      expect(await integer.text()).toContain('"value":9007199254740993');
+      const invoked = await execute('{"operation":"jvm.jmx.invoke","allowMutation":true,"params":{"objectName":"java.lang:type=Memory","operation":"gc","args":[],"signature":[]}}');
+      expect(invoked.status).toBe(200);
+      expect(await invoked.text()).toBe("null");
+      const jar = (await readFile("sdk/java/build/libs/telltale-example-extension.jar")).toString("base64");
+      expect((await execute(JSON.stringify({ operation: "jvm.extensions.install", allowMutation: true, params: { jar } }))).status).toBe(200);
+      expect(await (await fetch(`${base}/catalog`)).json()).toContainEqual(expect.objectContaining({ name: "extension.example.greet" }));
+      const greet = await execute(JSON.stringify({ operation: "extension.example.greet", params: { name: "operator" } }));
+      expect(await greet.json()).toEqual({ message: "Hello operator" });
+      expect((await execute(JSON.stringify({ operation: "jvm.extensions.replace", allowMutation: true, params: { jar } }))).status).toBe(200);
+      expect((await execute('{"operation":"jvm.extensions.unload","allowMutation":true,"params":{"id":"example"}}')).status).toBe(200);
+      expect(await (await fetch(`${base}/catalog`)).json()).not.toContainEqual(expect.objectContaining({ name: "extension.example.greet" }));
+    } finally {
+      if (child.exitCode === null) { const stopped = once(child, "exit"); child.kill("SIGTERM"); await stopped; }
+    }
+  }, 30_000);
+  it("rejects malformed diagnostic calls before selecting a JVM", async () => {
+    for (const body of ['{}', 'null', '{"params":{}}', '{"operation":"jvm.catalog"} {}', '{"operation":"jvm.catalog","unexpected":true}']) {
+      const response = await fetch(`${apiURL}/api/agents/missing/call`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body,
+      });
+      expect(response.status).toBe(400);
+      expect(await response.text()).not.toContain("is not connected");
+    }
+  });
+
   it("requires API scope on non-loopback server routes", async () => {
     const apiToken = (await run(".bin/telltale", ["agents", "token", "create", "api-test", "--scope", "api"], { env: env() })).stdout.trim();
     const publicServer = spawn(".bin/telltale", ["serve", "--host", "0.0.0.0", "--port", "0", "--data-dir", testDir], { env: env() });
@@ -113,7 +163,7 @@ describe("agents API", () => {
       });
       const result = await response.json() as unknown;
       expect(response.status, JSON.stringify(result)).toBe(201);
-      expect(result).toMatchObject({ captures: [expect.objectContaining({ kind: "http" })] });
+      expect(result).toMatchObject({ captures: [expect.objectContaining({ kind: "http", target: { seam: "agent", selector: { "k8s.pod.name": "api-pod" } } })] });
     } finally {
       child.stdin.end();
       if (child.exitCode === null) await once(child, "exit");

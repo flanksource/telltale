@@ -34,6 +34,7 @@ export default function AgentsPage() {
     {agents.data?.map(agent => <Panel key={agent.agentId} title={agent.service || agent.agentId}>
       <div className="space-y-3">
         <p><code>{agent.agentId}</code> · {agent.runtime.lang} {agent.runtime.version}</p>
+        {agent.runtime.lang === "java" && <Button variant="outline" onClick={() => navigate(`/jvm/${encodeURIComponent(agent.agentId)}`)}>JVM diagnostics</Button>}
         <dl className="grid gap-1 text-sm sm:grid-cols-2">
           {Object.entries({ ...agent.resource, ...agent.labels }).map(([key, value]) => <div key={key} className="min-w-0 break-words"><dt className="inline text-muted-foreground">{key}: </dt><dd className="inline">{value}</dd></div>)}
         </dl>

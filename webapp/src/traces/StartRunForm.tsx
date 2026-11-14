@@ -10,17 +10,18 @@ import { fetchStartForm, startRun, StartRunError, type RunTraces, type StartForm
 export interface StartRunFormProps {
   agent?: string;
   probe?: string;
+  initialParams?: Record<string, unknown>;
   /** Called with the run the server started. */
   onStarted: (run: RunTraces) => void;
 }
 
-function StartRunFields({ form, onStarted, agent, probe }: StartRunFormProps & { form: StartForm }) {
+function StartRunFields({ form, onStarted, agent, probe, initialParams }: StartRunFormProps & { form: StartForm }) {
   const lookupClient = useMemo(() => createOperationsApiClient(), []);
   const lookupFetcher = useOperationLookupFetcher(lookupClient);
   const queryClient = useQueryClient();
   const [value, setValue] = useState<StartRequest>(() => agent && probe ? {
     ...form.defaults, command: "",
-    traces: { [probe]: { enabled: true, target: { seam: "agent", agent } } },
+    traces: { [probe]: { ...initialParams, enabled: true, target: { seam: "agent", agent } } },
   } : form.defaults);
   const start = useMutation({
     mutationFn: startRun,
