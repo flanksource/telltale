@@ -3,10 +3,19 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/pkg/traces"
 )
+
+// demoRegistrations are the kinds the demo records: every registered kind but
+// the seam presets (Registration.Base), which capture through their base
+// kind's code on a seam the demo has no workload for (its proxies need a
+// command pointed at them and, for pg_proxy, a Postgres upstream).
+func demoRegistrations() []traces.Registration {
+	return slices.DeleteFunc(traces.Registrations(), func(registration traces.Registration) bool { return registration.Base != "" })
+}
 
 func demoSpecs(url, database string, javaPID int) ([]telltale.TraceSpec, error) {
 	self := map[string]any{"seam": "self"}
@@ -29,11 +38,12 @@ func demoSpecs(url, database string, javaPID int) ([]telltale.TraceSpec, error) 
 		"sql_top":       {"connection": "connection://mssql", "databases": []string{database}, "poll": "200ms"},
 		"llm":           {"target": self, "includePrompts": true, "includeResponses": true},
 	}
-	if len(params) != len(traces.Registrations()) {
-		return nil, fmt.Errorf("demo workload catalog has %d kinds; registry has %d", len(params), len(traces.Registrations()))
+	registrations := demoRegistrations()
+	if len(params) != len(registrations) {
+		return nil, fmt.Errorf("demo workload catalog has %d kinds; registry has %d", len(params), len(registrations))
 	}
 	var specs []telltale.TraceSpec
-	for _, registration := range traces.Registrations() {
+	for _, registration := range registrations {
 		p, exists := params[registration.Name]
 		if !exists {
 			return nil, fmt.Errorf("no real demo workload for registered kind %s", registration.Name)

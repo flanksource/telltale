@@ -54,7 +54,12 @@ var _ = Describe("capture coverage", func() {
 			names = append(names, spec.Kind)
 			Expect(traces.Validate(kinds, spec.Kind, spec.Params)).To(Succeed(), spec.Kind)
 		}
-		Expect(names).To(Equal(traces.KindNames(kinds)))
+		var recorded []string
+		for _, registration := range demoRegistrations() {
+			recorded = append(recorded, registration.Name)
+		}
+		Expect(names).To(Equal(recorded))
+		Expect(traces.KindNames(kinds)).To(ContainElements(recorded))
 	})
 	It("rejects loss reported inside a completed session summary", func() {
 		Expect(validateSessions([]sessionEvidence{{Kind: "exec", State: query.SessionCompleted, Summary: json.RawMessage(`{"source":{"dropped":1}}`)}})).To(MatchError(ContainSubstring("dropped")))

@@ -14,7 +14,6 @@ import (
 	"github.com/flanksource/clicky"
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/telltale"
-	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/traces/read"
 )
 
@@ -69,7 +68,7 @@ func exportPlayground(ctx context.Context, o options) (err error) {
 	if err != nil {
 		return err
 	}
-	for _, registration := range traces.Registrations() {
+	for _, registration := range demoRegistrations() {
 		source := sources["recording"]
 		if registration.Name == "process" {
 			source = sources["process"]

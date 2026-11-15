@@ -14,7 +14,6 @@ import (
 
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/telltale"
-	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/traces/read"
 )
 
@@ -176,7 +175,7 @@ func verifyStored(ctx context.Context, v verification) error {
 	}
 	rows := map[string][]query.Row{}
 	var kinds []string
-	for _, registration := range traces.Registrations() {
+	for _, registration := range demoRegistrations() {
 		kinds = append(kinds, registration.Name)
 		selected, err := read.Resolve(registration.Name, read.Scope{DataDir: dataDir, Run: runID})
 		if err != nil {
