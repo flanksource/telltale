@@ -155,6 +155,8 @@ public final class Diagnostics {
     for (String name : operations.keySet()) {
       Map<String, Object> spec =
           OperationSpec.named(name)
+              .description(DiagnosticSchemas.description(name))
+              .command(DiagnosticSchemas.command(name))
               .parameters(DiagnosticSchemas.parameters(name))
               .result(DiagnosticSchemas.result(name))
               .mutates(scopes.get(name).mutates())

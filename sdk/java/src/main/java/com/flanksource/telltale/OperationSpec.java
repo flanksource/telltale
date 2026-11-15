@@ -11,6 +11,7 @@ public final class OperationSpec {
   final String name;
   String title;
   String description = "";
+  String command;
   Map<String, Object> parameters = Collections.singletonMap("type", "object");
   Map<String, Object> result = Collections.emptyMap();
   boolean mutates;
@@ -34,6 +35,12 @@ public final class OperationSpec {
 
   public OperationSpec description(String value) {
     description = Objects.requireNonNull(value);
+    return this;
+  }
+
+  /** The space-separated CLI command, and API path, a built-in operation is served as. */
+  OperationSpec command(String value) {
+    command = Objects.requireNonNull(value);
     return this;
   }
 
@@ -62,6 +69,7 @@ public final class OperationSpec {
     value.put("name", name);
     value.put("title", title);
     value.put("description", description);
+    if (command != null) value.put("command", command);
     value.put("paramsSchema", parameters);
     value.put("resultSchema", result);
     value.put("mutates", mutates);

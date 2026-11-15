@@ -91,6 +91,7 @@ tasks.register('tomcatHarnessJar', com.github.jengelman.gradle.plugins.shadow.ta
 test {
     useJUnitPlatform()
     dependsOn 'war', 'exampleExtensionJar', 'tomcatHarnessJar', 'diagnosticAgentJar'
+    systemProperty 'telltale.jvm.catalog', file('../../internal/jvm/catalog.json').absolutePath
     // The diag agent attached as it is in a pod, so a test can redefine and
     // retransform a live class through the real Instrumentation: how HotSpot
     // treats those bytes is behaviour no bytecode assertion can stand in for.
@@ -99,6 +100,12 @@ test {
     } as CommandLineArgumentProvider)
 }
 sourceSets.test.java.srcDir 'examples'
+tasks.register('jvmCatalog', JavaExec) {
+    description = 'Write the built-in JVM operation catalog the Go CLI and OpenAPI are generated from'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.flanksource.telltale.CatalogExport'
+    args file('../../internal/jvm/catalog.json').absolutePath
+}
 tasks.register('extensionApiJar', Jar) {
     archiveFileName = 'telltale-extension-api.jar'
     from sourceSets.main.output

@@ -3,6 +3,64 @@ package com.flanksource.telltale;
 import java.util.*;
 
 final class DiagnosticSchemas {
+  /** A built-in operation's description and the CLI/API command it is served as. */
+  private static final Map<String, String[]> DOCS = new HashMap<>();
+
+  private static void doc(String name, String command, String description) {
+    DOCS.put(name, new String[] {command, description});
+  }
+
+  static {
+    doc("jvm.extensions.list", "jvm extensions list", "List loaded diagnostic extensions");
+    doc("jvm.extensions.install", "jvm extensions install", "Install a diagnostic extension JAR");
+    doc("jvm.extensions.replace", "jvm extensions replace", "Replace a loaded diagnostic extension with a new JAR");
+    doc("jvm.extensions.unload", "jvm extensions unload", "Unload a diagnostic extension");
+    doc("jvm.catalog", "jvm catalog", "List the operations this runtime supports");
+    doc("jvm.status", "jvm status", "Report mutation permission, instrumentation and active patches");
+    doc("jvm.jmx.search", "jvm jmx search", "Search MBean names matching an ObjectName pattern");
+    doc("jvm.jmx.info", "jvm jmx info", "Describe an MBean's attributes, operations and notifications");
+    doc("jvm.jmx.read", "jvm jmx read", "Read one MBean attribute, or all of them");
+    doc("jvm.jmx.write", "jvm jmx write", "Write an MBean attribute");
+    doc("jvm.jmx.invoke", "jvm jmx invoke", "Invoke an MBean operation");
+    doc("jvm.metrics", "jvm metrics", "Snapshot memory, GC, thread, class-loading and runtime metrics");
+    doc("jvm.threads", "jvm threads", "Sample thread states and CPU over a short interval");
+    doc("jvm.threads.dump", "jvm threads dump", "Dump every thread's stack as text");
+    doc("jvm.threads.stack", "jvm threads stack", "Read one thread's stack and lock state");
+    doc("jvm.heap.histogram", "jvm heap histogram", "List the heap's classes by retained bytes (GC.class_histogram)");
+    doc("jvm.logging.list", "jvm logging list", "List java.util.logging loggers and their levels");
+    doc("jvm.logging.set", "jvm logging set", "Set a logger's level, or inherit its parent's with null");
+    doc("jvm.classes", "jvm classes", "Page through loaded classes by name and loader");
+    doc("jvm.loaders", "jvm loaders", "List class loaders and their identities");
+    doc("jvm.groovy.eval", "jvm groovy eval", "Execute a Groovy script once in an application loader");
+    doc("jvm.ognl.eval", "jvm ognl eval", "Evaluate an OGNL expression in an application loader");
+    doc("jvm.classes.source", "jvm decompile", "Decompile a class with its descriptors and line mappings");
+    doc("jvm.classes.bytecode", "jvm decompile bytecode", "Read a class's bytecode as base64");
+    doc("jvm.classes.compile", "jvm patch compile", "Preview compiling replacement source without applying it");
+    doc("jvm.classes.patch", "jvm patch apply", "Compile and apply replacement source under a restore lease");
+    doc("jvm.classes.restore", "jvm patch restore", "Restore a class's original bytecode, or remove one probe");
+    doc("jvm.classes.lease", "jvm patch lease", "Renew or change a patched class's restore lease");
+    doc("jvm.classes.patches", "jvm patch list", "List active bytecode patches and probes");
+    doc("jvm.classes.instrument", "jvm trace instrument", "Add a method probe to a class under a restore lease");
+    doc("jvm.probes.list", "jvm trace probes", "List method probe keys");
+    doc("jvm.probes.read", "jvm trace read", "Read buffered events of a method probe");
+    doc("jvm.probes.freeze", "jvm trace freeze", "Stop a method probe from recording further events");
+    doc("jvm.notifications.list", "jvm notifications list", "List JMX notification subscriptions and their queues");
+  }
+
+  private static String[] docs(String name) {
+    String[] docs = DOCS.get(name);
+    if (docs == null) throw new IllegalStateException("operation has no command or description: " + name);
+    return docs;
+  }
+
+  static String command(String name) {
+    return docs(name)[0];
+  }
+
+  static String description(String name) {
+    return docs(name)[1];
+  }
+
   static Map<String, Object> result(String name) {
     Map<String, Object> schema = new LinkedHashMap<>();
     if (name.equals("jvm.jmx.read") || name.equals("jvm.jmx.invoke")) return schema;
@@ -120,7 +178,8 @@ final class DiagnosticSchemas {
       case "jvm.logging.set":
         field(properties, required, "name", "string");
         Map<String, Object> level = new LinkedHashMap<>();
-        level.put("type", Arrays.asList("string", "null"));
+        level.put("type", "string");
+        level.put("nullable", true);
         level.put("title", "level");
         level.put("description", "Use null to inherit the parent logger level.");
         properties.put("level", level);
@@ -175,7 +234,14 @@ final class DiagnosticSchemas {
     schema.put("type", type);
     schema.put("title", name);
     if (name.equals("source") || name.equals("expression")) schema.put("format", "textarea");
-    if (type.equals("array")) schema.put("items", Collections.emptyMap());
+    if (type.equals("array"))
+      schema.put(
+          "items",
+          name.equals("signature")
+              ? Collections.singletonMap("type", "string")
+              : Collections.emptyMap());
+    if (type.equals("object")) schema.put("additionalProperties", Collections.emptyMap());
+    if (name.equals("jar")) schema.put("format", "byte");
     properties.put(name, schema);
   }
 }
