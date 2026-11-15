@@ -27,6 +27,8 @@ var _ = Describe("styled trace records", func() {
 	examples := []example{
 		{"http", query.Row{"request": map[string]any{"method": "GET", "url": "https://example.test/orders"}, "response": map[string]any{"status": 200}, "time": 12.0}, []string{"GET", "https://example.test/orders", "200"}},
 		{"sql", query.Row{"sql": "SELECT id FROM orders", "durationMs": 1500.0, "rows": 3}, []string{"SLOW SQL", "[1500ms]", "[rows:3]", "SELECT id FROM orders"}},
+		{"http_proxy", query.Row{"request": map[string]any{"method": "POST", "url": "https://example.test/orders"}, "response": map[string]any{"status": 201}, "time": 12.0}, []string{"POST", "https://example.test/orders", "201"}},
+		{"pg_proxy", query.Row{"sql": "SELECT id FROM orders", "durationMs": 1500.0, "rows": 3}, []string{"SLOW SQL", "[1500ms]", "[rows:3]", "SELECT id FROM orders"}},
 		{"sql_xevent", query.Row{"name": "sql_statement_completed", "sql": "SELECT id FROM orders", "durationMs": 12.0, "rowCount": 3}, []string{"SELECT id FROM orders", "rows"}},
 		{"sql_plancache", query.Row{"sql": "SELECT id FROM orders", "executions": 4, "avgElapsedMs": 12.0, "database": "checkout"}, []string{"SELECT id FROM orders", "4", "checkout"}},
 		{"sql_top", query.Row{"database": "checkout", "sessionId": 41, "state": "active", "waitType": "Lock:transactionid", "elapsedMs": 1500.0, "blocked": true, "blockedBy": 40, "sql": "UPDATE orders SET paid = true"}, []string{"checkout", "#41", "Lock:transactionid", "blocked by #40", "UPDATE orders"}},
@@ -48,8 +50,8 @@ var _ = Describe("styled trace records", func() {
 		{"process_facets", query.Row{"process": "123@started", "facet": "files", "operation": "open", "entity": "/orders.db"}, []string{"123@started", "files", "open", "/orders.db"}},
 	}
 
-	for _,kind:=range []string{"goprof","jvm_jfr","process","prometheus","query","sql_plancache","sql_top","stacks"} {
-		examples=append(examples,example{kind:kind+"_frames",row:query.Row{"source":"worker","completedAt":"2026-11-11T10:00:00Z","retained":1,"observed":2},contains:[]string{"worker","1/2 rows"}})
+	for _, kind := range []string{"goprof", "jvm_jfr", "process", "prometheus", "query", "sql_plancache", "sql_top", "stacks"} {
+		examples = append(examples, example{kind: kind + "_frames", row: query.Row{"source": "worker", "completedAt": "2026-11-11T10:00:00Z", "retained": 1, "observed": 2}, contains: []string{"worker", "1/2 rows"}})
 	}
 	DescribeTableSubtree("presents native fields with a typed formatter", func(e example) {
 		It("keeps meaningful content and semantic styles", func() {

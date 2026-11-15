@@ -15,9 +15,17 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing/terminal"
 )
 
+// The environment variables the `http` and `sql` proxies, and their
+// http_proxy and pg_proxy presets, hand a command.
+var (
+	httpExports = []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy", "SSL_CERT_FILE", "CURL_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE", "GIT_SSL_CAINFO", "AWS_CA_BUNDLE"}
+	sqlExports  = []string{"DATABASE_URL", "GAVEL_DB_DSN", "PGHOST", "PGPORT", "PGSSLMODE"}
+)
+
 // The builtin kinds, registered before any command or run reads the catalog.
 // The `http` and `sql` kinds default to telltale's own traffic:
-// its HTTP feature and its own database. goprof reads gops agents, at the
+// its HTTP feature and its own database; their http_proxy and pg_proxy
+// presets arm them only on their proxy seam. goprof reads gops agents, at the
 // address their port files give.
 func init() {
 	for _, registration := range []Registration{
@@ -72,7 +80,7 @@ func init() {
 			Name: "http", Title: "HTTP", Seams: []target.Seam{target.Self, target.Agent, target.Proxy}, DefaultSeam: target.Self, Armable: true,
 			Summary:     "Record HTTP exchanges from an agent or a local proxy",
 			Description: "Observes instrumented HTTP in telltale or an agent, or routes a command through a recording proxy.",
-			Exports:     []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy", "SSL_CERT_FILE", "CURL_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE", "GIT_SSL_CAINFO", "AWS_CA_BUNDLE"},
+			Exports:     httpExports,
 			Examples:    []Example{{Args: "--features http -- true", Says: "record telltale HTTP"}, {Args: "--seam proxy --mode mitm -- curl -sS https://example.com", Says: "record a command through the proxy"}},
 			New:         func(KindDeps) tracing.TracePlugin { return httpproxy.UnifiedKind(nil) },
 		},
@@ -80,9 +88,25 @@ func init() {
 			Name: tracesql.RowKind, Title: "SQL", Seams: []target.Seam{target.Self, target.Agent, target.Proxy}, DefaultSeam: target.Self, Armable: true,
 			Summary:     "Record SQL statements from an agent or a local Postgres proxy",
 			Description: "Observes instrumented connections in telltale or an agent, or routes a command through a Postgres proxy.",
-			Exports:     []string{"DATABASE_URL", "GAVEL_DB_DSN", "PGHOST", "PGPORT", "PGSSLMODE"},
+			Exports:     sqlExports,
 			Examples:    []Example{{Args: "--connections self -- true", Says: "record telltale's database statements"}, {Args: "--seam proxy --dsn postgres://app@localhost:5432/orders -- ./migrate up", Says: "record a command through the Postgres proxy"}},
 			New:         func(KindDeps) tracing.TracePlugin { return pgproxy.UnifiedKind(nil) },
+		},
+		{
+			Name: httpproxy.ProxyKind, Base: httpproxy.Kind, Title: "HTTP proxy", Seams: []target.Seam{target.Proxy}, DefaultSeam: target.Proxy, Armable: true,
+			Summary:     "Record a command's HTTP exchanges through a local recording proxy",
+			Description: "The http kind armed only on its proxy seam: routes a command through a recording proxy and records its exchanges as http does.",
+			Exports:     httpExports,
+			Examples:    []Example{{Args: "-- curl -sS http://example.com", Says: "record a command through the proxy"}, {Args: "--mode mitm -- curl -sS https://example.com", Says: "decrypt and record a command's HTTPS"}},
+			New:         func(KindDeps) tracing.TracePlugin { return httpproxy.UnifiedKind(nil).Preset(httpproxy.ProxyPreset()) },
+		},
+		{
+			Name: pgproxy.ProxyKind, Base: tracesql.RowKind, Title: "Postgres proxy", Seams: []target.Seam{target.Proxy}, DefaultSeam: target.Proxy, Armable: true,
+			Summary:     "Record a command's SQL statements through a local Postgres proxy",
+			Description: "The sql kind armed only on its proxy seam: routes a command through a Postgres proxy and records its statements as sql does.",
+			Exports:     sqlExports,
+			Examples:    []Example{{Args: "--dsn postgres://app@localhost:5432/orders -- ./migrate up", Says: "record a command through the Postgres proxy"}},
+			New:         func(KindDeps) tracing.TracePlugin { return pgproxy.UnifiedKind(nil).Preset(pgproxy.ProxyPreset()) },
 		},
 		{
 			Name: terminal.Kind, Title: "Terminal", Seams: []target.Seam{target.Self}, DefaultSeam: target.Self,

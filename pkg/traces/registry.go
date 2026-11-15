@@ -55,6 +55,9 @@ type Registration struct {
 	Description string
 	Seams       []target.Seam
 	DefaultSeam target.Seam
+	// Base names the kind a seam preset (tracing.Handler.Preset) arms on its
+	// one seam; empty for a kind of its own.
+	Base string
 	// Exports are the environment variables a capture hands the command.
 	Exports  []string
 	Examples []Example
@@ -86,6 +89,9 @@ func (r Registration) validate() error {
 	}
 	if !slices.Contains(r.Seams, r.DefaultSeam) {
 		errs = append(errs, fmt.Errorf("default seam %q must be among supported seams %v", r.DefaultSeam, r.Seams))
+	}
+	if r.Base != "" && len(r.Seams) != 1 {
+		errs = append(errs, fmt.Errorf("a preset of %q arms exactly one seam, not %v", r.Base, r.Seams))
 	}
 	if strings.TrimSpace(r.Title) == "" || strings.TrimSpace(r.Summary) == "" {
 		errs = append(errs, errors.New("a title and a summary are required"))
