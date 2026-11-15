@@ -138,7 +138,7 @@ var _ = Describe("process trace", func() {
 
 		Eventually(func() map[string]map[string]any { return byCommand(store.records(trace.Refs().Tree)) }).WithTimeout(5 * time.Second).
 			Should(HaveKeyWithValue("sleep 30", HaveKeyWithValue("environment", HaveKeyWithValue("TELLTALE_TRACE_PROBE", "1"))))
-		Eventually(func() []map[string]any { return store.records(trace.Refs().Samples) }).WithTimeout(5*time.Second).
+		Eventually(func() []map[string]any { return store.records(trace.Refs().Samples) }).WithTimeout(5 * time.Second).
 			Should(ContainElement(And(HaveKeyWithValue("openFiles", BeNumerically(">", 0)), HaveKeyWithValue("receivingSockets", Not(BeNil())), HaveKeyWithValue("connectionsUnknown", Not(BeNil())))))
 		Expect(store.records(trace.Refs().Samples)).To(HaveEach(Not(HaveKey("openFileList"))))
 		Expect(store.records(trace.Refs().Facets)).To(ContainElement(And(HaveKeyWithValue("facet", "files"), HaveKeyWithValue("operation", "added"), HaveKey("resource"))))
@@ -163,7 +163,7 @@ var _ = Describe("process trace", func() {
 		trace := startTrace(host, traces.ProcessTraceOptions{RootPID: os.Getpid()})
 		store := serveHost(host)
 
-		Expect(store.post("/api/v1/sessions/"+trace.Sessions().Stacks+"/checkpoint", `{"transport": "inprocess", "reason": "manual"}`)).To(Equal(http.StatusNoContent))
+		Expect(store.post("/api/v1/sessions/"+trace.Sessions().Stacks+"/checkpoint", `{"transport": "inprocess", "reason": "manual"}`)).To(Equal(http.StatusOK))
 		Expect(store.records(trace.Refs().Stacks)).To(ContainElement(And(
 			HaveKeyWithValue("pid", BeEquivalentTo(os.Getpid())),
 			HaveKeyWithValue("transport", stacks.TransportInProcess),

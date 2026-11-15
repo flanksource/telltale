@@ -97,7 +97,7 @@ type ReopenOptions struct {
 const reopenedRetention = time.Hour
 
 // Reopen serves the store a closed host left in options.Dir, with the close
-// that stops using it. It runs no capture, so a checkpoint is a conflict. A
+// that stops using it. It runs no capture, so its registry is empty and a checkpoint is not found. A
 // store that is gone is os.ErrNotExist; one that is there but does not open is
 // an error.
 func Reopen(options ReopenOptions) (http.Handler, func() error, error) {
