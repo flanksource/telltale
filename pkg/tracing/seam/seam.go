@@ -72,6 +72,17 @@ func (s AgentSeam[P, R]) Available(probe string, selection target.Target) (bool,
 		if agent != nil && agent.HasProbe(probe) {
 			return true, nil
 		}
+		// A resolver connects a remote agent, such as a deployed target over
+		// a port-forward, which takes longer than finding a local socket.
+		resolveCtx, cancelResolve := context.WithTimeout(context.Background(), time.Minute)
+		defer cancelResolve()
+		if claimed, err := registry.Resolve(resolveCtx, selection.Agent); claimed {
+			if err != nil {
+				return false, err
+			}
+			agent := registry.ByID(selection.Agent)
+			return agent != nil && agent.HasProbe(probe), nil
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

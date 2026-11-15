@@ -73,6 +73,7 @@ func routes(options HandlerOptions, ui http.Handler) (http.Handler, error) {
 	rpc.NewSwaggerServer(&rpc.ServeConfig{Version: options.Version, Executor: &rpc.ExecutorConfig{Enabled: true}}, options.Root, nil).
 		RegisterExecutionRoutes(route.NewRouter(installer))
 	root.Handle("/api/v1/agents/install/java", http.NewCrossOriginProtection().Handler(installer))
+	root.Handle("/api/v1/jvm/", http.NewCrossOriginProtection().Handler(installer))
 	hub := agentclient.NewHub(agentclient.Default, agentclient.NewTokenStore(options.ConfigDirs))
 	root.HandleFunc("/api/agents", hub.List)
 	root.HandleFunc("GET /api/agents/{agent}/catalog", jvmHandler)
