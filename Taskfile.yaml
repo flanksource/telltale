@@ -22,9 +22,10 @@ tasks:
       - pnpm --filter @flanksource/telltale-webapp build{{if .LOCAL_UI}} --mode local-ui{{end}}
 
   generate:
-    desc: Write the TraceDefinition CRD reflected from pkg/definition to crds/
+    desc: Write the TraceDefinition CRD reflected from pkg/definition to crds/ and the JVM operation catalog to internal/jvm
     cmds:
       - go run ./hack/crd
+      - ./sdk/java/gradlew -p sdk/java jvmCatalog
 
   binary:
     desc: Compile the binary with existing embedded assets

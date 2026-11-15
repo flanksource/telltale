@@ -63,8 +63,37 @@ func bindJSONParam(flags *pflag.FlagSet, schema *rpc.OpenAPISchema, name string)
 		}
 		initial = string(raw)
 	}
-	value := flags.String(name, initial, paramUsage(schema)+" (JSON "+schema.Type+")")
+	value := flags.String(name, initial, paramUsage(schema)+" (JSON "+describeJSON(schema)+")")
 	return func() any { return *value }, nil
+}
+
+// anyJSON is a param whose values the schema leaves open: an untyped value,
+// or a list of them.
+func anyJSON(schema *rpc.OpenAPISchema) bool {
+	return schema.Type == "" || (schema.Type == "array" && (schema.Items == nil || schema.Items.Type == ""))
+}
+
+func describeJSON(schema *rpc.OpenAPISchema) string {
+	if schema.Type == "" {
+		return "value"
+	}
+	return schema.Type
+}
+
+func readJSONValue(raw, flag string, list bool) (any, error) {
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return nil, fmt.Errorf("--%s: expected JSON: %w", flag, err)
+	}
+	if decoder.More() {
+		return nil, fmt.Errorf("--%s: expected one JSON value", flag)
+	}
+	if _, ok := value.([]any); list && !ok {
+		return nil, fmt.Errorf("--%s: expected a JSON array", flag)
+	}
+	return value, nil
 }
 
 func readJSONParam(raw, flag string) (map[string]json.RawMessage, error) {

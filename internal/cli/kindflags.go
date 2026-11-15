@@ -135,7 +135,7 @@ func bindParam(flags *pflag.FlagSet, schema *rpc.OpenAPISchema, path []string) (
 	if err := json.Unmarshal(encoded, &metadata); err != nil {
 		return paramFlag{}, err
 	}
-	if schema.Type == "object" || (schema.Type == "array" && schema.Items != nil && schema.Items.Type == "object") {
+	if schema.Type == "object" || anyJSON(schema) || (schema.Type == "array" && schema.Items != nil && schema.Items.Type == "object") {
 		for key := range metadata {
 			if key != "title" && key != "description" && !strings.HasPrefix(key, "x-") {
 				delete(metadata, key)
@@ -171,6 +171,8 @@ func bindParamValue(flags *pflag.FlagSet, schema *rpc.OpenAPISchema, name string
 	case schema.Type == "object" && schema.AdditionalProperties != nil && schema.AdditionalProperties.Type == "string":
 		return bindMapParam(flags, schema, name)
 	case schema.Type == "object" && (schema.AdditionalProperties != nil || schema.Format == "json"):
+		return bindJSONParam(flags, schema, name)
+	case anyJSON(schema):
 		return bindJSONParam(flags, schema, name)
 	default:
 		return nil, fmt.Errorf("a %s param cannot be a flag", describeType(schema))
@@ -309,6 +311,12 @@ func (p paramFlag) read() (any, error) {
 			return nil, fmt.Errorf("--%s: expected a JSON array of objects", p.flag.Name)
 		}
 		return rows, nil
+	}
+	if anyJSON(p.schema) {
+		return readJSONValue(value.(string), p.flag.Name, p.schema.Type == "array")
+	}
+	if p.schema.Type == "string" && p.schema.Nullable && value == "" {
+		return nil, nil
 	}
 	if p.schema.Type == "object" && (p.schema.AdditionalProperties != nil || p.schema.Format == "json") {
 		if p.schema.AdditionalProperties != nil && p.schema.AdditionalProperties.Type == "string" {

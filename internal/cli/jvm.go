@@ -2,137 +2,176 @@ package cli
 
 import (
 	"encoding/json"
+	"fmt"
+	"os"
+
+	"github.com/flanksource/clicky/rpc"
 	"github.com/flanksource/telltale/internal/jvm"
+	"github.com/flanksource/telltale/pkg/agentclient"
 	jvmops "github.com/flanksource/telltale/pkg/tracing/jvm"
 	"github.com/spf13/cobra"
-	"os"
+	"github.com/spf13/pflag"
 )
 
+// newJVMCommand is `jvm` with `call`, for operations only the live catalog
+// knows, such as extension operations. The registry's operations and the
+// kinds' JVM presets are placed under it by addJVMOperations and
+// addKindCommands.
 func newJVMCommand() *cobra.Command {
 	root := &cobra.Command{Use: "jvm", Short: "Inspect and operate a connected Java runtime"}
-	for _, action := range []string{"catalog", "call"} {
-		var request jvm.Request
-		var params string
-		var paramsFile string
-		command := &cobra.Command{Use: action, Short: "Read the live catalog or invoke a JVM operation", Args: cobra.NoArgs}
-		command.RunE = func(cmd *cobra.Command, _ []string) error {
-			if paramsFile != "" {
-				data, err := os.ReadFile(paramsFile)
-				if err != nil {
-					return err
-				}
-				params = string(data)
-			}
-			request.Params = json.RawMessage(params)
-			if cmd.Name() == "catalog" {
-				request.Operation = "jvm.catalog"
-			}
-			value, err := jvm.Call(cmd.Context(), request)
-			if err != nil {
-				return err
-			}
-			return json.NewEncoder(cmd.OutOrStdout()).Encode(value)
-		}
-		command.Flags().StringVar(&request.Agent, "agent", "", "Connected Java agent ID")
-		command.Flags().StringVar(&request.Operation, "operation", "", "Operation from the live catalog")
-		command.Flags().StringVar(&params, "params", "{}", "JSON operation parameters")
-		command.Flags().StringVar(&paramsFile, "params-file", "", "Read JSON operation parameters from a file")
-		command.MarkFlagsMutuallyExclusive("params", "params-file")
-		command.Flags().BoolVar(&request.AllowMutation, "allow-mutation", false, "Allow this call to change the runtime")
-		root.AddCommand(command)
-	}
-	root.AddCommand(newJVMScriptCommand(), newJVMExtensionsCommand(), newJVMHeapHistogramCommand())
+	root.AddCommand(newJVMCallCommand(), newJVMDeployCommand(), newJVMDeployersCommand())
+	setDeployerResolver(agentclient.Default)
 	return root
 }
 
-func newJVMHeapHistogramCommand() *cobra.Command {
-	var request jvm.Request
-	var params jvmops.HeapHistogramParams
-	command := &cobra.Command{Use: "heap-histogram", Short: "List the heap's classes by retained bytes (GC.class_histogram)", Args: cobra.NoArgs}
-	command.Flags().StringVar(&request.Agent, "agent", "", "Connected Java agent ID")
-	command.Flags().IntVar(&params.Top, "top", 0, "Rows to return, largest first (0 for the agent's default of 100)")
-	command.Flags().StringVar(&params.ClassPattern, "class-pattern", "", "Glob over class names, such as com.example.*")
-	command.Flags().BoolVar(&params.Live, "live", false, "Count only reachable objects; forces a full GC on the JVM first")
-	command.RunE = func(cmd *cobra.Command, _ []string) error {
-		if err := params.Validate(); err != nil {
-			return err
+// addJVMOperations places every built-in operation of the Java registry at
+// the command it declares, such as jvm.classes.patch at `jvm patch apply`.
+func addJVMOperations(root *cobra.Command) {
+	for _, operation := range jvm.Operations() {
+		command := commandAt(root, operation.Command)
+		if command.RunE != nil {
+			panic(fmt.Sprintf("JVM operation %s is declared as the %q command, which already runs", operation.Name, command.CommandPath()))
 		}
-		var err error
-		if request.Params, err = json.Marshal(params); err != nil {
-			return err
+		bindJVMOperation(command, operation)
+	}
+}
+
+// commandAt is the command at path below root, creating the groups and the
+// command that do not exist yet.
+func commandAt(root *cobra.Command, path []string) *cobra.Command {
+	command := root
+	for _, name := range path {
+		var next *cobra.Command
+		for _, child := range command.Commands() {
+			if child.Name() == name {
+				next = child
+			}
 		}
-		request.Operation = jvmops.HeapHistogramOp
-		value, err := jvm.Call(cmd.Context(), request)
-		if err != nil {
-			return err
+		if next == nil {
+			next = &cobra.Command{Use: name, Short: name + " commands", Args: cobra.NoArgs}
+			command.AddCommand(next)
 		}
-		histogram, err := jvmops.DecodeHeapHistogram(value)
-		if err != nil {
-			return err
-		}
-		return printRecords(cmd, histogram)
+		command = next
 	}
 	return command
 }
 
-func newJVMScriptCommand() *cobra.Command {
-	var request jvm.Request
-	var options jvm.ScriptOptions
-	command := &cobra.Command{Use: "groovy", Short: "Execute a Groovy script once in a selected application loader", Args: cobra.NoArgs}
-	command.Flags().StringVar(&request.Agent, "agent", "", "Connected Java agent ID")
-	command.Flags().BoolVar(&request.AllowMutation, "allow-mutation", false, "Allow script execution")
-	command.Flags().StringVar(&options.Source, "source", "", "Inline Groovy source")
-	command.Flags().StringVar(&options.File, "file", "", "Groovy source file")
-	command.Flags().StringVar(&options.Args, "args", "{}", "JSON object exposed as args")
-	command.Flags().StringVar(&options.Loader, "loader", "", "Application loader hash from jvm.loaders")
-	command.Flags().IntVar(&options.TimeoutSeconds, "timeout", 30, "Cooperative execution deadline in seconds")
-	command.MarkFlagsMutuallyExclusive("source", "file")
-	command.RunE = func(cmd *cobra.Command, _ []string) error {
-		params, err := jvm.ScriptParameters(options)
+func bindJVMOperation(cmd *cobra.Command, operation jvm.Operation) {
+	request := jvm.Request{Operation: operation.Name}
+	cmd.Short = operation.Description
+	cmd.Long = operation.Description + "\n\nRuns the " + operation.Name + " operation."
+	cmd.Flags().StringVar(&request.Agent, "agent", "", "Connected Java agent ID")
+	if err := cmd.MarkFlagRequired("agent"); err != nil {
+		panic(err)
+	}
+	if operation.Mutates {
+		cmd.Long += " It changes the runtime, so it needs --allow-mutation and an agent installed with mutations allowed."
+		cmd.Flags().BoolVar(&request.AllowMutation, "allow-mutation", false, "Allow this call to change the runtime")
+	}
+	params, err := bindParamFlags(cmd.Flags(), operation.Params)
+	if err != nil {
+		panic(fmt.Sprintf("JVM operation %s: %v", operation.Name, err))
+	}
+	files := bindParamFiles(cmd, params)
+	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		for _, file := range files {
+			if err := file.load(cmd); err != nil {
+				return err
+			}
+		}
+		var err error
+		if request.Params, err = params.params(); err != nil {
+			return err
+		}
+		value, err := callJVM(cmd.Context(), request)
 		if err != nil {
 			return err
 		}
-		request.Operation = "jvm.groovy.eval"
-		request.Params = params
+		if decode, ok := jvmResults[operation.Name]; ok {
+			typed, err := decode(value)
+			if err != nil {
+				return err
+			}
+			return printRecords(cmd, typed)
+		}
+		return json.NewEncoder(cmd.OutOrStdout()).Encode(value)
+	}
+}
+
+// callJVM sends a typed command's request to its agent; internal tests
+// replace it to read the request a command assembles.
+var callJVM = jvm.Call
+
+// jvmResults decode the results that have a typed Go model, so they print as
+// records in any output format instead of raw JSON.
+var jvmResults = map[string]func(json.RawMessage) (any, error){
+	jvmops.HeapHistogramOp: func(raw json.RawMessage) (any, error) { return jvmops.DecodeHeapHistogram(raw) },
+}
+
+// paramFile is a --<param>-file flag that fills a source or binary string
+// param from a local file: text for a textarea, base64 for a byte string.
+type paramFile struct {
+	flag   *pflag.Flag
+	param  *pflag.Flag
+	base64 bool
+}
+
+func bindParamFiles(cmd *cobra.Command, params paramFlags) []paramFile {
+	var files []paramFile
+	for _, param := range params.bound {
+		if param.schema.Type != "string" || (param.schema.Format != "byte" && param.schema.Format != "textarea") {
+			continue
+		}
+		name := param.flag.Name + "-file"
+		cmd.Flags().String(name, "", "Read --"+param.flag.Name+" from this local file")
+		cmd.MarkFlagsMutuallyExclusive(param.flag.Name, name)
+		if _, required := param.flag.Annotations[cobra.BashCompOneRequiredFlag]; required {
+			delete(param.flag.Annotations, cobra.BashCompOneRequiredFlag)
+			cmd.MarkFlagsOneRequired(param.flag.Name, name)
+		}
+		files = append(files, paramFile{flag: cmd.Flags().Lookup(name), param: param.flag, base64: param.schema.Format == "byte"})
+	}
+	return files
+}
+
+func (f paramFile) load(cmd *cobra.Command) error {
+	if !f.flag.Changed {
+		return nil
+	}
+	if _, remote := rpc.RequestFromContext(cmd.Context()); remote {
+		return fmt.Errorf("--%s reads a file on the machine running the command; send %s in the request instead", f.flag.Name, f.param.Name)
+	}
+	content, err := jvm.ReadParamFile(f.flag.Value.String(), f.base64)
+	if err != nil {
+		return fmt.Errorf("--%s: %w", f.flag.Name, err)
+	}
+	return cmd.Flags().Set(f.param.Name, content)
+}
+
+func newJVMCallCommand() *cobra.Command {
+	var request jvm.Request
+	var params, paramsFile string
+	command := &cobra.Command{Use: "call", Short: "Invoke any operation from the live catalog, including extension operations", Args: cobra.NoArgs}
+	command.RunE = func(cmd *cobra.Command, _ []string) error {
+		if paramsFile != "" {
+			data, err := os.ReadFile(paramsFile)
+			if err != nil {
+				return err
+			}
+			params = string(data)
+		}
+		request.Params = json.RawMessage(params)
 		value, err := jvm.Call(cmd.Context(), request)
 		if err != nil {
 			return err
 		}
 		return json.NewEncoder(cmd.OutOrStdout()).Encode(value)
 	}
+	command.Flags().StringVar(&request.Agent, "agent", "", "Connected Java agent ID")
+	command.Flags().StringVar(&request.Operation, "operation", "", "Operation from the live catalog")
+	command.Flags().StringVar(&params, "params", "{}", "JSON operation parameters")
+	command.Flags().StringVar(&paramsFile, "params-file", "", "Read JSON operation parameters from a file")
+	command.MarkFlagsMutuallyExclusive("params", "params-file")
+	command.Flags().BoolVar(&request.AllowMutation, "allow-mutation", false, "Allow this call to change the runtime")
 	return command
-}
-
-func newJVMExtensionsCommand() *cobra.Command {
-	root := &cobra.Command{Use: "extensions", Short: "List, install, replace or unload diagnostic extensions"}
-	for _, action := range []string{"list", "install", "replace", "unload"} {
-		var request jvm.Request
-		command := &cobra.Command{Use: action, Short: action + " diagnostic extensions", Args: cobra.NoArgs}
-		if action != "list" {
-			command.Use += " <jar-or-id>"
-			command.Args = cobra.ExactArgs(1)
-		}
-		command.Flags().StringVar(&request.Agent, "agent", "", "Connected Java agent ID")
-		command.Flags().BoolVar(&request.AllowMutation, "allow-mutation", false, "Allow this extension change")
-		command.RunE = func(cmd *cobra.Command, args []string) error {
-			request.Operation = "jvm.extensions." + cmd.Name()
-			var err error
-			switch cmd.Name() {
-			case "install", "replace":
-				request.Params, err = jvm.ExtensionParameters(args[0])
-			case "unload":
-				request.Params, err = json.Marshal(map[string]string{"id": args[0]})
-			}
-			if err != nil {
-				return err
-			}
-			value, err := jvm.Call(cmd.Context(), request)
-			if err != nil {
-				return err
-			}
-			return json.NewEncoder(cmd.OutOrStdout()).Encode(value)
-		}
-		root.AddCommand(command)
-	}
-	return root
 }

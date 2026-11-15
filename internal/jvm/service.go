@@ -31,8 +31,14 @@ func Call(ctx context.Context, request Request) (json.RawMessage, error) {
 	}
 	agent := agentclient.Default.ByID(request.Agent)
 	if agent == nil {
-		if err := agentclient.Default.Discover(ctx, ""); err != nil {
+		claimed, err := agentclient.Default.Resolve(ctx, request.Agent)
+		if err != nil {
 			return nil, err
+		}
+		if !claimed {
+			if err := agentclient.Default.Discover(ctx, ""); err != nil {
+				return nil, err
+			}
 		}
 		agent = agentclient.Default.ByID(request.Agent)
 	}

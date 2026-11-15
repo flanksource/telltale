@@ -11,8 +11,8 @@ Substitute a disposable application's PID and absolute target-host directories:
 ```bash
 telltale agents install java --pid 1234 --directory /home/example/telltale/agent --service orders --allow-mutation --extensions-dir /home/example/telltale/extensions
 telltale jvm catalog --agent 1234
-telltale jvm call --agent 1234 --operation jvm.jmx.search --params '{"pattern":"java.lang:*"}'
-telltale jvm call --agent 1234 --operation jvm.loaders
+telltale jvm jmx search --agent 1234 --pattern 'java.lang:*'
+telltale jvm loaders --agent 1234
 ```
 
 The installer also supports Kubernetes and SSH; `--hub-url` and `--token-file` connect the remote agent to Telltale. Local agents use PID identities; hub IDs come from `/api/agents`. Read-only inspection works by default. Writes, invocations, scripts, logging/bytecode changes and extension changes require both installation-time and per-call `--allow-mutation`. Operations affect the whole JVM, including other applications sharing a container.
@@ -25,7 +25,37 @@ Dedicated pages at `/jvm/{agent}/instrument`, `/jvm/{agent}/traces` and `/jvm/{a
 
 Traces keeps an agent-specific catalog beside runtime probe inspection. Notifications keeps the recording form, durable history, event stream and subscriber queue/drop counts together. The Records tab reuses the existing query browser, including the method call tree for JVM traces. Run responses and saved manifests carry each capture's target. Selector-based captures and older recordings without a target remain available through All runs instead of being attributed to a JVM by guesswork.
 
-Operation families include `jvm.jmx.*`, `jvm.metrics`, `jvm.threads*`, `jvm.logging.*`, `jvm.classes*`, `jvm.loaders`, `jvm.probes.*`, `jvm.ognl.eval`, `jvm.groovy.eval` and `jvm.extensions.*`. Use the live catalog for parameters. `jvm.classes.source` returns source, descriptors and line mappings. `jvm.classes.bytecode` returns base64 class bytes. `jvm.classes.compile` previews compilation without applying bytecode. `jvm.heap.histogram` (`telltale jvm heap-histogram`) returns the heap's classes by retained bytes from `GC.class_histogram`: `top` rows (default 100), `classPattern` as a glob over class names, and `live` to count only reachable objects, which forces a full GC first.
+Operation families include `jvm.jmx.*`, `jvm.metrics`, `jvm.threads*`, `jvm.logging.*`, `jvm.classes*`, `jvm.loaders`, `jvm.probes.*`, `jvm.ognl.eval`, `jvm.groovy.eval`, `jvm.heap.histogram` and `jvm.extensions.*`. `jvm.heap.histogram` (`telltale jvm heap histogram`) returns the heap's classes by retained bytes from `GC.class_histogram`: `top` rows (default 100), `classPattern` as a glob over class names, and `live` to count only reachable objects, which forces a full GC first.
+
+Every built-in operation is a typed command, grouped by task:
+
+| Command | Serves |
+| --- | --- |
+| `jvm decompile`, `jvm decompile bytecode` | `jvm.classes.source`, `jvm.classes.bytecode` |
+| `jvm patch compile` / `apply` / `lease` / `restore` / `list` | `jvm.classes.compile` / `patch` / `lease` / `restore` / `patches` |
+| `jvm watch` | a `jvm_trace` capture of arguments, return values and exceptions, without nested calls |
+| `jvm trace` | a `jvm_trace` capture with nested calls and timings |
+| `jvm trace instrument` / `probes` / `read` / `freeze` | `jvm.classes.instrument`, `jvm.probes.list` / `read` / `freeze` |
+| `jvm profiler` | a `jvm_jfr` capture on the agent seam |
+| `jvm classes`, `jvm loaders`, `jvm jmx …`, `jvm threads …`, `jvm heap histogram`, `jvm metrics`, `jvm logging …`, `jvm ognl eval`, `jvm groovy eval`, `jvm extensions …`, `jvm notifications list`, `jvm status`, `jvm catalog` | the operation of the same name |
+
+```bash
+telltale jvm decompile --agent 1234 --class example.Worker
+telltale jvm patch compile --agent 1234 --class example.Worker --source-file Worker.java
+telltale jvm patch apply --agent 1234 --allow-mutation --class example.Worker --source-file Worker.java --lease-seconds 300
+telltale jvm patch list --agent 1234
+telltale jvm patch restore --agent 1234 --allow-mutation --class example.Worker
+telltale jvm watch --agent 1234 --allow-mutation --duration 10s --targets '[{"class":"example.Worker","method":"compute"}]'
+telltale jvm trace --agent 1234 --allow-mutation --duration 10s --targets '[{"class":"example.Worker","method":"compute"}]'
+telltale jvm profiler --agent 1234 --engine async-profiler --duration 30s
+telltale jvm heap histogram --agent 1234 --top 20 --class-pattern 'com.example.*'
+```
+
+`watch`, `trace` and `profiler` are the `jvm_trace` and `jvm_jfr` kinds with preset defaults. They record under the base kind, so the existing views read them. They take every flag of `telltale run jvm_trace|jvm_jfr`, which remain the generic forms, and their flags override the presets (`jvm trace --calls=false`). OpenAPI documents their typed inputs. Over HTTP, start the same capture with `POST /api/traces`, which records into the server's own data dir. Each capture goes under `traces` by kind, with `"enabled": true`; on the agent seam no `pid` or command is needed. For example: `{"duration":"10s","traces":{"jvm_trace":{"enabled":true,"target":{"seam":"agent","agent":"1234","allowMutation":true},"targets":[{"class":"example.Worker","method":"compute"}],"calls":true}}}`.
+
+Each parameter is a flag (`objectName` is `--object-name`). Open-ended values such as `jvm.jmx.write`'s `--value` or `jvm.jmx.invoke`'s `--args` take JSON. An empty `--level` for `jvm.logging.set` sends `null`, which inherits the parent's level. Source parameters also accept `--source-file`, and `jvm.extensions.install`/`replace` take `--jar-file`. These file flags read the local filesystem, so a request that arrives over HTTP must send the content inline. Mutating operations add `--allow-mutation`. The same commands appear in `/api/openapi.json` under `/api/v1/jvm/…` with typed inputs. `jvm call --operation <name> --params '{…}'` remains for operations only the live catalog knows, such as extension operations.
+
+The commands come from the definitions. Each operation declares its command in `DiagnosticSchemas`, and each kind preset is a `Commands` entry on the kind's `traces.Registration`. Go reads operations from `internal/jvm/catalog.json`, a snapshot of the Java registry's `Diagnostics.catalog()`. After changing an operation, its command or its schema in `Diagnostics`/`DiagnosticSchemas`, regenerate the snapshot with `task generate`, or with `./sdk/java/gradlew -p sdk/java jvmCatalog`. `CatalogSnapshotTest` fails while the snapshot is stale. `jvm.classes.source` returns source, descriptors and line mappings. `jvm.classes.bytecode` returns base64 class bytes. `jvm.classes.compile` previews compilation without applying bytecode.
 
 Instrumented classes are armed by retransformation through a retransform-capable transformer, so a later retransformation of the class by another agent (an APM agent, Arthas) or by a bytecode read re-applies every probe still armed on it instead of dropping them.
 
@@ -40,7 +70,7 @@ Captures share the existing run API, definitions, checkpoints and record stores:
 | `jvm_ognl` | Periodic expression samples | `expression`, optional `loader`, `intervalMs` (default 1,000, minimum 100) |
 
 ```bash
-telltale run jvm_trace --agent 1234 --allow-mutation --duration 10s --targets '[{"class":"example.Worker","method":"compute"}]' --args --return --calls
+telltale jvm trace --agent 1234 --allow-mutation --duration 10s --targets '[{"class":"example.Worker","method":"compute"}]'
 telltale run jvm_notifications --agent 1234 --duration 10s --mbean 'java.lang:type=GarbageCollector,*'
 telltale run jvm_ognl --agent 1234 --allow-mutation --duration 5s --expression '@java.lang.Runtime@getRuntime().freeMemory()'
 ```
@@ -50,8 +80,8 @@ Method captures stream events and restore bytecode on stop, deadline, disconnect
 ## One-shot Groovy
 
 ```bash
-telltale jvm groovy --agent 1234 --allow-mutation --source 'println args.name; return 3 + 4' --args '{"name":"example"}'
-telltale jvm groovy --agent 1234 --allow-mutation --file sdk/java/examples/inspect.groovy --args '{"name":"orders"}' --timeout 30
+telltale jvm groovy eval --agent 1234 --allow-mutation --source 'println args.name; return 3 + 4' --args '{"name":"example"}'
+telltale jvm groovy eval --agent 1234 --allow-mutation --source-file sdk/java/examples/inspect.groovy --args '{"name":"orders"}' --timeout-seconds 30
 ```
 
 `--loader` selects an application loader hash from `jvm.loaders`; omitting it selects the system loader. Bindings are `args` (JSON object), `application` (selected loader), `jmx`, `extensions`, `out` and `err`. Every execution isolates and closes its Groovy loader. Scalars return as `value`; other results use bounded object graphs. Standard output/error each have a 1 MiB limit. Errors propagate to the caller. Deadlines and cancellation are cooperative and cannot forcibly stop blocking application methods. Scripts and extensions are trusted operator code, not a sandbox.
@@ -59,11 +89,11 @@ telltale jvm groovy --agent 1234 --allow-mutation --file sdk/java/examples/inspe
 ## Hot extensions
 
 ```bash
-telltale jvm extensions install sdk/java/build/libs/telltale-example-extension.jar --agent 1234 --allow-mutation
+telltale jvm extensions install --jar-file sdk/java/build/libs/telltale-example-extension.jar --agent 1234 --allow-mutation
 telltale jvm call --agent 1234 --operation extension.example.greet --params '{"name":"operator"}'
-telltale jvm extensions replace sdk/java/build/libs/telltale-example-extension.jar --agent 1234 --allow-mutation
+telltale jvm extensions replace --jar-file sdk/java/build/libs/telltale-example-extension.jar --agent 1234 --allow-mutation
 telltale jvm extensions list --agent 1234
-telltale jvm extensions unload example --agent 1234 --allow-mutation
+telltale jvm extensions unload --id example --agent 1234 --allow-mutation
 ```
 
 Each JAR has exactly one `DiagnosticExtension` provider listed in `META-INF/services/com.flanksource.telltale.DiagnosticExtension`. Compile against `telltale-extension-api.jar`; runnable source and a service descriptor live in `sdk/java/examples`. API version 1 defines ID, version, startup and cleanup. `OperationSpec` supplies operation schemas, title, description, mutation flag and handler. Names must start with `extension.<id>.`. Handlers return JSON-compatible JDK values. Child-first loaders isolate bundled dependencies while retaining one shared SPI identity.
@@ -139,6 +169,21 @@ Arm, checkpoint, renew, disarm and calls run through the same `agentclient.Agent
 - Each request carries a token for the scope the agent's `/hello` names.
 - Streaming captures are read every 250 ms and renewed every 30 seconds.
 - A capture ends complete when the agent sets `X-Telltale-Complete`.
+
+### From the CLI
+
+`telltale jvm deploy -f <deployer.yaml>` deploys with your kubeconfig (`--kubeconfig` to choose files) and the connections telltale reads, which must define the `spec.auth.issuer` connection and its `signingKey`. It prints each target's state and keeps the deployer with that status in the global config dir (`deployers/<name>.yaml`), even when some targets fail, so the deployed ones stay reachable. Run it again after pods are replaced; it is idempotent. `telltale jvm deployers` lists the kept targets. `deploy` is CLI-only: it reads a local file with the operator's credentials, so it is not served over the API.
+
+Every `jvm` command and capture then names a target by its id:
+
+```bash
+telltale jvm deploy -f examples/deployers/orders.yaml
+telltale jvm deployers
+telltale jvm metrics --agent deployer/orders-batch/orders/orders-batch-7d9f-abcde
+telltale jvm watch --agent deployer/orders-batch/orders/orders-batch-7d9f-abcde --allow-mutation --duration 10s --targets '[{"class":"example.Worker","method":"compute"}]'
+```
+
+The first use of a target id in a process loads its deployer, builds the issuer from the connection, resolves the target's endpoint (opening its port-forward) and connects. Each request then carries a token minted for that target, the scope of the operation or capture, and the subject `<user>@<host>`. Only `deployer/…` ids reach a cluster, so local agent lookups never depend on it. A server started with `telltale serve` resolves the same ids for `/api/v1/jvm/…` and `POST /api/traces`.
 
 ## Verification
 

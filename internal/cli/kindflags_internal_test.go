@@ -142,9 +142,9 @@ var _ = Describe("a kind's params as flags", func() {
 			_, err := bindParamFlags(flags, schema)
 			Expect(err).To(MatchError(refusal))
 		},
-		Entry("an untyped list", &rpc.OpenAPISchema{Type: "object", Properties: map[string]*rpc.OpenAPISchema{
-			"rules": {Type: "array"},
-		}}, "param rules: a array param cannot be a flag"),
+		Entry("a list of booleans", &rpc.OpenAPISchema{Type: "object", Properties: map[string]*rpc.OpenAPISchema{
+			"rules": {Type: "array", Items: &rpc.OpenAPISchema{Type: "boolean"}},
+		}}, "param rules: a list of boolean param cannot be a flag"),
 		Entry("a param whose flag is taken", &rpc.OpenAPISchema{Type: "object", Properties: map[string]*rpc.OpenAPISchema{
 			"dataDir": {Type: "string"},
 		}}, "param dataDir: its flag --data-dir is already defined"),
