@@ -169,6 +169,11 @@ type Handler[P, R any] struct {
 	seams       []target.Seam
 	defaultSeam target.Seam
 	kind        string
+	// title and presetSeam name a seam preset (Preset) and the seam it arms.
+	title      string
+	presetSeam target.Seam
+	// invalid refuses the plugin's registration and every start.
+	invalid error
 }
 
 // TargetSeams returns the seams supported by this handler and its default.
@@ -190,6 +195,9 @@ func (h *Handler[P, R]) ResolveTarget(params json.RawMessage) (target.Target, er
 		if err := json.Unmarshal(params, &selection); err != nil {
 			return target.Target{}, fmt.Errorf("params: %w", err)
 		}
+	}
+	if err := h.presetSeamError(selection.Target.Seam); err != nil {
+		return target.Target{}, err
 	}
 	var available func(target.Target) bool
 	var lookupErr error
@@ -225,8 +233,20 @@ func NewHandler[P, R any](handler TraceHandler[P, R], capabilities Capabilities,
 
 // WithDefaults starts the kind's form and its captures from defaults rather
 // than the handler's own Params, as a host that knows its connections does.
+// A seam the defaults' target names is the seam a start naming none is armed
+// on; one the kind does not support refuses its registration.
 func (h *Handler[P, R]) WithDefaults(defaults P) *Handler[P, R] {
 	h.defaults = &defaults
+	seam, err := seamOf(defaults)
+	switch {
+	case err != nil:
+		h.invalid = fmt.Errorf("params defaults: %w", err)
+	case seam == "":
+	case !slices.Contains(h.seams, seam):
+		h.invalid = fmt.Errorf("params defaults: %w %q; supported seams: %v", target.ErrUnsupportedSeam, seam, h.seams)
+	default:
+		h.defaultSeam = seam
+	}
 	return h
 }
 
@@ -234,6 +254,10 @@ func (h *Handler[P, R]) WithDefaults(defaults P) *Handler[P, R] {
 // copied, so decoding a start's params into them never reaches the slices and
 // maps the host and every other start share.
 func (h *Handler[P, R]) params() (P, error) {
+	if h.invalid != nil {
+		var zero P
+		return zero, h.invalid
+	}
 	if h.defaults == nil {
 		return h.handler.Params(), nil
 	}
@@ -300,7 +324,7 @@ func (h *Handler[P, R]) processors(schema recordstore.KindSchema) []rowProcessor
 	return processors
 }
 
-func (h *Handler[P, R]) Title() string { return h.handler.Schema().Title }
+func (h *Handler[P, R]) Title() string { return h.resultType(h.kind).Title }
 
 func (h *Handler[P, R]) Capabilities() Capabilities { return h.capabilities }
 
@@ -530,6 +554,9 @@ func StreamOf(ctx context.Context) string {
 func (h *Handler[P, R]) resultType(kind string) recordresults.ResultType[R] {
 	resultType := h.handler.Schema()
 	resultType.Kind = kind
+	if h.title != "" {
+		resultType.Title = h.title
+	}
 	return resultType
 }
 
