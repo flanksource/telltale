@@ -6,57 +6,40 @@ import (
 
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/goprof"
-	"github.com/flanksource/telltale/pkg/tracing/groups"
 	"github.com/flanksource/telltale/pkg/tracing/httpproxy"
 	"github.com/flanksource/telltale/pkg/tracing/pgproxy"
-	"github.com/flanksource/telltale/pkg/tracing/process"
+	"github.com/flanksource/telltale/pkg/tracing/processcapture"
 	tracesql "github.com/flanksource/telltale/pkg/tracing/sql"
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
 	"github.com/flanksource/telltale/pkg/tracing/target"
 	"github.com/flanksource/telltale/pkg/tracing/terminal"
 )
 
+// The environment variables the `http` and `sql` proxies, and their
+// http_proxy and pg_proxy presets, hand a command.
+var (
+	httpExports = []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy", "SSL_CERT_FILE", "CURL_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE", "GIT_SSL_CAINFO", "AWS_CA_BUNDLE"}
+	sqlExports  = []string{"DATABASE_URL", "GAVEL_DB_DSN", "PGHOST", "PGPORT", "PGSSLMODE"}
+)
+
 // The builtin kinds, registered before any command or run reads the catalog.
 // The `http` and `sql` kinds default to telltale's own traffic:
-// its HTTP feature and its own database. goprof reads gops agents, at the
+// its HTTP feature and its own database; their http_proxy and pg_proxy
+// presets arm them only on their proxy seam. goprof reads gops agents, at the
 // address their port files give.
 func init() {
 	for _, registration := range []Registration{
 		{
-			Name: process.TreeKind, Title: "Process tree", Seams: []target.Seam{target.Process}, DefaultSeam: target.Process,
-			Summary: "Record every process of a tree as it starts, changes and exits",
-			Description: "Follows the process tree under its root: telltale's own tree, which holds the command, or the process --pid attaches to. " +
-				"Every run records this tree already; arm it again for another interval or to read each process's environment.",
+			Name: processcapture.Kind, Title: "Processes", Seams: []target.Seam{target.Process, target.Host}, DefaultSeam: target.Process,
+			Summary:     "Record process identities, resource changes and numeric metrics",
+			Description: "Follows a process tree or the host. Stores startup metadata, environment and grouping tags once, files and receiving sockets as added/removed events, and numeric metrics in a separate wide table. TCP connections are unique peers per process, with inferred or unknown direction.",
 			Examples: []Example{
 				{Args: "--environment-prefixes AWS_ -- make deploy", Says: "record the tree with each process's AWS_ variables"},
 				{Args: "--pid 1234 --duration 30s", Says: "follow process 1234's tree for 30 seconds"},
 			},
 			New: func(deps KindDeps) tracing.TracePlugin {
-				return process.NewTreeKind(deps.Sampler, process.TreeKindOptions{Dumpers: deps.Dumpers})
+				return processcapture.NewKind(deps.Sampler, processcapture.KindOptions{Dumpers: deps.Dumpers})
 			},
-		},
-		{
-			Name: process.SamplesKind, Title: "Process samples", Seams: []target.Seam{target.Process}, DefaultSeam: target.Process,
-			Summary: "Sample the CPU, memory, disk IO and open descriptors of every process of a tree",
-			Description: "Samples each process under its root at every interval: telltale's own tree, which holds the command, or the process --pid attaches to. " +
-				"Facets add each process's open files, sockets, listening ports or connections, read with lsof.",
-			Examples: []Example{
-				{Args: "--facets ports,connections -- ./server", Says: "sample the server and the ports and connections it opens"},
-				{Args: "--seam process --pid 1234 --interval 250ms --duration 1m", Says: "sample process 1234's tree four times a second for a minute"},
-			},
-			New: func(deps KindDeps) tracing.TracePlugin { return process.NewSamplesKind(deps.Sampler) },
-		},
-		{
-			Name: groups.Kind, Title: "Process groups", Seams: []target.Seam{target.Host}, DefaultSeam: target.Host,
-			Summary: "Record the CPU, memory, disk, sockets and network of each tool's processes on the host",
-			Description: "Sorts every process on the host into the tool that owns it — claude, codex, cmux, gavel, go test, vitest, agent-browser, chrome and more — " +
-				"as a tree of groups, each with its working directory, checkout, agent session and cmux workspace, and records what each group and those under it use. " +
-				"Rules come from the built-in catalog and groups.yaml in ./.telltale, else the global config dir. Network bytes are read with nettop on darwin only when asked for, as it costs over a core.",
-			Examples: []Example{
-				{Args: "--duration 10m", Says: "record every tool's groups for ten minutes"},
-				{Args: "--groups claude,vitest --net", Says: "record claude sessions and vitest runs with their network bytes"},
-			},
-			New: func(deps KindDeps) tracing.TracePlugin { return groups.NewKind(deps.Sampler) },
 		},
 		{
 			Name: stacks.Kind, Title: "Stacks", Seams: []target.Seam{target.Process, target.Agent, target.Self}, DefaultSeam: target.Process,
@@ -97,7 +80,7 @@ func init() {
 			Name: "http", Title: "HTTP", Seams: []target.Seam{target.Self, target.Agent, target.Proxy}, DefaultSeam: target.Self, Armable: true,
 			Summary:     "Record HTTP exchanges from an agent or a local proxy",
 			Description: "Observes instrumented HTTP in telltale or an agent, or routes a command through a recording proxy.",
-			Exports:     []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy", "SSL_CERT_FILE", "CURL_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "REQUESTS_CA_BUNDLE", "GIT_SSL_CAINFO", "AWS_CA_BUNDLE"},
+			Exports:     httpExports,
 			Examples:    []Example{{Args: "--features http -- true", Says: "record telltale HTTP"}, {Args: "--seam proxy --mode mitm -- curl -sS https://example.com", Says: "record a command through the proxy"}},
 			New:         func(KindDeps) tracing.TracePlugin { return httpproxy.UnifiedKind(nil) },
 		},
@@ -105,9 +88,25 @@ func init() {
 			Name: tracesql.RowKind, Title: "SQL", Seams: []target.Seam{target.Self, target.Agent, target.Proxy}, DefaultSeam: target.Self, Armable: true,
 			Summary:     "Record SQL statements from an agent or a local Postgres proxy",
 			Description: "Observes instrumented connections in telltale or an agent, or routes a command through a Postgres proxy.",
-			Exports:     []string{"DATABASE_URL", "GAVEL_DB_DSN", "PGHOST", "PGPORT", "PGSSLMODE"},
+			Exports:     sqlExports,
 			Examples:    []Example{{Args: "--connections self -- true", Says: "record telltale's database statements"}, {Args: "--seam proxy --dsn postgres://app@localhost:5432/orders -- ./migrate up", Says: "record a command through the Postgres proxy"}},
 			New:         func(KindDeps) tracing.TracePlugin { return pgproxy.UnifiedKind(nil) },
+		},
+		{
+			Name: httpproxy.ProxyKind, Base: httpproxy.Kind, Title: "HTTP proxy", Seams: []target.Seam{target.Proxy}, DefaultSeam: target.Proxy, Armable: true,
+			Summary:     "Record a command's HTTP exchanges through a local recording proxy",
+			Description: "The http kind armed only on its proxy seam: routes a command through a recording proxy and records its exchanges as http does.",
+			Exports:     httpExports,
+			Examples:    []Example{{Args: "-- curl -sS http://example.com", Says: "record a command through the proxy"}, {Args: "--mode mitm -- curl -sS https://example.com", Says: "decrypt and record a command's HTTPS"}},
+			New:         func(KindDeps) tracing.TracePlugin { return httpproxy.UnifiedKind(nil).Preset(httpproxy.ProxyPreset()) },
+		},
+		{
+			Name: pgproxy.ProxyKind, Base: tracesql.RowKind, Title: "Postgres proxy", Seams: []target.Seam{target.Proxy}, DefaultSeam: target.Proxy, Armable: true,
+			Summary:     "Record a command's SQL statements through a local Postgres proxy",
+			Description: "The sql kind armed only on its proxy seam: routes a command through a Postgres proxy and records its statements as sql does.",
+			Exports:     sqlExports,
+			Examples:    []Example{{Args: "--dsn postgres://app@localhost:5432/orders -- ./migrate up", Says: "record a command through the Postgres proxy"}},
+			New:         func(KindDeps) tracing.TracePlugin { return pgproxy.UnifiedKind(nil).Preset(pgproxy.ProxyPreset()) },
 		},
 		{
 			Name: terminal.Kind, Title: "Terminal", Seams: []target.Seam{target.Self}, DefaultSeam: target.Self,

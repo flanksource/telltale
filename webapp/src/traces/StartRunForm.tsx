@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, JsonSchemaForm, type JsonSchemaFormError, type JsonSchemaObject } from "@flanksource/clicky-ui/components";
 import { UiLoader } from "@flanksource/clicky-ui/icons";
+import { createOperationsApiClient, useOperationLookupFetcher } from "@flanksource/clicky-ui/rpc";
 import { useDefinitions } from "../definitions/api";
 import { StartDefinitionForm } from "../definitions/StartDefinitionForm";
 import { fetchStartForm, startRun, StartRunError, type RunTraces, type StartForm, type StartRequest } from "./api";
@@ -9,15 +10,18 @@ import { fetchStartForm, startRun, StartRunError, type RunTraces, type StartForm
 export interface StartRunFormProps {
   agent?: string;
   probe?: string;
+  initialParams?: Record<string, unknown>;
   /** Called with the run the server started. */
   onStarted: (run: RunTraces) => void;
 }
 
-function StartRunFields({ form, onStarted, agent, probe }: StartRunFormProps & { form: StartForm }) {
+function StartRunFields({ form, onStarted, agent, probe, initialParams }: StartRunFormProps & { form: StartForm }) {
+  const lookupClient = useMemo(() => createOperationsApiClient(), []);
+  const lookupFetcher = useOperationLookupFetcher(lookupClient);
   const queryClient = useQueryClient();
   const [value, setValue] = useState<StartRequest>(() => agent && probe ? {
     ...form.defaults, command: "",
-    traces: { [probe]: { enabled: true, target: { seam: "agent", agent } } },
+    traces: { [probe]: { ...initialParams, enabled: true, target: { seam: "agent", agent } } },
   } : form.defaults);
   const start = useMutation({
     mutationFn: startRun,
@@ -45,6 +49,7 @@ function StartRunFields({ form, onStarted, agent, probe }: StartRunFormProps & {
         schema={form.schema as JsonSchemaObject}
         value={value}
         onChange={setValue}
+        {...(lookupFetcher ? { lookupFetcher } : {})}
         errors={fieldErrors}
         hiddenKeys={["definition"]}
         size="sm"

@@ -42,8 +42,22 @@ type unified struct {
 func (u unified) AgentAvailable(probe string, t target.Target) (bool, error) {
 	return u.self.AgentAvailable(probe, t)
 }
-func (unified) Params() UnifiedParams {
+func (unified) Params() UnifiedParams { return DefaultParams() }
+
+// ProxyKind is the `sql` kind armed on its Postgres proxy seam (ProxyPreset).
+const ProxyKind = "pg_proxy"
+
+// DefaultParams are the `sql` kind's defaults: telltale's own connection on
+// its self and agent seams, and the proxy's connection name and statement cap
+// on its proxy seam. A host adjusts a copy of them for Handler.WithDefaults.
+func DefaultParams() UnifiedParams {
 	return UnifiedParams{Params: pgProxy{}.Params(), Connections: []string{"self"}}
+}
+
+// ProxyPreset arms the `sql` kind only on its Postgres proxy seam, as
+// ProxyKind, without the connections only its other seams observe.
+func ProxyPreset() tracing.PresetOptions[UnifiedParams] {
+	return tracing.PresetOptions[UnifiedParams]{Title: "Postgres proxy", Seam: target.Proxy, Defaults: func(p *UnifiedParams) { p.Connections = nil }}
 }
 func (unified) Schema() recordresults.ResultType[tracesql.StatementRow] { return tracesql.ResultType() }
 func (u unified) Prepare(ctx dbcontext.Context, p UnifiedParams, out tracing.Emitter[tracesql.StatementRow]) (dbcontext.Context, func() error, error) {

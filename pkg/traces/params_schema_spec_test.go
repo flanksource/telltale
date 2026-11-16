@@ -15,9 +15,9 @@ import (
 // kinds split their params into Options and a target; added are the
 // properties each kind gained since, which may differ from the golden.
 var schemaGoldens = map[string][]string{
-	"exec": nil, "goprof": nil, "jvm_jfr": nil, "llm": nil, "process_groups": nil, "process_samples": nil,
-	"process_tree": nil, "prometheus": nil, "spans": nil, "sql_deadlock": nil, "sql_plancache": nil,
-	"sql_xevent": nil, "stacks": nil, "terminal": nil,
+	"exec": nil, "goprof": nil, "jvm_jfr": nil, "llm": nil,
+	"prometheus": nil, "spans": nil, "sql_deadlock": nil, "sql_plancache": nil,
+	"sql_xevent": nil, "sql_top": nil, "stacks": nil, "terminal": nil,
 	"http": {"listen", "export"},
 	"sql":  {"listen", "export"},
 	"logs": {"target"},

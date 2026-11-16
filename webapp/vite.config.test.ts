@@ -11,6 +11,8 @@ const options = { localUI: false, uiDirectory, apiURL: "http://localhost:8080" }
 beforeAll(() => {
   const source = resolve(uiDirectory, "packages/ui/src");
   mkdirSync(`${source}/styles`, { recursive: true });
+  mkdirSync(resolve(source, "../dist/runtime"), { recursive: true });
+  writeFileSync(resolve(source, "../dist/runtime/importmap.json"), "{}");
   for (const file of ["index.ts", "components.ts", "tailwind-preset.ts", "styles/full.css", "styles/mdx-editor.css"]) {
     writeFileSync(resolve(source, file), "");
   }
@@ -20,6 +22,7 @@ beforeAll(() => {
     "./tailwind-preset": { import: "./dist/tailwind-preset.js" },
     "./styles.css": "./dist/styles.css",
     "./mdx-editor.css": "./dist/mdx-editor.css",
+    "./runtime/*": "./dist/runtime/*",
   } }));
 });
 afterAll(() => rmSync(uiDirectory, { recursive: true }));
@@ -64,6 +67,14 @@ describe("Clicky UI resolution", () => {
   it("keeps production builds on installed dependencies", () => {
     const config = createViteConfig(options);
     expect(config.resolve?.alias).toEqual([]);
+  });
+
+  it("resolves generated runtime assets from the local package build", () => {
+    const aliases = createViteConfig({ ...options, localUI: true }).resolve?.alias;
+    if (!Array.isArray(aliases)) throw new Error("Expected alias array");
+    const entry = "@flanksource/clicky-ui/runtime/importmap.json";
+    const alias = aliases.find(value => new RegExp(value.find).test(entry));
+    expect(alias && entry.replace(alias.find, alias.replacement)).toBe(`${uiDirectory}/packages/ui/dist/runtime/importmap.json`);
   });
 
   it("uses exact aliases for local source, CSS, and theme entries", () => {

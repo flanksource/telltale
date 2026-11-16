@@ -1,0 +1,5 @@
+lint:
+  ignore:
+  - file: internal/cli/**
+    rule: cobra-outside-cmd
+    source: uir

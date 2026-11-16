@@ -15,10 +15,10 @@ import (
 
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/pkg/traces"
-	"github.com/flanksource/telltale/pkg/tracing/groups"
 	"github.com/flanksource/telltale/pkg/tracing/httpproxy"
-	"github.com/flanksource/telltale/pkg/tracing/process"
+	"github.com/flanksource/telltale/pkg/tracing/processcapture"
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -60,7 +60,7 @@ var _ = Describe("running a command under trace", func() {
 		Expect(result.Dir).To(BeADirectory())
 		Expect(result.StartedAt).To(BeTemporally(">=", before))
 		Expect(result.EndedAt).To(BeTemporally(">=", result.StartedAt))
-		Expect(result.Process.Tree.Kind).To(Equal(process.TreeKind))
+		Expect(result.Process.Tree.Kind).To(Equal(processcapture.Kind))
 		Expect(result.Captures).To(BeEmpty())
 	})
 
@@ -75,6 +75,10 @@ var _ = Describe("running a command under trace", func() {
 		Expect(output).To(Equal("traced"))
 		Expect(result.Captures).To(HaveLen(1))
 		Expect(result.Captures[0].Kind).To(Equal(httpproxy.Kind))
+		Expect(result.Captures[0].Target).To(Equal(target.Target{Seam: target.Proxy}))
+		stored, err := telltale.ReadManifest(result.Dir)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(stored.Captures[0].Target).To(Equal(result.Captures[0].Target))
 		Expect(result.Captures[0].Summary).To(HaveKeyWithValue("count", BeNumerically("==", 1)))
 	})
 
@@ -136,7 +140,7 @@ var _ = Describe("a run attached to a running process", func() {
 		target, dataDir := sleeper("30"), GinkgoT().TempDir()
 		run, err := telltale.Start(context.Background(), telltale.StartOptions{
 			DataDir: dataDir, PID: target.Process.Pid, Duration: time.Second,
-			Traces: []telltale.TraceSpec{{Kind: process.SamplesKind}},
+			Traces: []telltale.TraceSpec{{Kind: processcapture.Kind}},
 		})
 		Expect(err).ToNot(HaveOccurred())
 		result, err := run.Wait()
@@ -144,7 +148,8 @@ var _ = Describe("a run attached to a running process", func() {
 		Expect(result.PID).To(Equal(target.Process.Pid))
 		Expect(result.Command).To(BeNil())
 		Expect(result.EndedAt.Sub(result.StartedAt)).To(BeNumerically(">=", time.Second))
-		Expect(result.Captures).To(ConsistOf(HaveField("Kind", process.SamplesKind)))
+		Expect(result.Captures).To(ConsistOf(HaveField("Kind", processcapture.Kind)))
+		Expect(result.Process.Tree.Stream).To(Equal(result.Captures[0].Ref.Stream), "the automatic process view reuses the configured capture")
 		Expect(target.Process.Signal(syscall.Signal(0))).To(Succeed(), "an attached run leaves its process running")
 
 		info, err := telltale.Get(telltale.GetOptions{DataDir: dataDir, RunID: result.RunID})
@@ -154,9 +159,10 @@ var _ = Describe("a run attached to a running process", func() {
 	})
 
 	It("ends when the process exits", func() {
-		target := sleeper("1")
+		target := sleeper("30")
 		run, err := telltale.Start(context.Background(), telltale.StartOptions{DataDir: GinkgoT().TempDir(), PID: target.Process.Pid})
 		Expect(err).ToNot(HaveOccurred())
+		Expect(target.Process.Kill()).To(Succeed())
 		Eventually(run.Done(), 10*time.Second).Should(BeClosed())
 	})
 
@@ -205,8 +211,8 @@ var _ = Describe("a run attached to a running process", func() {
 		}, "not both"),
 		Entry("neither", func(int) telltale.StartOptions { return telltale.StartOptions{} }, "a command, a pid to attach to, or a host capture is required"),
 		Entry("neither, for a kind that observes a process", func(int) telltale.StartOptions {
-			return telltale.StartOptions{Traces: []telltale.TraceSpec{{Kind: groups.Kind}, {Kind: process.SamplesKind}}}
-		}, "process_samples observes a command or a process: give a command or a pid"),
+			return telltale.StartOptions{Traces: []telltale.TraceSpec{{Kind: processcapture.Kind}}}
+		}, "process observes a command or a process: give a command or a pid"),
 		Entry("a process that is not running", func(int) telltale.StartOptions {
 			return telltale.StartOptions{PID: 999999}
 		}, "pid 999999 is not running"),
@@ -222,12 +228,12 @@ var _ = Describe("a host run", func() {
 		dataDir := GinkgoT().TempDir()
 		run, err := telltale.Start(context.Background(), telltale.StartOptions{
 			DataDir: dataDir, Duration: 2500 * time.Millisecond,
-			Traces: []telltale.TraceSpec{{Kind: groups.Kind, Params: json.RawMessage(`{"interval": "1s", "all": true}`)}},
+			Traces: []telltale.TraceSpec{{Kind: processcapture.Kind, Params: json.RawMessage(`{"interval":"1s","target":{"seam":"host"}}`)}},
 		})
 		Expect(err).ToNot(HaveOccurred())
 		info := run.Info()
 		Expect(info).To(And(HaveField("Status", telltale.StatusRunning), HaveField("Process", BeNil()), HaveField("Live", BeNil())))
-		follower, err := groups.NewFollower(run.Runtime(), info.Captures[0].Ref)
+		follower, err := processcapture.NewFollower(run.Runtime(), info.Captures[0].Ref)
 		Expect(err).ToNot(HaveOccurred())
 		Eventually(func(g Gomega) {
 			frame, ok, err := follower.Frame(context.Background())
@@ -241,7 +247,7 @@ var _ = Describe("a host run", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(result.EndedAt.Sub(result.StartedAt)).To(BeNumerically(">=", 2500*time.Millisecond))
 		Expect(result.Process).To(BeNil())
-		Expect(result.Captures).To(ConsistOf(And(HaveField("Kind", groups.Kind), HaveField("Summary", HaveKeyWithValue("count", BeNumerically(">", 0))))))
+		Expect(result.Captures).To(ConsistOf(And(HaveField("Kind", processcapture.Kind), HaveField("Summary", HaveKeyWithValue("count", BeNumerically(">", 0))))))
 
 		stored, err := telltale.Get(telltale.GetOptions{DataDir: dataDir, RunID: result.RunID})
 		Expect(err).ToNot(HaveOccurred())
@@ -309,7 +315,7 @@ var _ = Describe("a run traced from its command", func() {
 		Expect(info.Live.Sessions.Tree).ToNot(BeEmpty())
 
 		Eventually(func() (string, error) {
-			data, err := os.ReadFile(filepath.Join(run.Dir(), telltale.OutputFile))
+			data, err := os.ReadFile(filepath.Join(run.Dir(), telltale.StdoutFile))
 			return string(data), err
 		}).Should(Equal("started\n"))
 		Expect(telltale.Stop(telltale.StopOptions{DataDir: dataDir, RunID: run.ID()})).To(Succeed())

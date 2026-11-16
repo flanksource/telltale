@@ -1,0 +1,12 @@
+# query
+
+import { KindReference } from '../_components/KindReference';
+
+Reads a saved commons-db query profile or a provider configured in place over a run's window. The host seam does not require a command or PID.
+
+```sh
+telltale run query --profile pod-cpu-by-pod --every 30s --duration 10m
+```
+
+`--profile` selects a saved profile; `--provider` accepts typed provider configuration as JSON. `--from` and `--to` set the window, `--every` polls for newer rows, and `--until-stopped` reads once at the end. Supported providers include SQL, Prometheus, OpenSearch, HTTP, PostgREST, BigQuery, Jaeger, and OpenTelemetry. Run `telltale run query --help` for all options.
+<KindReference kind="query" />

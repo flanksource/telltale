@@ -55,6 +55,9 @@ type Registration struct {
 	Description string
 	Seams       []target.Seam
 	DefaultSeam target.Seam
+	// Base names the kind a seam preset (tracing.Handler.Preset) arms on its
+	// one seam; empty for a kind of its own.
+	Base string
 	// Exports are the environment variables a capture hands the command.
 	Exports  []string
 	Examples []Example
@@ -69,6 +72,20 @@ type Registration struct {
 	// process whose gops agent a gops reading needs; nil reads any.
 	Readable func(pid int, checkpoint json.RawMessage) error
 	New      func(KindDeps) tracing.TracePlugin
+	// Commands are the task commands the kind is also served as beside
+	// `run <kind>`, each with its own param defaults.
+	Commands []KindCommand
+}
+
+// KindCommand is a kind preset served as its own CLI command and API path,
+// such as `jvm watch` for jvm_trace with values recorded and calls not.
+type KindCommand struct {
+	// Path is the command's words from the root, such as [jvm watch].
+	Path    []string
+	Summary string
+	// Defaults replace the kind's param defaults, nested by JSON path; flags
+	// still override them.
+	Defaults map[string]any
 }
 
 func (r Registration) validate() error {
@@ -87,8 +104,16 @@ func (r Registration) validate() error {
 	if !slices.Contains(r.Seams, r.DefaultSeam) {
 		errs = append(errs, fmt.Errorf("default seam %q must be among supported seams %v", r.DefaultSeam, r.Seams))
 	}
+	if r.Base != "" && len(r.Seams) != 1 {
+		errs = append(errs, fmt.Errorf("a preset of %q arms exactly one seam, not %v", r.Base, r.Seams))
+	}
 	if strings.TrimSpace(r.Title) == "" || strings.TrimSpace(r.Summary) == "" {
 		errs = append(errs, errors.New("a title and a summary are required"))
+	}
+	for _, command := range r.Commands {
+		if len(command.Path) < 2 || slices.Contains(command.Path, "") || strings.TrimSpace(command.Summary) == "" {
+			errs = append(errs, fmt.Errorf("command %v needs a path below the root and a summary", command.Path))
+		}
 	}
 	if err := errors.Join(errs...); err != nil {
 		return fmt.Errorf("register trace kind %q: %w", r.Name, err)

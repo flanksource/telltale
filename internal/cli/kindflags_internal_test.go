@@ -5,7 +5,7 @@ import (
 	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/tracing/goprof"
 	"github.com/flanksource/telltale/pkg/tracing/httpproxy"
-	"github.com/flanksource/telltale/pkg/tracing/process"
+	"github.com/flanksource/telltale/pkg/tracing/processcapture"
 	"github.com/flanksource/telltale/pkg/tracing/target"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -34,6 +34,22 @@ func parsed(schema *rpc.OpenAPISchema, args ...string) (string, error) {
 }
 
 var _ = Describe("a kind's params as flags", func() {
+	It("reads method targets from a JSON array without losing their loader", func() {
+		params, err := parsed(kindSchema("jvm_trace"), "--targets", `[{"class":"example.Worker","method":"compute","loader":"4ac"}]`)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(params).To(MatchJSON(`{"targets":[{"class":"example.Worker","method":"compute","loader":"4ac"}]}`))
+	})
+	It("reads root-call filters as flags", func() {
+		params, err := parsed(kindSchema("jvm_trace"), "--targets", `[{"class":"example.Worker","method":"compute"}]`, "--min-cost", "250ms", "--exceptions-only", "--match", `[{"on":"arg","index":1,"path":"customer.name","op":"regex","value":"^acme"}]`)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(params).To(MatchJSON(`{"targets":[{"class":"example.Worker","method":"compute"}],"minCost":"250ms","exceptionsOnly":true,"match":[{"on":"arg","index":1,"path":"customer.name","op":"regex","value":"^acme"}]}`))
+	})
+	It("refuses non-object entries in target arrays", func() {
+		for _, value := range []string{`[null]`, `["wrong"]`, `null`, `{}`} {
+			_, err := parsed(kindSchema("jvm_trace"), "--targets", value)
+			Expect(err).To(HaveOccurred())
+		}
+	})
 	It("builds a CPU checkpoint from profile flags", func() {
 		flags := pflag.NewFlagSet("goprof", pflag.ContinueOnError)
 		checkpoint := bindProfileCheckpoint(flags, goprof.CheckpointParams{CheckpointOptions: goprof.CheckpointOptions{Source: goprof.SourceGops, Profile: "heap"}})
@@ -51,7 +67,7 @@ var _ = Describe("a kind's params as flags", func() {
 
 	It("shows the supported seam but does not offer unimplemented agent targeting", func() {
 		flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
-		_, err := bindParamFlags(flags, kindSchema(process.SamplesKind))
+		_, err := bindParamFlags(flags, kindSchema(processcapture.Kind))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(flags.Lookup("seam").Usage).To(ContainSubstring("process"))
 		Expect(flags.Lookup("agent")).To(BeNil())
@@ -59,20 +75,20 @@ var _ = Describe("a kind's params as flags", func() {
 		Expect(flags.Lookup("wait")).To(BeNil())
 	})
 	It("names the selector flag when its value is malformed", func() {
-		schema := kindSchema(process.SamplesKind)
+		schema := kindSchema(processcapture.Kind)
 		schema.Properties["target"].Extensions["x-telltale-seams"] = []target.Seam{target.Agent, target.Process}
 		_, err := parsed(schema, "--selector", "invalid")
 		Expect(err).To(MatchError(ContainSubstring("--selector:")))
 	})
 	It("keeps a run PID separate from an explicit agent", func() {
-		schema := kindSchema(process.SamplesKind)
+		schema := kindSchema(processcapture.Kind)
 		schema.Properties["target"].Extensions["x-telltale-seams"] = []target.Seam{target.Agent, target.Process}
 		params, err := parsed(schema, "--pid", "123", "--agent", "worker")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(params).To(MatchJSON(`{"target":{"agent":"worker"}}`))
 	})
 	It("passes mutation consent in the common target", func() {
-		schema := kindSchema(process.SamplesKind)
+		schema := kindSchema(processcapture.Kind)
 		schema.Properties["target"].Extensions["x-telltale-seams"] = []target.Seam{target.Agent, target.Process}
 		params, err := parsed(schema, "--allow-mutation")
 		Expect(err).NotTo(HaveOccurred())
@@ -101,8 +117,8 @@ var _ = Describe("a kind's params as flags", func() {
 		Entry("a choice and a list", httpproxy.Kind, []string{"--mode", "mitm", "--hosts", "a.example,b.example"}, `{"mode": "mitm", "hosts": ["a.example", "b.example"]}`),
 		Entry("a repeated list flag", httpproxy.Kind, []string{"--redact", "X-One", "--redact", "X-Two"}, `{"redact": ["X-One", "X-Two"]}`),
 		Entry("a boolean and an integer", "sql", []string{"--params", "--max-statements", "10"}, `{"params": true, "maxStatements": 10}`),
-		Entry("an object's params, nested", process.TreeKind, []string{"--environment-keys", "PATH", "--interval", "2s"}, `{"environment": {"keys": ["PATH"]}, "interval": "2s"}`),
-		Entry("a run PID and an embedded struct's params", process.SamplesKind, []string{"--pid", "7", "--facets", "ports"}, `{"facets": ["ports"]}`),
+		Entry("an object's params, nested", processcapture.Kind, []string{"--environment-keys", "PATH", "--interval", "2s"}, `{"environment": {"keys": ["PATH"]}, "interval": "2s"}`),
+		Entry("a run PID and an embedded struct's params", processcapture.Kind, []string{"--pid", "7", "--facets", "sockets"}, `{"facets": ["sockets"]}`),
 	)
 
 	It("refuses a value outside a param's choices, naming its flag and the choices", func() {
@@ -126,9 +142,9 @@ var _ = Describe("a kind's params as flags", func() {
 			_, err := bindParamFlags(flags, schema)
 			Expect(err).To(MatchError(refusal))
 		},
-		Entry("a list of objects", &rpc.OpenAPISchema{Type: "object", Properties: map[string]*rpc.OpenAPISchema{
-			"rules": {Type: "array", Items: &rpc.OpenAPISchema{Type: "object"}},
-		}}, "param rules: a list of object param cannot be a flag"),
+		Entry("a list of booleans", &rpc.OpenAPISchema{Type: "object", Properties: map[string]*rpc.OpenAPISchema{
+			"rules": {Type: "array", Items: &rpc.OpenAPISchema{Type: "boolean"}},
+		}}, "param rules: a list of boolean param cannot be a flag"),
 		Entry("a param whose flag is taken", &rpc.OpenAPISchema{Type: "object", Properties: map[string]*rpc.OpenAPISchema{
 			"dataDir": {Type: "string"},
 		}}, "param dataDir: its flag --data-dir is already defined"),

@@ -16,6 +16,19 @@ function renderTable(overrides: Partial<GroupsView> = {}, groups = sampleFrame()
 const cells = (name: RegExp) => within(screen.getByRole("row", { name })).getAllByRole("cell").map(cell => cell.textContent);
 
 describe("GroupsTable", () => {
+  it("reveals a pinned other-process hog and still lets its parent be collapsed and reopened", () => {
+    const frame = othersFrame();
+    for (const group of frame.groups) {
+      if (group.key === "other:user" || group.name === "Slack") group.total.hogs = { memory: "2026-10-25T10:02:00Z" };
+    }
+    renderTable({}, frame.groups);
+    expect(screen.getByText("Slack")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Collapse other" }));
+    expect(screen.queryByText("Slack")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Expand other" }));
+    expect(screen.getByText("Slack")).toBeInTheDocument();
+  });
+
   it("shows aggregate repository buckets and folds their tools", () => {
     renderTable({ groupBy: "repo" }, fixture.frame.groups as Frame["groups"]);
     const bucket = screen.getByRole("button", { name: "Collapse acme" });
@@ -29,9 +42,9 @@ describe("GroupsTable", () => {
 
   it("shows each group's total, and a dash for what is unknown rather than zero", () => {
     renderTable();
-    // Group, Procs, CPU %, RSS, Disk read/s, Disk write/s, Net in/s, Net out/s, Sockets, Origin, Owner, Context
-    expect(cells(/vitest/)).toEqual(["vitest", "2", "30.0", "300 MiB", "–", "–", "1.5 KiB/s", "–", "–", "", "", ""]);
-    expect(cells(/^claude/)).toEqual(["claude 01234567", "5", "12.5", "600 MiB", "2 KiB/s", "0 B/s", "–", "–", "7", "", "", "telltale@main claude:0123456… cmux:workspa…"]);
+    // Group, Procs, CPU %, RSS, Compressed, Swap, Disk read/s, Disk write/s, Net in/s, Net out/s, Sockets, Origin, Owner, Context
+    expect(cells(/vitest/)).toEqual(["vitest", "2", "30.0", "300 MiB", "–", "–", "–", "–", "1.5 KiB/s", "–", "–", "", "", ""]);
+    expect(cells(/^claude/)).toEqual(["claude 01234567", "5", "12.5", "600 MiB", "–", "–", "2 KiB/s", "0 B/s", "–", "–", "7", "", "", "telltale@main claude:0123456… cmux:workspa…"]);
   });
 
   it("indents a child under its parent and keeps the tree order", () => {
@@ -98,7 +111,7 @@ function renderLive(initialPath = "/top", overrides: Partial<GroupsView> = {}) {
 describe("GroupsTable origin, scope and the other processes tree", () => {
   it("shows what started a group and who owns it, in the Origin and Owner columns", () => {
     renderLive();
-    // Group, Procs, CPU %, RSS, Disk read/s, Disk write/s, Net in/s, Net out/s, Sockets, Origin, Owner, Context
+    // Group, Procs, CPU %, RSS, Compressed, Swap, Disk read/s, Disk write/s, Net in/s, Net out/s, Sockets, Origin, Owner, Context
     const service = cells(/^postgresql@17/);
     expect(service.slice(-3)).toEqual(["brew:postgresql@17", "moshe (user)", ""]);
     expect(screen.getByRole("columnheader", { name: "Origin" })).toBeInTheDocument();

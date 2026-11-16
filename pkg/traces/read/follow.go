@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/flanksource/commons-db/query"
-	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/pkg/traces"
 )
@@ -21,7 +20,7 @@ func Follow(ctx context.Context, ref Ref, q Query, fn func(query.Row) error) err
 	if q.Cursor != "" {
 		return fmt.Errorf("--follow cannot use a page cursor; use --after-seq")
 	}
-	dbctx, p, err := ref.profile(ctx, "")
+	_, p, err := ref.profile(ctx, "")
 	if err != nil {
 		return err
 	}
@@ -35,92 +34,52 @@ func Follow(ctx context.Context, ref Ref, q Query, fn func(query.Row) error) err
 	if through > 0 && max(ref.AfterSeq, q.AfterSeq) >= through {
 		return nil
 	}
-	count := 0
-	// Query every notified seq through the original profile, preserving closing
-	// time/filter edges that query.Follow deliberately opens for rolling views.
-	deliver := func(seq int64) error {
-		if through > 0 && seq > through {
-			return errFollowLimit
-		}
+	count, last := 0, max(ref.AfterSeq, q.AfterSeq)
+	// Finish each native profile read before rendering; output holds no SQLite reader.
+	deliver := func(high int64) error {
 		window := q
-		window.AfterSeq = seq - 1
-		window.ToSeq = seq
-		window.All = true
+		window.AfterSeq, window.ToSeq = last, high
+		window.All, window.seqOrder = false, true
+		window.Limit = 500
 		window.Cursor = ""
 		window.NextCursor = nil
-		for row, err := range Rows(ctx, []Ref{ref}, window) {
-			if err != nil {
-				return err
-			}
+		rows, err := query.CollectRows(Rows(ctx, []Ref{ref}, window))
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
 			if err := fn(row); err != nil {
 				return err
 			}
+			last = row["seq"].(int64)
 			count++
 			if q.Limit > 0 && count >= q.Limit {
 				return errFollowLimit
 			}
 		}
-		if through > 0 && seq >= through {
-			return errFollowLimit
+		if len(rows) < window.Limit {
+			last = high
 		}
 		return nil
 	}
-	if !query.SupportsStreaming(p.Provider.Type) {
-		err = ref.Runtime.Results.Backend.Tail(ctx, ref.Stream, max(ref.AfterSeq, q.AfterSeq), func(seq int64, _ recordstore.Row) error { return deliver(seq) })
-	} else {
-		followCtx, cancel := dbctx.WithCancel()
-		defer cancel()
-		// The notification stream carries every seq; filtering stays in deliver.
-		window := Query{AfterSeq: q.AfterSeq, ToSeq: q.ToSeq}
-		params, paramsErr := window.params(ref, p)
-		if paramsErr != nil {
-			return paramsErr
+	backend := ref.Runtime.Results.Backend
+	meta, err := backend.Meta(ctx, ref.Stream)
+	if err != nil {
+		return err
+	}
+	for err == nil {
+		high := meta.HighSeq
+		if through > 0 {
+			high = min(high, through)
 		}
-		p = query.Follow(p)
-		p.Trace.Buffer = nil
-		session, startErr := query.ExecuteStream(followCtx, ref.Runtime.Sessions, p, params)
-		if startErr != nil {
-			return startErr
+		if last < high {
+			err = deliver(high)
+			continue
 		}
-		defer func() { cancel(); <-session.Done() }()
-		replay, live, unsubscribe := session.Subscribe()
-		defer unsubscribe()
-		var previous int64
-		consume := func(event query.Event) error {
-			if event.Sequence != previous+1 {
-				return fmt.Errorf("follow subscriber lost events after %d (received %d)", previous, event.Sequence)
-			}
-			previous = event.Sequence
-			if event.Error != "" {
-				return errors.New(event.Error)
-			}
-			if event.Row == nil {
-				return nil
-			}
-			seq, ok := event.Row["seq"].(int64)
-			if !ok {
-				return fmt.Errorf("follow %s: expected int64 seq, got %T", ref.Kind, event.Row["seq"])
-			}
-			return deliver(seq)
+		if meta.Sealed || through > 0 && last >= through {
+			return nil
 		}
-		for _, event := range replay {
-			if err = consume(event); err != nil {
-				break
-			}
-		}
-		if err == nil {
-			for event := range live {
-				if err = consume(event); err != nil {
-					break
-				}
-			}
-		}
-		if err == nil && session.Snapshot().Error != "" {
-			err = errors.New(session.Snapshot().Error)
-		}
-		if err == nil && session.Snapshot().EventCount != previous {
-			err = fmt.Errorf("follow subscriber lost trailing events after %d (produced %d)", previous, session.Snapshot().EventCount)
-		}
+		meta, err = backend.Wait(ctx, ref.Stream, last, meta.Generation)
 	}
 	if errors.Is(err, errFollowLimit) {
 		return nil
@@ -133,7 +92,7 @@ func Follow(ctx context.Context, ref Ref, q Query, fn func(query.Row) error) err
 
 // Wait follows every armed capture while Wait performs the run's usual stop,
 // summary and manifest write. Callbacks are serialized across captures.
-func Wait(ctx context.Context, run *telltale.Run, follow bool, fn func(query.Row) error) (_ *telltale.Result, err error) {
+func Wait(ctx context.Context, run *telltale.Run, follow bool, fn func(Record) error) (_ *telltale.Result, err error) {
 	if !follow {
 		return run.Wait()
 	}
@@ -144,7 +103,7 @@ func Wait(ctx context.Context, run *telltale.Run, follow bool, fn func(query.Row
 	}
 	defer func() { err = errors.Join(err, closeStore()) }()
 	runContext := ctx
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	defer cancel()
 	var group sync.WaitGroup
 	var output sync.Mutex
@@ -155,10 +114,11 @@ func Wait(ctx context.Context, run *telltale.Run, follow bool, fn func(query.Row
 			followErr := Follow(ctx, ref, Query{}, func(row query.Row) error {
 				output.Lock()
 				defer output.Unlock()
-				if len(info.Captures) > 1 {
-					row["kind"] = ref.Kind
+				record, err := recordOf(ref, row)
+				if err != nil {
+					return err
 				}
-				return fn(row)
+				return fn(record)
 			})
 			if runContext.Err() != nil && errors.Is(followErr, runContext.Err()) {
 				return

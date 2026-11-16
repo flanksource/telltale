@@ -1,0 +1,12 @@
+# terminal
+
+import { KindReference } from '../_components/KindReference';
+
+Records terminal events supplied by a host such as a test runner. Arming this kind for a normal command does not feed events into it: the command's output is stored separately as the run's output.
+
+```sh
+telltale run terminal -- true
+```
+
+The example arms an empty terminal stream. A host feeding events can configure `--width`, `--height`, `--max-bytes`, `--snapshot-interval`, and the command named in the cast header. The supported seam is `self`. Run `telltale run terminal --help` for all options.
+<KindReference kind="terminal" />

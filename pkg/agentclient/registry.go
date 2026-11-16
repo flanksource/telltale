@@ -19,6 +19,52 @@ type Registry struct {
 	discoveryMu sync.Mutex
 	agents      map[string]*Agent
 	subscribers map[chan *Agent]struct{}
+	resolveMu   sync.Mutex
+	resolvers   map[string]Resolver
+	listMu      sync.Mutex
+	listers     map[string]Lister
+}
+
+// Resolver connects, and adds to registry, the agent id names when local
+// discovery cannot find it, such as a deployed target reached over HTTP.
+type Resolver func(ctx context.Context, registry *Registry, id string) error
+
+// SetResolver makes resolver answer every id starting with prefix,
+// replacing the one set for prefix before.
+func (r *Registry) SetResolver(prefix string, resolver Resolver) {
+	if prefix == "" || resolver == nil {
+		panic("agentclient: SetResolver needs a prefix and a resolver")
+	}
+	r.resolveMu.Lock()
+	defer r.resolveMu.Unlock()
+	if r.resolvers == nil {
+		r.resolvers = map[string]Resolver{}
+	}
+	r.resolvers[prefix] = resolver
+}
+
+// Resolve connects the agent id names through the resolver of its prefix,
+// unless it is already connected; claimed is false for an id no resolver
+// answers, which only discovery can find.
+func (r *Registry) Resolve(ctx context.Context, id string) (claimed bool, err error) {
+	r.resolveMu.Lock()
+	defer r.resolveMu.Unlock()
+	for prefix, resolver := range r.resolvers {
+		if !strings.HasPrefix(id, prefix) {
+			continue
+		}
+		if r.ByID(id) != nil {
+			return true, nil
+		}
+		if err := resolver(ctx, r, id); err != nil {
+			return true, fmt.Errorf("connect agent %q: %w", id, err)
+		}
+		if r.ByID(id) == nil {
+			return true, fmt.Errorf("connect agent %q: its resolver added no agent of that id", id)
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 // NewRegistry creates an empty registry.

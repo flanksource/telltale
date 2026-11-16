@@ -90,6 +90,7 @@ describe("trace search", () => {
     renderPage();
 
     expect(await screen.findByRole("button", { name: /POST \/orders.*p50 100 ms · p95 100 ms/ })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "OpenTelemetry traces" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /gorm\.Query.*98 single-span/ })).toHaveClass("opacity-50");
     expect(Object.fromEntries(lastSearch(fetchMock))).toEqual({ source: "records", lookback: "1h", limit: "100", minSpans: "2" });
     expect(screen.getByText("1 error")).toBeInTheDocument();
@@ -128,7 +129,7 @@ describe("trace search", () => {
     renderPage();
     fireEvent.click(await screen.findByRole("link", { name: /POST \/orders/ }));
     expect(await screen.findByText("charge")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Inspect charge" }));
+    fireEvent.click(screen.getByRole("button", { name: /charge.*40 ms/ }));
     expect(await screen.findByText("http.status_code")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "OpenTelemetry metadata" }));
     fireEvent.click(screen.getByRole("button", { name: "Expand value" }));

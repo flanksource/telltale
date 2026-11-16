@@ -63,7 +63,7 @@ func routes(options HandlerOptions, ui http.Handler) (http.Handler, error) {
 	}
 	api := http.NewServeMux()
 	rpc.NewSwaggerServer(&rpc.ServeConfig{Version: options.Version}, options.Root,
-		&rpc.OpenAPIConfig{Title: "Telltale", Version: options.Version, Extensions: []func(*rpc.OpenAPISpec){addRulesPaths, connections.AddConnectionsOpenAPI, addConnectionPaths, addOtelPaths, addReceiverPath}}).RegisterRoutes(route.NewRouter(api))
+		&rpc.OpenAPIConfig{Title: "Telltale", Version: options.Version, Extensions: []func(*rpc.OpenAPISpec){addRulesPaths, connections.AddConnectionsOpenAPI, addConnectionPaths, addOtelPaths, addReceiverPath, addFeedPaths}}).RegisterRoutes(route.NewRouter(api))
 	root := http.NewServeMux()
 	if options.OTLP == nil {
 		options.OTLP = http.NotFoundHandler()
@@ -73,8 +73,11 @@ func routes(options HandlerOptions, ui http.Handler) (http.Handler, error) {
 	rpc.NewSwaggerServer(&rpc.ServeConfig{Version: options.Version, Executor: &rpc.ExecutorConfig{Enabled: true}}, options.Root, nil).
 		RegisterExecutionRoutes(route.NewRouter(installer))
 	root.Handle("/api/v1/agents/install/java", http.NewCrossOriginProtection().Handler(installer))
+	root.Handle("/api/v1/jvm/", http.NewCrossOriginProtection().Handler(installer))
 	hub := agentclient.NewHub(agentclient.Default, agentclient.NewTokenStore(options.ConfigDirs))
 	root.HandleFunc("/api/agents", hub.List)
+	root.HandleFunc("GET /api/agents/{agent}/catalog", jvmHandler)
+	root.Handle("POST /api/agents/{agent}/call", http.NewCrossOriginProtection().Handler(http.HandlerFunc(jvmHandler)))
 	otel := otelHandler(tracequery.Service{DataDir: options.DataDir, Connections: options.Connections})
 	root.Handle("/api/otel", otel)
 	root.Handle("/api/otel/", otel)
@@ -85,6 +88,9 @@ func routes(options HandlerOptions, ui http.Handler) (http.Handler, error) {
 	root.Handle(TracesMount, options.Traces)
 	root.Handle(TracesMount+"/", options.Traces)
 	root.Handle("GET "+TracesMount+"/{run}/traces/{kind}/records", records.Handler(options.DataDir))
+	root.Handle("GET "+TracesMount+"/{run}/records", records.FeedHandler(options.DataDir))
+	root.Handle("GET "+TracesMount+"/{run}/processes", records.ProcessesHandler(options.DataDir))
+	root.Handle("GET "+TracesMount+"/{run}/process/groups", records.ProcessGroupsHandler(options.DataDir))
 	root.Handle(TopMount, options.Top)
 	root.Handle(TopProcessesPath, options.Top)
 	root.Handle(TopFacetsPath, options.Top)
@@ -127,7 +133,7 @@ func assetHandler(assets fs.FS) http.Handler {
 		info, err := fs.Stat(assets, path)
 		// A client route is the page: any path without an extension, and the
 		// /top/<program> pages, whose program names may hold dots.
-		if errors.Is(err, fs.ErrNotExist) && (!strings.Contains(path, ".") || strings.HasPrefix(path, "top/") || strings.HasPrefix(path, "arm/") || strings.HasPrefix(path, "records/")) && !strings.HasPrefix(path, "assets/") {
+		if errors.Is(err, fs.ErrNotExist) && (!strings.Contains(path, ".") || strings.HasPrefix(path, "top/") || strings.HasPrefix(path, "arm/") || strings.HasPrefix(path, "records/") || strings.HasPrefix(path, "jvm/")) && !strings.HasPrefix(path, "assets/") {
 			path = "index.html"
 		} else if err != nil || info.IsDir() {
 			http.NotFound(w, r)

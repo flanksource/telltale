@@ -14,6 +14,7 @@ import (
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
+	"github.com/flanksource/commons-db/recordstore/sampleframe"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/jfr/decode"
 )
@@ -54,12 +55,14 @@ type Recording interface {
 // the watermark after which its next dump's events are new, and the samples
 // decoded but not yet emitted.
 type running struct {
-	mu        sync.Mutex
-	recording Recording
-	options   RecordOptions
-	watermark time.Time
-	pending   []Sample
-	report    Report
+	mu           sync.Mutex
+	recording    Recording
+	options      RecordOptions
+	watermark    time.Time
+	intervalFrom time.Time
+	pending      []Sample
+	pendingFrame *sampleframe.Frame
+	report       Report
 }
 
 type runningKey struct{}
@@ -114,7 +117,7 @@ func (p profiler[P]) Prepare(ctx dbcontext.Context, params P, records tracing.Em
 		return nil
 	}
 	return ctx.WithValue(runningKey{}, &running{
-		recording: recording, options: options,
+		recording: recording, options: options, intervalFrom: time.Now().UTC(),
 		report: Report{Engine: options.Engine, Recording: handle, Events: map[string]int64{}},
 	}), release, nil
 }
@@ -164,6 +167,12 @@ func (r *running) dumpEvery(ctx context.Context, records tracing.Emitter[Sample]
 func (r *running) dump(ctx context.Context, records tracing.Emitter[Sample]) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.pendingFrame != nil {
+		if err := r.flush(ctx, records); err != nil {
+			return err
+		}
+	}
+	startedAt := r.intervalFrom
 	data, err := r.recording.Dump(ctx)
 	if err != nil {
 		return errors.Join(fmt.Errorf("dump JFR recording %q: %w", r.report.Recording, err), r.flush(ctx, records))
@@ -182,6 +191,7 @@ func (r *running) dump(ctx context.Context, records tracing.Emitter[Sample]) err
 	for _, sample := range profile.Samples {
 		r.pending = append(r.pending, Sample{StackSample: sample})
 	}
+	r.pendingFrame = &sampleframe.Frame{Source: r.report.Recording, StartedAt: startedAt, CompletedAt: time.Now().UTC(), Observed: len(r.pending)}
 	for event, samples := range profile.Counts {
 		r.report.Events[event] += samples
 	}
@@ -193,13 +203,15 @@ func (r *running) dump(ctx context.Context, records tracing.Emitter[Sample]) err
 
 // flush emits the decoded samples not yet emitted.
 func (r *running) flush(ctx context.Context, records tracing.Emitter[Sample]) error {
-	for len(r.pending) > 0 {
-		if err := records.Emit(ctx, r.pending[0]); err != nil {
-			return err
-		}
-		r.pending = r.pending[1:]
+	if r.pendingFrame == nil {
+		return nil
 	}
+	if err := tracing.PublishFrame(ctx, records, *r.pendingFrame, r.pending); err != nil {
+		return err
+	}
+	r.intervalFrom = r.pendingFrame.CompletedAt
 	r.pending = nil
+	r.pendingFrame = nil
 	return nil
 }
 
@@ -207,5 +219,5 @@ func (r *running) flush(ctx context.Context, records tracing.Emitter[Sample]) er
 // stacks cut at 64KiB.
 func NewKindFor[P Recordable](recorder Recorder) *tracing.Handler[P, Sample] {
 	return tracing.NewHandler[P, Sample](profiler[P]{recorder: recorder}, tracing.Capabilities{Live: true}, "process").
-		WithTruncation(maxStackBytes)
+		WithTruncation(maxStackBytes).WithTop(topSpec())
 }

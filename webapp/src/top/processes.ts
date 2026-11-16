@@ -1,5 +1,6 @@
 import type { ProcessSample, ProcessTarget, TopProcesses, Usage } from "./api";
 import { originText } from "./groups";
+import { isPinned } from "./hogs";
 
 // The pure side of the process page: which target a path names, what the
 // processes use in total, and which of them a view shows.
@@ -19,6 +20,8 @@ function sumKnown(values: Array<number | undefined>): number | undefined {
 export function sumProcesses(processes: ProcessSample[]): Usage {
   const usage: Usage = { processes: processes.length, rssBytes: processes.reduce((total, process) => total + process.rssBytes, 0) };
   const optional = {
+    swapBytes: sumKnown(processes.map(process => process.swapBytes)),
+    compressedBytes: sumKnown(processes.map(process => process.compressedBytes)),
     cpuPercent: sumKnown(processes.map(process => process.cpuPercent)),
     diskReadBps: sumKnown(processes.map(process => process.diskReadBps)),
     diskWriteBps: sumKnown(processes.map(process => process.diskWriteBps)),
@@ -31,7 +34,7 @@ export function sumProcesses(processes: ProcessSample[]): Usage {
   return usage;
 }
 
-export const METRICS = ["cpu", "rss", "diskRead", "diskWrite", "netRx", "netTx", "sockets"] as const;
+export const METRICS = ["cpu", "rss", "compressed", "swap", "diskRead", "diskWrite", "netRx", "netTx", "sockets"] as const;
 
 export type Metric = (typeof METRICS)[number];
 
@@ -39,6 +42,8 @@ export function metricValue(usage: Usage, metric: Metric): number | undefined {
   switch (metric) {
     case "cpu": return usage.cpuPercent;
     case "rss": return usage.rssBytes;
+    case "compressed": return usage.compressedBytes;
+    case "swap": return usage.swapBytes;
     case "diskRead": return usage.diskReadBps;
     case "diskWrite": return usage.diskWriteBps;
     case "netRx": return usage.netRxBps;
@@ -55,11 +60,12 @@ export function metricSeries(readings: TopProcesses[], metric: Metric): number[]
   });
 }
 
-export type ProcessSortKey = "cpu" | "rss";
+export type ProcessSortKey = "cpu" | "rss" | "compressed" | "swap";
 
-export function sortProcesses(processes: ProcessSample[], key: ProcessSortKey): ProcessSample[] {
-  const value = (process: ProcessSample) => (key === "cpu" ? process.cpuPercent ?? 0 : process.rssBytes);
-  return [...processes].sort((a, b) => value(b) - value(a) || a.pid - b.pid);
+export function sortProcesses(processes: ProcessSample[], { by, sampledAt }: { by: ProcessSortKey; sampledAt: string }): ProcessSample[] {
+  return [...processes].sort((a, b) =>
+    Number(isPinned(b, sampledAt)) - Number(isPinned(a, sampledAt)) ||
+    (metricValue(b, by) ?? 0) - (metricValue(a, by) ?? 0) || a.pid - b.pid);
 }
 
 /** The processes whose name, command, owner or origin hold the text, case-insensitively. */

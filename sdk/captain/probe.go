@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/flanksource/captain/pkg/ai"
-	"github.com/flanksource/captain/pkg/ai/middleware"
+	"github.com/flanksource/captain/pkg/ai/observe"
 	telltale "github.com/flanksource/telltale/sdk"
 	"github.com/flanksource/telltale/sdk/protocol"
 )
@@ -43,7 +43,7 @@ func (probe) Arm(_ context.Context, raw json.RawMessage, sink telltale.Sink) (fu
 	if _, err := path.Match(p.Models, ""); err != nil {
 		return nil, fmt.Errorf("llm models glob: %w", err)
 	}
-	release := middleware.ObserveProvider(func(event middleware.ProviderEvent) {
+	release := observe.ObserveProvider(func(event observe.ProviderEvent) {
 		match, _ := path.Match(p.Models, event.Model)
 		if p.Models != "" && !match {
 			return
@@ -58,8 +58,8 @@ func (probe) Arm(_ context.Context, raw json.RawMessage, sink telltale.Sink) (fu
 	return func() error { release(); return nil }, nil
 }
 
-func makeRecord(event middleware.ProviderEvent, p params) (Record, error) {
-	r := Record{Phase: event.Phase, Model: event.Model, Backend: event.Backend, Iter: event.Iter, Usage: event.Usage, Cost: event.Cost, DurationMs: float64(event.Duration) / float64(time.Millisecond)}
+func makeRecord(event observe.ProviderEvent, p params) (Record, error) {
+	r := Record{Phase: string(event.Phase), Model: event.Model, Backend: event.Backend, Iter: event.Iter, Usage: event.Usage, Cost: event.Cost, DurationMs: float64(event.Duration) / float64(time.Millisecond)}
 	if event.Err != nil {
 		r.Error = telltale.Mask(event.Err.Error())
 	}

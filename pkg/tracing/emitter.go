@@ -12,9 +12,12 @@ import (
 
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/commons-db/recordstore"
+	"github.com/flanksource/commons-db/recordstore/sampleframe"
 )
 
 type emitter[R any] struct {
+	top     *TopSpec
+	frames  *sampleframe.Writer
 	source  *source
 	process rowProcessor
 

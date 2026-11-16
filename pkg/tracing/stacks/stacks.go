@@ -182,8 +182,9 @@ func NewKind(registry *agentclient.Registry, dumpers *Dumpers) *tracing.Handler[
 		}
 		return Records(Stack{CheckpointID: newCheckpointID(), Reason: request.Reason, PID: pid, Transport: "agent"}, Dump{Format: FormatGo, Text: string(blob.Data), CollectedAt: time.Now().UTC()}), nil
 	}}
+	agent.SampledBlobs = true
 	return tracing.NewHandler[Params, Stack](stacks{dumpers: dumpers, agent: agent}, tracing.Capabilities{Live: true}, target.Process, target.Agent, target.Self).
-		WithTruncation(maxRawBytes)
+		WithTruncation(maxRawBytes).WithTop(topSpec())
 }
 
 func newCheckpointID() string { return uuid.NewString() }

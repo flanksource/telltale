@@ -11,6 +11,7 @@ import {
   type ProcessTraceRefs,
   type TraceRef,
 } from "./api";
+import { ProcessFacets, projectProcesses, type FacetChange, type ProcessIdentity, type ProcessMetric } from "./processData";
 
 const POLL_INTERVAL_MS = 1000;
 
@@ -73,10 +74,36 @@ async function readStream<T>(mount: string, ref: TraceRef): Promise<T[]> {
 }
 
 // readRecentSamples is the last SAMPLE_WINDOW samples of the stream.
-async function readRecentSamples(mount: string, ref: TraceRef): Promise<ProcessSample[]> {
+async function readRecentSamples(mount: string, ref: TraceRef): Promise<ProcessMetric[]> {
   const latest = await fetchLatestSeq(mount, ref);
   if (latest === 0) return [];
-  return readStream<ProcessSample>(mount, { ...ref, afterSeq: Math.max(0, latest - SAMPLE_WINDOW) });
+  return readStream<ProcessMetric>(mount, { ...ref, afterSeq: Math.max(0, latest - SAMPLE_WINDOW), toSeq: latest });
+}
+
+function processReader(mount: string, refs: ProcessTraceRefs) {
+  const facets = new ProcessFacets();
+  let after = 0;
+  let pending: FacetChange[] = [];
+  let loading: Promise<ReturnType<typeof projectProcesses>> | undefined;
+  return () => {
+    if (loading) return loading;
+    loading = (async () => {
+      const metrics = await readRecentSamples(mount, refs.samples);
+      const [identities, high] = await Promise.all([
+        readStream<ProcessIdentity>(mount, refs.tree), fetchLatestSeq(mount, refs.facets),
+      ]);
+      if (high > after) {
+        const changes = await readStream<FacetChange>(mount, { ...refs.facets, afterSeq: after, toSeq: high });
+        pending.push(...changes);
+        after = high;
+      }
+      const tick = Math.max(0, ...metrics.map(metric => metric.tick));
+      facets.apply(pending.filter(event => event.tick <= tick));
+      pending = pending.filter(event => event.tick > tick);
+      return projectProcesses(identities, metrics, facets);
+    })().finally(() => { loading = undefined; });
+    return loading;
+  };
 }
 
 function message(e: unknown): string {
@@ -151,12 +178,8 @@ export function useProcessTrace({ mount, refs, sessions: reported, done, selecte
   const enabled = !!mount && !!refs;
   const sessions = live ? reported : undefined;
 
-  const tree = usePolled<ProcessTraceNode[]>(
-    enabled, live, () => readStream<ProcessTraceNode>(mount!, refs!.tree), `${mount}|${refs?.tree.stream}`,
-  );
-  const sampled = usePolled<ProcessSample[]>(
-    enabled, live, () => readRecentSamples(mount!, refs!.samples), `${mount}|${refs?.samples.stream}`,
-  );
+  const reader = useMemo(() => mount && refs ? processReader(mount, refs) : undefined, [mount, refs?.tree.stream, refs?.samples.stream, refs?.facets.stream]);
+  const process = usePolled(enabled, live, () => reader!(), `${mount}|${refs?.tree.stream}`);
   const stacked = usePolled<StackRecord[]>(
     enabled && !!selectedKey, live, () => readStream<StackRecord>(mount!, refs!.stacks), `${mount}|${refs?.stacks.stream}`,
   );
@@ -165,18 +188,18 @@ export function useProcessTrace({ mount, refs, sessions: reported, done, selecte
   );
 
   const stackCheckpoint = useCheckpoint(mount, sessions?.stacks, stacked.reload);
-  const sampleCheckpoint = useCheckpoint(mount, sessions?.samples, sampled.reload);
+  const sampleCheckpoint = useCheckpoint(mount, sessions?.samples, process.reload);
   const collectStack = useCallback(
     (key: string, transport: string) => stackCheckpoint.checkpoint({ key, transport, reason: "manual" }),
     [stackCheckpoint.checkpoint],
   );
   const refreshFacets = useCallback((key: string) => sampleCheckpoint.checkpoint({ key }), [sampleCheckpoint.checkpoint]);
 
-  const nodes = useMemo(() => tree.value ?? [], [tree.value]);
-  const samples = useMemo(() => sampled.value ?? [], [sampled.value]);
+  const nodes = useMemo(() => process.value?.nodes ?? [], [process.value]);
+  const samples = useMemo(() => process.value?.samples ?? [], [process.value]);
   const stacks = useMemo(() => stacked.value ?? [], [stacked.value]);
   const goprof = useMemo(() => profiled.value ?? [], [profiled.value]);
-  const error = tree.error ?? sampled.error ?? stacked.error ?? profiled.error;
+  const error = process.error ?? stacked.error ?? profiled.error;
 
   return {
     nodes,
@@ -184,7 +207,7 @@ export function useProcessTrace({ mount, refs, sessions: reported, done, selecte
     stacks,
     goprof,
     ...(mount && refs?.goprof ? { goprofExportUrl: traceExportUrl(mount, refs.goprof, "pprof") } : {}),
-    loading: enabled && tree.value === null && !tree.error,
+    loading: enabled && process.value === null && !process.error,
     ...(error ? { error } : {}),
     canCollect: enabled && !!sessions,
     collecting: stackCheckpoint.busy,

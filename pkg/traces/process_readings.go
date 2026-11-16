@@ -6,6 +6,7 @@ import (
 
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/process"
+	"github.com/flanksource/telltale/pkg/tracing/processcapture"
 )
 
 // ProcessMark is where a span of the run begins in its samples stream.
@@ -14,7 +15,10 @@ type ProcessMark struct{ Samples int64 }
 // Mark commits the samples taken so far and returns where the next span
 // begins.
 func (p *ProcessTrace) Mark(ctx context.Context) (ProcessMark, error) {
-	seq, err := p.samples.Mark(ctx)
+	if err := p.CheckpointTree(ctx); err != nil {
+		return ProcessMark{}, err
+	}
+	seq, err := p.host.highSeq(ctx, p.Refs().Samples.Stream)
 	return ProcessMark{Samples: seq}, err
 }
 
@@ -27,27 +31,44 @@ type ProcessReadings struct {
 
 // Readings are the samples taken after mark through now, and the tree.
 func (p *ProcessTrace) Readings(ctx context.Context, after ProcessMark) (ProcessReadings, error) {
-	to, err := p.samples.Mark(ctx)
+	mark, err := p.Mark(ctx)
 	if err != nil {
 		return ProcessReadings{}, err
 	}
 	var readings ProcessReadings
-	if to > after.Samples {
-		if readings.Samples, err = readAll[process.Sample](ctx, p.host, p.samples.Ref(after.Samples, to)); err != nil {
-			return ProcessReadings{}, err
-		}
+	refs := p.Refs()
+	identities, err := readAll[processcapture.Identity](ctx, p.host, refs.Tree)
+	if err != nil {
+		return readings, err
 	}
-	readings.Nodes, err = p.Nodes(ctx)
-	return readings, err
+	refs.Samples.AfterSeq, refs.Samples.ToSeq = after.Samples, mark.Samples
+	if mark.Samples <= after.Samples {
+		readings.Nodes = processcapture.Nodes(identities, nil)
+		return readings, nil
+	}
+	metrics, err := readAll[processcapture.MetricRow](ctx, p.host, refs.Samples)
+	if err != nil {
+		return readings, err
+	}
+	readings.Nodes, readings.Samples = processcapture.Nodes(identities, metrics), processcapture.Samples(identities, metrics)
+	return readings, nil
 }
 
 // Nodes are every process of the tree as last seen, after re-observing it.
 func (p *ProcessTrace) Nodes(ctx context.Context) ([]process.Node, error) {
-	to, err := p.tree.Mark(ctx)
-	if err != nil || to == 0 {
+	if err := p.CheckpointTree(ctx); err != nil {
 		return nil, err
 	}
-	return readAll[process.Node](ctx, p.host, p.tree.Ref(0, to))
+	refs := p.Refs()
+	identities, err := readAll[processcapture.Identity](ctx, p.host, refs.Tree)
+	if err != nil {
+		return nil, err
+	}
+	metrics, err := readAll[processcapture.MetricRow](ctx, p.host, refs.Samples)
+	if err != nil {
+		return nil, err
+	}
+	return processcapture.Nodes(identities, metrics), nil
 }
 
 func readAll[R any](ctx context.Context, host *Host, ref tracing.TraceRef) ([]R, error) {

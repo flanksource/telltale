@@ -18,6 +18,7 @@ import (
 	"github.com/flanksource/commons-db/connection/store"
 	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/tracing"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 )
 
 // TraceSpec is one capture to arm: a trace kind and its params.
@@ -89,7 +90,7 @@ type StartOptions struct {
 	TraceRoot TraceRoot
 	Stdin     io.Reader
 	// Stdout and Stderr take the command's output; when both are nil it is
-	// written to OutputFile in the run's store.
+	// written to StdoutFile and StderrFile in the run's store.
 	Stdout, Stderr io.Writer
 	// Connections answer the connection references the captures name, such
 	// as sql_xevent's connection; nil answers none (OpenConnections is
@@ -128,6 +129,7 @@ type Result struct {
 	Captures  []CaptureResult `json:"captures"`
 	// Process names the process trace's streams; nil for a host run.
 	Process *traces.ProcessRefs `json:"process,omitempty"`
+	Output  *OutputRefs         `json:"output,omitempty"`
 	// CheckpointErrors are the checkpoints that failed, such as a dump of a
 	// process that had exited; a run with any failed.
 	CheckpointErrors []string `json:"checkpointErrors,omitempty"`
@@ -144,14 +146,23 @@ type CaptureResult struct {
 	Kind    string           `json:"kind"`
 	Ref     tracing.TraceRef `json:"ref"`
 	Summary map[string]any   `json:"summary,omitempty"`
+	Target  target.Target    `json:"target,omitzero"`
 }
 
 // ManifestFile is the file a finished run leaves its Result in, in its store.
-const ManifestFile = "run.json"
+const ManifestFile = traces.ManifestFile
 
-// OutputFile is where a run started without Stdout and Stderr writes the
-// command's output, in its store.
+// OutputFile names combined output in recordings made before separate streams.
 const OutputFile = "output.log"
+
+const StdoutFile = "stdout.log"
+const StderrFile = "stderr.log"
+
+// OutputRefs names separately recorded command output within the run directory.
+type OutputRefs struct {
+	Stdout string `json:"stdout"`
+	Stderr string `json:"stderr"`
+}
 
 func writeManifest(result *Result) error {
 	data, err := json.MarshalIndent(result, "", "  ")

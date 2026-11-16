@@ -1,0 +1,12 @@
+# logs
+
+import { KindReference } from '../_components/KindReference';
+
+Records application logs from Telltale, an instrumented agent, or a configured host source. The default seam is `self`.
+
+```sh
+telltale run logs --seam agent --agent my-agent --duration 1m
+```
+
+Options include `--min-level`, `--match`, and per-logger `--levels`; host-source options include `--backend`, `--connection`, `--query`, `--namespace`, `--pod-selector`, and `--container`. Available settings depend on the selected source. Run `telltale run logs --help` for the complete flags.
+<KindReference kind="logs" />

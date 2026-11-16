@@ -1,0 +1,12 @@
+# jvm_jfr
+
+import { KindReference } from '../_components/KindReference';
+
+Profiles a local JVM or a connected Java agent with Flight Recorder or async-profiler. Checkpoints decode new samples into the run store.
+
+```sh
+telltale run jvm_jfr --pid 1234 --duration 30s --every 10s
+```
+
+The process seam requires a compatible JDK's `jcmd`, attach permission, and JFR. Select `--engine async-profiler --event cpu` (or `wall`, `alloc`, or `lock`) to use async-profiler; local captures require `asprof`. `--threads`, `--interval`, and `--max-stack-depth` control sampling and decoded output. See [SQL Server and JVM captures](/sqlserver-jvm#local-jvm) for prerequisites and [Java agent installation](/sqlserver-jvm#java-agent-installation).
+<KindReference kind="jvm_jfr" />

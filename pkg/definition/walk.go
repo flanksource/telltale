@@ -29,6 +29,9 @@ type Located struct {
 	Seam target.Seam
 	// Backend fixes a logs list's cloud backend; Provider a query list's.
 	Backend, Provider string
+	// Preset is a list of a preset group, which an ad-hoc capture another
+	// list also takes does not land in.
+	Preset bool
 	// Title and Description are the list's, as its form shows them.
 	Title, Description string
 	// Name is the entry's name, or its default once Resolve filled it.
@@ -71,6 +74,7 @@ func (l Located) DefaultName(definition string) string {
 // listTag is a typed list's telltale tag, or a group's (seam alone).
 type listTag struct {
 	kind, seam, backend, provider string
+	preset                        bool
 }
 
 func parseTag(field reflect.StructField) listTag {
@@ -86,6 +90,8 @@ func parseTag(field reflect.StructField) listTag {
 			tag.backend = value
 		case "provider":
 			tag.provider = value
+		case "preset":
+			tag.preset = true
 		}
 	}
 	return tag
@@ -147,7 +153,7 @@ func walkGroup(section, group string, groupTag listTag, value reflect.Value) []L
 			}
 			found = append(found, Located{
 				Section: section, Group: group, Type: jsonName(field), Index: index, Count: list.Len(),
-				Kind: tag.kind, Seam: target.Seam(seam), Backend: tag.backend, Provider: tag.provider,
+				Kind: tag.kind, Seam: target.Seam(seam), Backend: tag.backend, Provider: tag.provider, Preset: groupTag.preset,
 				Title: clickyTag(field, "title"), Description: clickyTag(field, "desc"),
 				Name: entry.EntryName(), Entry: entry,
 			})

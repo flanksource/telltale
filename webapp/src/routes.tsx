@@ -2,12 +2,12 @@ import { lazy, Suspense } from "react";
 import { Panel } from "@flanksource/clicky-ui/components";
 import { useRouter } from "@flanksource/clicky-ui/rpc";
 
-const Status = lazy(() => import("./Status"));
+const OverviewPage = lazy(() => import("./overview/OverviewPage"));
 const TopPage = lazy(() => import("./top/TopPage"));
 const ProcessPage = lazy(() => import("./top/ProcessPage"));
-const TracesPage = lazy(() => import("./traces/TracesPage"));
 const ConnectionsPage = lazy(() => import("./workspace/ConnectionsPage"));
 const AgentsPage = lazy(() => import("./workspace/AgentsPage"));
+const JvmPage = lazy(() => import("./jvm/JvmPage"));
 const ArmPage = lazy(() => import("./workspace/ArmPage"));
 const QueryPage = lazy(() => import("./workspace/QueryPage"));
 const RecordsPage = lazy(() => import("./workspace/RecordsPage"));
@@ -21,6 +21,7 @@ export type Route =
   | { page: "process"; target: string }
   | { page: "connections" | "query"; id?: string }
   | { page: "agents" }
+  | { page: "jvm"; agent: string; operation?: string }
   | { page: "arm"; agent?: string; probe?: string }
   | { page: "records"; run: string; kind: string; stream: string }
   | { page: "otel"; traceId?: string }
@@ -41,8 +42,10 @@ export function matchRoute(pathname: string): Route {
   const otel = /^\/otel\/([^/]+)$/.exec(path);
   const workspace = /^\/(connections|query)\/([^/]+)$/.exec(path);
   const arm = /^\/arm\/([^/]+)\/([^/]+)$/.exec(path);
+  const jvm = /^\/jvm\/([^/]+)(?:\/([^/]+))?$/.exec(path);
   const records = /^\/records\/([^/]+)\/([^/]+)\/([^/]+)$/.exec(path);
   try {
+    if (jvm) return { page: "jvm", agent: decodeURIComponent(jvm[1]!), ...(jvm[2] ? { operation: decodeURIComponent(jvm[2]) } : {}) };
     if (definition) return { page: "definitions", name: decodeURIComponent(definition[1]!) };
     if (otel) return { page: "otel", traceId: decodeURIComponent(otel[1]!) };
     if (workspace) return { page: workspace[1] as "connections" | "query", id: decodeURIComponent(workspace[2]!) };
@@ -60,24 +63,6 @@ export function matchRoute(pathname: string): Route {
   return { page: "notFound", pathname };
 }
 
-function Overview() {
-  return (
-    <div className="space-y-8">
-      <div className="space-y-3">
-        <h1 className="text-3xl font-semibold tracking-tight">Telltale</h1>
-        <p className="text-muted-foreground">Your workspace is ready.</p>
-      </div>
-      <Panel title="Backend connection">
-        <Suspense fallback={<p role="status">Connecting to the backend…</p>}><Status /></Suspense>
-      </Panel>
-      <Panel title="Trace runs">
-        <Suspense fallback={<p role="status">Loading trace runs…</p>}><TracesPage /></Suspense>
-      </Panel>
-      <a className="text-sm underline underline-offset-4" href="/api/openapi.json">View the OpenAPI specification</a>
-    </div>
-  );
-}
-
 /** The page of the current location. */
 export function AppRoutes() {
   const { pathname, renderLink } = useRouter();
@@ -87,10 +72,11 @@ export function AppRoutes() {
     case "otel": return <Suspense fallback={<p role="status">Loading trace search…</p>}><OtelPage traceId={route.traceId} /></Suspense>;
     case "connections": return <Suspense fallback={<p role="status">Loading connections…</p>}><ConnectionsPage selected={route.id} /></Suspense>;
     case "agents": return <Suspense fallback={<p role="status">Loading agents…</p>}><AgentsPage /></Suspense>;
+    case "jvm": return <Suspense fallback={<p role="status">Loading JVM diagnostics…</p>}><JvmPage key={`${route.agent}:${route.operation}`} agent={route.agent} {...(route.operation ? { operation: route.operation } : {})} /></Suspense>;
     case "arm": return <Suspense fallback={<p role="status">Loading arming form…</p>}><ArmPage agent={route.agent} probe={route.probe} /></Suspense>;
     case "query": return <Suspense fallback={<p role="status">Loading query workspace…</p>}><QueryPage selected={route.id} /></Suspense>;
     case "records": return <Suspense fallback={<p role="status">Loading result profile…</p>}><RecordsPage run={route.run} kind={route.kind} stream={route.stream} /></Suspense>;
-    case "overview": return <Overview />;
+    case "overview": return <Suspense fallback={<p role="status">Loading overview…</p>}><OverviewPage /></Suspense>;
     case "top": return (
       <Panel title="Process groups">
         <Suspense fallback={<p role="status">Loading process groups…</p>}><TopPage /></Suspense>

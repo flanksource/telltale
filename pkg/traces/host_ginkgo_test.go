@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -36,6 +37,14 @@ func getThrough(capture *traces.Capture, target string) {
 }
 
 var _ = Describe("trace host", func() {
+	It("names a run with at most nine hostname characters and a compact UTC timestamp", func() {
+		hostname, err := os.Hostname()
+		Expect(err).NotTo(HaveOccurred())
+		prefix := strings.ReplaceAll(strings.Split(hostname, ".")[0], "-", "")
+		prefix = prefix[:min(9, len(prefix))]
+		started := time.Date(2026, 10, 15, 11, 30, 0, 0, time.FixedZone("example", 2*60*60))
+		Expect(traces.RunID(started)).To(Equal(prefix + "20261015T093000Z"))
+	})
 	var server *httptest.Server
 	BeforeEach(func() {
 		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -54,7 +63,7 @@ var _ = Describe("trace host", func() {
 		Expect(err).ToNot(HaveOccurred())
 		DeferCleanup(func() { Expect(second.Close(context.Background())).To(Succeed()) })
 
-		Expect([]string{first.RunID(), second.RunID()}).To(Equal([]string{"run-2026-10-15T09-30-00Z", "run-2026-10-15T09-30-00Z-2"}))
+		Expect([]string{first.RunID(), second.RunID()}).To(Equal([]string{runID, runID + "_2"}))
 		Expect(first.Dir()).To(Equal(filepath.Join(dataDir, "traces", first.RunID())))
 	})
 
@@ -131,6 +140,22 @@ var _ = Describe("trace host", func() {
 })
 
 var _ = Describe("Prune", func() {
+	It("retains the newest start times across hostnames and old IDs", func() {
+		dataDir := GinkgoT().TempDir()
+		runs := []string{"zworker20261105T000000Z", "run-2026-11-06T00-00-00Z", "aworker20261107T000000Z"}
+		for index, run := range runs {
+			dir := traces.StoreDir(dataDir, run)
+			Expect(os.MkdirAll(dir, 0o755)).To(Succeed())
+			data, err := json.Marshal(map[string]any{"startedAt": time.Date(2026, 11, 5+index, 0, 0, 0, 0, time.UTC)})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(os.WriteFile(filepath.Join(dir, traces.ManifestFile), data, 0o600)).To(Succeed())
+		}
+		Expect(traces.Prune(dataDir, 2)).To(Succeed())
+		Expect(os.Stat(traces.StoreDir(dataDir, runs[0]))).Error().To(MatchError(os.ErrNotExist))
+		for _, id := range runs[1:] {
+			Expect(os.Stat(traces.StoreDir(dataDir, id))).Error().NotTo(HaveOccurred())
+		}
+	})
 	It("keeps only the newest runs' stores", func() {
 		dataDir := GinkgoT().TempDir()
 		runs := []string{"run-2026-10-13T00-00-00Z", "run-2026-10-14T00-00-00Z", "run-2026-10-15T00-00-00Z"}

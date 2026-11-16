@@ -1,4 +1,4 @@
-import type { ProcessNodeRow, ProcessSampleRow } from "@flanksource/clicky-ui/data";
+import type { ProcessNodeRow, ProcessSampleRow, TopMetric } from "@flanksource/clicky-ui/data";
 
 // The server lists, starts and stops runs at /api/traces (telltale.Handler),
 // and serves each one's trace routes under its mount, /api/traces/<run id>
@@ -18,6 +18,7 @@ export interface TraceRef {
 export interface ProcessTraceRefs {
   tree: TraceRef;
   samples: TraceRef;
+  facets: TraceRef;
   stacks: TraceRef;
   goprof?: TraceRef;
 }
@@ -27,6 +28,7 @@ export interface CaptureResult {
   kind: string;
   ref: TraceRef;
   summary?: Record<string, unknown>;
+  target?: TraceTarget;
 }
 
 export type RunStatus = "running" | "succeeded" | "failed" | "unfinished" | "standing";
@@ -64,6 +66,7 @@ export interface RunFilter {
   q?: string;
   status?: RunStatus | "";
   kind?: string;
+  limit?: number;
 }
 
 /** A field of a start request the server refused, at its JSON pointer ("" for the request as a whole). */
@@ -92,6 +95,7 @@ export interface TraceTarget {
   agent?: string;
   selector?: Record<string, string>;
   wait?: boolean;
+  allowMutation?: boolean;
 }
 
 /** What the run-wide process tree reads of each process (traces.TreeOptions). */
@@ -108,11 +112,19 @@ export interface RunExecution {
   command?: string;
 }
 
+/** One capture of a kind in a start request: whether it is armed, where, and the kind's params. */
+export interface TraceEntry {
+  enabled?: boolean;
+  target?: TraceTarget;
+  [param: string]: unknown;
+}
+
 export interface StartRequest extends RunExecution, Record<string, unknown> {
   /** A saved trace definition to run, in place of inline traces. */
   definition?: string;
   tree?: TreeOptions;
-  traces?: Record<string, { enabled?: boolean; target?: TraceTarget; [param: string]: unknown }>;
+  /** Per kind, one capture, or a list when the kind is armed more than once. */
+  traces?: Record<string, TraceEntry | TraceEntry[]>;
 }
 
 export interface TracesStatus {
@@ -130,6 +142,7 @@ export interface TraceExportFormat {
 }
 
 export interface TraceKindInfo {
+  top?: { identity?: string[]; perSource?: boolean; metrics?: TopMetric[]; relation?: { column:string; target:string; label:string } };
   name: string;
   title: string;
   exportFormats: TraceExportFormat[];
@@ -155,7 +168,7 @@ export async function fetchTraceRuns(filter: RunFilter = {}): Promise<TracesStat
 /** The query string of filter's non-empty fields. */
 export function runFilterQuery(filter: RunFilter): string {
   const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(filter)) if (value) params.set(key, String(value));
+  for (const [key, value] of Object.entries(filter)) if (value !== undefined && value !== "") params.set(key, String(value));
   return params.toString();
 }
 

@@ -1,0 +1,172 @@
+kind: Fixture
+name: Interactive JVM diagnostics
+defaults:
+  timeout: 2m
+steps:
+  - id: prepare
+    kind: exec
+    cwd: &root ..
+    script: |
+      set -eu
+      test -x .bin/telltale
+      command -v java >/dev/null
+      command -v javac >/dev/null
+      command -v jcmd >/dev/null
+      command -v curl >/dev/null
+      mkdir -p .tmp/jvm-demo
+      demo_dir=$(mktemp -d "$PWD/.tmp/jvm-demo/run.XXXXXX")
+      mkdir -p "$demo_dir/classes"
+      javac -d "$demo_dir/classes" pkg/agentinstall/testdata/Workload.java
+      printf '::notice::Demo artifacts: %s\n' "$demo_dir"
+      printf '%s' "$demo_dir"
+    export:
+      DEMO_DIR: '{{.outputs.stdout}}'
+
+  - id: runtime
+    kind: services
+    services:
+      workload:
+        cwd: *root
+        exec: |
+          set -eu
+          printf '%s\n' "$$" > "$DEMO_DIR/jvm.pid"
+          exec java -cp "$DEMO_DIR/classes" Workload 86400
+        ready:
+          exec: |
+            set -eu
+            read -r demo_pid < "$DEMO_DIR/jvm.pid"
+            jcmd "${demo_pid:?missing JVM pid}" VM.version
+        wait:
+          timeout: 30s
+        export:
+          JVM_PID: '{{.outputs.pid}}'
+
+  - id: attach
+    kind: exec
+    cwd: *root
+    exec: .bin/telltale
+    args: [agents, install, java, --pid, '$JVM_PID', --directory, '$DEMO_DIR/agent', --extensions-dir, '$DEMO_DIR/extensions', --service, jvm-demo, --allow-mutation, --format, json]
+    cel: exitCode == 0 && json.agent != ""
+    export:
+      DEMO_AGENT: '{{.outputs.json.agent}}'
+
+  - id: server
+    kind: services
+    services:
+      web:
+        cwd: *root
+        exec: exec .bin/telltale serve --host 127.0.0.1 --port {{.port}} --data-dir "$DEMO_DIR/data"
+        ready:
+          http: http://127.0.0.1:{{.port}}/health
+        wait:
+          timeout: 30s
+
+  - id: groovy
+    kind: telltale
+    server: '$WEB_URL'
+    agent: '{{.env.DEMO_AGENT}}'
+    operation: jvm.groovy.eval
+    allowMutation: true
+    params:
+      source: 'println "hello"; return 3 + 4'
+    cel: exitCode == 0 && json.value == 7 && json.stdout.contains("hello")
+
+  - id: methods
+    kind: telltale
+    server: '$WEB_URL'
+    agent: '{{.env.DEMO_AGENT}}'
+    capture: jvm_trace
+    duration: 5s
+    allowMutation: true
+    params:
+      targets: [{class: Workload, method: compute}]
+      args: true
+      return: true
+      events: 10
+    wait: &captureWait
+      until: status == "succeeded"
+      failWhen: status == "failed"
+      interval: 200ms
+      timeout: 15s
+    cel: exitCode == 0 && json.captures.exists(c, c.kind == "jvm_trace" && c.summary.count == 10)
+
+  - id: restored
+    kind: telltale
+    server: '$WEB_URL'
+    agent: '{{.env.DEMO_AGENT}}'
+    operation: jvm.classes.patches
+    cel: exitCode == 0 && size(json) == 0
+
+  - id: catalog
+    kind: telltale
+    server: '$WEB_URL'
+    agent: '{{.env.DEMO_AGENT}}'
+    operation: jvm.catalog
+    cel: >-
+      exitCode == 0
+      && stdout.contains('"name":"jvm.groovy.eval"')
+      && stdout.contains('"name":"jvm.classes.source"')
+
+  - id: compilePreview
+    kind: telltale
+    server: '$WEB_URL'
+    agent: '{{.env.DEMO_AGENT}}'
+    operation: jvm.classes.compile
+    params: &replacement
+      class: Workload
+      method: compute
+      source: 'public static double compute(long value) { return 7.0; }'
+    cel: json.success == true
+
+  - id: redefine
+    kind: telltale
+    server: '$WEB_URL'
+    agent: '{{.env.DEMO_AGENT}}'
+    capture: jvm_redefine
+    duration: 1s
+    allowMutation: true
+    params: *replacement
+    wait: *captureWait
+    cel: json.captures.exists(c, c.kind == "jvm_redefine" && c.summary.count > 0)
+
+  - id: originalMethod
+    kind: telltale
+    server: '$WEB_URL'
+    agent: '{{.env.DEMO_AGENT}}'
+    operation: jvm.ognl.eval
+    allowMutation: true
+    params:
+      expression: '@Workload@compute(1L)'
+    cel: json.value > 1.414 && json.value < 1.415
+
+  - id: exitDemo
+    kind: form
+    timeout: 1h
+    title: Exit JVM diagnostics demo
+    description: |
+      Groovy, tracing, compilation, redefinition and restoration checks passed.
+      Keep this form open while exploring:
+      {{.env.WEB_URL}}/jvm/{{.env.DEMO_AGENT}}
+
+      Dedicated capture workspaces:
+      {{.env.WEB_URL}}/jvm/{{.env.DEMO_AGENT}}/instrument?class=Workload&method=compute
+      {{.env.WEB_URL}}/jvm/{{.env.DEMO_AGENT}}/traces
+      {{.env.WEB_URL}}/jvm/{{.env.DEMO_AGENT}}/notifications
+
+      Try JMX Memory attributes and gc(), Workload class/method source,
+      compile-preview and short redefinition captures, Threads and Metrics.
+      The Extensions install operation accepts sdk/java/build/libs/telltale-example-extension.jar.
+
+      Choose Exit and submit to stop the demo server and JVM.
+      Cancelling also stops both processes. Artifacts remain in:
+      {{.env.DEMO_DIR}}
+    schema:
+      type: object
+      required: [action]
+      properties:
+        action:
+          type: string
+          title: Action
+          enum: [exit]
+    default:
+      action: exit

@@ -30,6 +30,8 @@ func newAgentInstallCommand() *cobra.Command {
 	f.StringVar(&o.HubURL, "hub-url", "", "Hub URL reachable from the target JVM")
 	f.StringVar(&o.TokenFile, "token-file", "", "Agent-scope hub token file; contents are not printed")
 	f.StringVar(&o.Service, "service", "java", "Service identity advertised by the agent")
+	f.BoolVar(&o.AllowMutation, "allow-mutation", false, "Enable JVM mutation operations; each call also requires opt-in")
+	f.StringVar(&o.ExtensionsDir, "extensions-dir", "", "Absolute extension storage directory on the target JVM")
 	f.BoolVar(&o.DryRun, "dry-run", false, "Preview the installation without changing the target")
 	install.AddCommand(java)
 	return install

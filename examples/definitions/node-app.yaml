@@ -1,0 +1,16 @@
+# Run from the Node application's directory, adjusting the definition path:
+#   telltale run --definition ./examples/definitions/node-app.yaml -- node server.js
+# Or attach: telltale run --definition ./examples/definitions/node-app.yaml --pid 1234 --duration 1m
+# This records OS resources and descriptors; it does not collect V8 profiles.
+apiVersion: telltale.flanksource.com/v1alpha1
+kind: TraceDefinition
+metadata:
+  name: node-app
+spec:
+  description: Follow a Node application's processes CPU memory disk IO open files and network sockets
+  collect:
+    process:
+      tree:
+        facets: true
+        environment:
+          keys: [NODE_ENV, UV_THREADPOOL_SIZE, LANG, TZ]

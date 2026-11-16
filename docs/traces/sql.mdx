@@ -1,0 +1,12 @@
+# sql
+
+import { KindReference } from '../_components/KindReference';
+
+Records SQL statements from Telltale, an instrumented agent, or a local PostgreSQL proxy. The default seam is `self`; use `proxy` for a command's database traffic.
+
+```sh
+telltale run sql --seam proxy --env ORDERS_DB_URL -- go test ./...
+```
+
+The proxy reads the upstream DSN from the named environment variable and exports a proxied DSN under the same name. Alternatively use `--dsn` or the standard database environment variables. `--min-duration` filters statements and `--max-statements` limits retained rows. `--params` includes bind values, which can contain sensitive data. Run `telltale run sql --help` for all options.
+<KindReference kind="sql" />

@@ -1,0 +1,12 @@
+# goprof
+
+import { KindReference } from '../_components/KindReference';
+
+Reads Go pprof profiles at checkpoints from a command, an attached process, or an agent. The default process source is a [gops agent](https://github.com/google/gops) in the target process, discovered through its port file.
+
+```sh
+telltale run goprof --pid 1234 --duration 1m --every 15s
+```
+
+`--profile` selects `heap` (default), `cpu`, `allocs`, `mutex`, `block`, or `goroutine`; `--source` selects `gops`, `pprof`, or `file`. `--seconds` sets the CPU profile window. Checkpoints occur at `--every` and once when an attached run stops. Run `telltale run goprof --help` for all options.
+<KindReference kind="goprof" />

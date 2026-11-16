@@ -11,9 +11,14 @@ import (
 )
 
 type queryOptions struct {
-	Where string `json:"where,omitempty" clicky:"title=Row predicate,desc=CEL expression evaluated with a row binding"`
-	From  string `json:"from,omitempty" clicky:"title=From,desc=Inclusive row timestamp in RFC3339 format"`
-	Until string `json:"until,omitempty" clicky:"title=Until,desc=Exclusive row timestamp in RFC3339 format"`
+	Frame  string `json:"frame,omitempty" clicky:"title=Sample,desc=Completed sample id; empty selects the latest complete sample"`
+	Source string `json:"source,omitempty" clicky:"title=Source,desc=Sample source identity"`
+	Metric string `json:"metric,omitempty" clicky:"title=Metric,desc=Profile measurement to display"`
+	Sort   string `json:"sort,omitempty" clicky:"title=Sort,desc=Native column sort key"`
+	Desc   bool   `json:"desc,omitempty" clicky:"title=Descending,desc=Sort descending"`
+	Where  string `json:"where,omitempty" clicky:"title=Row predicate,desc=CEL expression evaluated with a row binding"`
+	From   string `json:"from,omitempty" clicky:"title=From,desc=Inclusive row timestamp in RFC3339 format"`
+	Until  string `json:"until,omitempty" clicky:"title=Until,desc=Exclusive row timestamp in RFC3339 format"`
 }
 
 func serveSchema(w http.ResponseWriter, r *http.Request, refs []read.Ref) {
@@ -22,6 +27,9 @@ func serveSchema(w http.ResponseWriter, r *http.Request, refs []read.Ref) {
 		return
 	}
 	profile, err := refs[0].Runtime.Results.Registry.Get(r.Context(), "traces/"+refs[0].Kind)
+	if r.URL.Query().Get("view") == "top" {
+		profile, err = read.TopProfile(r.Context(), refs[0], read.TopQuery{Frame: r.URL.Query().Get("frame"), Source: r.URL.Query().Get("source"), Metric: r.URL.Query().Get("metric")})
+	}
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

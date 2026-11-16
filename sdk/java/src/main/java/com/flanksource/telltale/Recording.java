@@ -5,7 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-final class Recording implements AutoCloseable {
+final class Recording implements Capture {
   private static final AtomicBoolean ASYNC = new AtomicBoolean();
   private final Object recorder;
   private final Class<?> type;
@@ -73,7 +73,7 @@ final class Recording implements AutoCloseable {
     return (String) type.getMethod("execute", String.class).invoke(recorder, command);
   }
 
-  synchronized byte[] dump() throws Exception {
+  public synchronized byte[] dump() throws Exception {
     if (closed) throw new IllegalStateException("Recording is closed");
     if (async) execute("dump,jfr,file=" + file.toString());
     else type.getMethod("dump", Path.class).invoke(recorder, file);
@@ -81,6 +81,14 @@ final class Recording implements AutoCloseable {
     if (bytes > 64L * 1024 * 1024)
       throw new IllegalStateException("Recording exceeds the 64 MiB protocol frame limit");
     return Files.readAllBytes(file);
+  }
+
+  public String contentType() {
+    return "application/x-jfr";
+  }
+
+  public String fileName() {
+    return "recording.jfr";
   }
 
   public synchronized void close() throws Exception {

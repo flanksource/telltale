@@ -51,7 +51,7 @@ func Handler(dataDir string) http.Handler {
 			serveSchema(w, r, refs)
 			return
 		}
-		if err == nil {
+		if err == nil && aggregate.View != "top" && aggregate.View != "frames" {
 			err = read.ValidateSelection(r.Context(), refs, q)
 		}
 		if err != nil {
@@ -77,7 +77,7 @@ func recordValues(r *http.Request) (url.Values, error) {
 	}
 	for name := range values {
 		switch name {
-		case "stream", "from", "until", "afterSeq", "toSeq", "filter", "where", "q", "limit", "cursor", "stats", "groupBy", "view", "follow", "format", "all":
+		case "stream", "result", "from", "until", "afterSeq", "toSeq", "filter", "where", "q", "limit", "cursor", "stats", "groupBy", "view", "follow", "format", "all", "frame", "source", "metric", "sort", "desc":
 		default:
 			return nil, fmt.Errorf("unknown records parameter %q", name)
 		}
@@ -114,13 +114,25 @@ func selectRun(kind string, scope read.Scope) (*read.Selection, error) {
 		return read.Resolve(kind, scope)
 	}
 	runtime := run.Runtime()
+	if scope.Result != "" {
+		storage := kind + "_" + scope.Result
+		owner, result := runtime.Kinds.ResultOf(storage)
+		if owner != kind || result == "" {
+			return nil, fmt.Errorf("kind %s has no result %q", kind, scope.Result)
+		}
+		kind = storage
+	}
 	if _, ok := runtime.Kinds.Get(kind); !ok {
 		return nil, fmt.Errorf("unknown trace kind %q", kind)
 	}
 	selected := &read.Selection{}
-	for _, capture := range run.Info().Captures {
-		if capture.Kind == kind {
-			selected.Refs = append(selected.Refs, read.Ref{RunID: scope.Run, Runtime: runtime, TraceRef: capture.Ref})
+	refs, err := read.RunRefs(run.Info(), runtime)
+	if err != nil {
+		return nil, err
+	}
+	for _, ref := range refs {
+		if ref.Kind == kind {
+			selected.Refs = append(selected.Refs, ref)
 		}
 	}
 	if len(selected.Refs) == 0 {
@@ -151,6 +163,10 @@ type page struct {
 }
 
 func servePage(w http.ResponseWriter, r *http.Request, refs []read.Ref, q read.Query, aggregate read.Aggregate) {
+	if aggregate.View == "top" || aggregate.View == "frames" {
+		serveTop(w, r, refs, q, aggregate.View)
+		return
+	}
 	result := page{Rows: []query.Row{}}
 	q.NextCursor = func(cursor string) { result.NextCursor = cursor }
 	var err error

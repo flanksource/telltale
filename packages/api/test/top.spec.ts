@@ -1,6 +1,6 @@
 import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -26,6 +26,10 @@ function serve(): Promise<string> {
 beforeAll(async () => {
   await mkdir(".tmp", { recursive: true });
   testDir = await mkdtemp(resolve(".tmp", "telltale-top-"));
+  const connections = join(testDir, "config", "flanksource", "connections");
+  await mkdir(connections, { recursive: true });
+  await writeFile(join(connections, "warehouse.yaml"), "apiVersion: mission-control.flanksource.com/v1\nkind: Connection\nmetadata: {name: warehouse, namespace: tenant}\nspec: {postgres: {url: {value: 'postgres://localhost/example'}}}\n");
+  await writeFile(join(connections, "metrics.yaml"), "apiVersion: mission-control.flanksource.com/v1\nkind: Connection\nmetadata: {name: metrics}\nspec: {type: prometheus, url: {value: 'http://localhost:9090'}}\n");
   apiURL = await serve();
 });
 
@@ -41,7 +45,47 @@ afterAll(async () => {
 interface Usage {
   processes: number;
   rssBytes: number;
+  swapBytes?: number;
+  compressedBytes?: number;
+  hogs?: Record<string, string>;
 }
+
+describe("completed sample records",()=>{
+  it("publishes the same SQL connection chooser for CLI operation and web start forms",async()=>{
+    const response=await fetch(`${apiURL}/api/openapi.json`);
+    expect(response.status).toBe(200);
+    const api=await response.json() as {paths:Record<string,{post:{requestBody:{content:{"application/json":{schema:{properties:Record<string,unknown>}}}}};get:{parameters:{name:string}[]}}>};
+    expect(api.paths["/api/v1/run/sql_top"]?.post.requestBody.content["application/json"].schema.properties.connection).toMatchObject({title:"Connection","x-clicky-lookup":{url:"/api/v1/connection?types=postgres,sql_server",filter:"connection"}});
+    expect(api.paths["/api/v1/connection"]?.get.parameters.map(parameter=>parameter.name)).toEqual(expect.arrayContaining(["types","__lookup","__lookup_filter","__lookup_q"]));
+    const form=await (await fetch(`${apiURL}/api/traces/start`)).json() as {schema:{properties:{traces:{properties:Record<string,{allOf:{then:{properties:Record<string,unknown>}}[]}>}}}};
+    expect(form.schema.properties.traces.properties.sql_top?.allOf[0]?.then.properties.connection).toMatchObject({title:"Connection","x-clicky-lookup":{url:"/api/v1/connection?types=postgres,sql_server",filter:"connection"}});
+    const choices=await fetch(`${apiURL}/api/v1/connection?types=postgres,sql_server&__lookup=filters`);
+    expect(choices.status).toBe(200);
+    expect(await choices.json()).toMatchObject({filters:{connection:{options:{"connection://tenant/warehouse":{plain:"warehouse (postgres)"}},total:1}}});
+  });
+  it("uses captured query columns and applies native filters and order before paging",async()=>{
+    const saved=await fetch(`${apiURL}/api/traces/definitions/sample-top-test`,{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({layer:"global",resourceVersion:"",definition:{apiVersion:"telltale.flanksource.com/v1alpha1",kind:"TraceDefinition",metadata:{name:"sample-top-test"},spec:{collect:{query:{sql:[{type:"sqlite",url:":memory:",query:"WITH RECURSIVE valueset(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM valueset WHERE n<150) SELECT n FROM valueset"}]}}}}})});
+    expect(saved.status).toBe(200);
+    const started=await fetch(`${apiURL}/api/traces`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({duration:"500ms",definition:"sample-top-test"})});
+    expect(started.status).toBe(201);
+    const run=await started.json() as {mount:string;runId:string};
+    await expect.poll(async()=>((await (await fetch(`${apiURL}/api/traces`)).json()) as {runs:{runId:string;status:string}[]}).runs.find(item=>item.runId===run.runId)?.status,{timeout:10000}).toBe("succeeded");
+    const endpoint=`${apiURL}${run.mount}/traces/query/records`;
+    const frames=await (await fetch(`${endpoint}?view=frames`)).json() as {id:string;retained:number}[];
+    expect(frames).toHaveLength(1);expect(frames[0]?.retained).toBe(150);
+    const params=new URLSearchParams({view:"top",filter:"n=>148",sort:"n",desc:"true",limit:"1"});
+    const response=await fetch(`${endpoint}?${params}`);const payload=await response.text();expect(response.status,payload).toBe(200);
+    const page=JSON.parse(payload) as {selection:string;rows:{n:number}[];count:number;nextCursor:string};
+    expect(page.count).toBe(2);expect(page.rows[0]?.n).toBe(150);
+    params.set("cursor",page.nextCursor);params.set("frame",page.selection);
+    const next=await (await fetch(`${endpoint}?${params}`)).json() as {rows:{n:number}[]};
+    expect(next.rows.map(row=>row.n)).toEqual([149]);
+    const empty=await (await fetch(`${endpoint}?view=top&filter=n%3D%3C0`)).json() as {rows:unknown[];frame:{retained:number}};
+    expect(empty.rows).toEqual([]);expect(empty.frame.retained).toBe(150);
+    const schema=await fetch(`${endpoint}?view=top`,{headers:{Accept:"application/schema+json"}});
+    expect(schema.status).toBe(200);expect(await schema.json()).toMatchObject({columns:expect.arrayContaining([expect.objectContaining({name:"n",type:"number"})])});
+  });
+});
 
 interface Frame {
   sampledAt: string;
@@ -50,6 +94,21 @@ interface Frame {
 }
 
 describe("live process groups", () => {
+  it("reports platform memory columns without substituting compressed memory for disk swap", async () => {
+    const response = await fetch(`${apiURL}/api/top/processes?pid=${server.pid}&all=true`);
+    expect(response.status).toBe(200);
+    const reading = await response.json() as { processes: Array<Usage & { pid: number }> };
+    const own = reading.processes.find(process => process.pid === server.pid);
+    expect(own?.rssBytes).toBeGreaterThan(0);
+    if (process.platform === "darwin") {
+      expect(own?.compressedBytes).toBeGreaterThanOrEqual(0);
+      expect(own?.swapBytes).toBeUndefined();
+    } else if (process.platform === "linux") {
+      expect(own?.swapBytes).toBeGreaterThanOrEqual(0);
+      expect(own?.compressedBytes).toBeUndefined();
+    }
+  });
+
   it("carries Git identity in raw frames without adding presentation buckets", async () => {
     const response = await fetch(`${apiURL}/api/top`);
     expect(response.status).toBe(200);

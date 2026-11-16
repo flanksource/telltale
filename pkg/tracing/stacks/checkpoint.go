@@ -13,6 +13,7 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing/target"
 
 	dbcontext "github.com/flanksource/commons-db/context"
+	"github.com/flanksource/commons-db/recordstore/sampleframe"
 )
 
 // Checkpoint dumps the stacks its params ask for (CheckpointParams), the
@@ -40,12 +41,14 @@ func (s stacks) Checkpoint(ctx dbcontext.Context, params Params, records tracing
 	if err != nil {
 		return err
 	}
-	for _, record := range dump {
-		if err := records.Emit(ctx, record); err != nil {
-			return err
+	at := time.Now().UTC()
+	frame := sampleframe.Frame{Source: fmt.Sprintf("%s/%d", head.Key, head.PID), StartedAt: at, CompletedAt: at, Observed: len(dump)}
+	for _, row := range dump {
+		if row.Error != "" {
+			frame.Error = row.Error
 		}
 	}
-	return nil
+	return tracing.PublishFrame(ctx, records, frame, dump)
 }
 
 // take is the records of the dump request asks for, each a copy of head

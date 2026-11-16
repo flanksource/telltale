@@ -109,6 +109,7 @@ var _ = Describe("standing stores", func() {
 		},
 		Entry("a duplicate id", telltale.StandingStore{ID: fixtureStore, Info: func(string) (telltale.RunInfo, bool, error) { return telltale.RunInfo{}, false, nil }, Open: func(string) (*tracing.Runtime, func() error, error) { return nil, nil, nil }}, "registered twice"),
 		Entry("a run-shaped id", telltale.StandingStore{ID: "run-2026-10-30T09-00-00Z", Info: func(string) (telltale.RunInfo, bool, error) { return telltale.RunInfo{}, false, nil }, Open: func(string) (*tracing.Runtime, func() error, error) { return nil, nil, nil }}, "run id"),
+		Entry("a compact run-shaped id", telltale.StandingStore{ID: "buildhost20261107T123000Z_2", Info: func(string) (telltale.RunInfo, bool, error) { return telltale.RunInfo{}, false, nil }, Open: func(string) (*tracing.Runtime, func() error, error) { return nil, nil, nil }}, "run id"),
 		Entry("no opener", telltale.StandingStore{ID: "no-opener", Info: func(string) (telltale.RunInfo, bool, error) { return telltale.RunInfo{}, false, nil }}, "Info and Open"),
 	)
 })

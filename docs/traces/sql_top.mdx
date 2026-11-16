@@ -1,0 +1,14 @@
+# sql_top
+
+import { KindReference } from '../_components/KindReference';
+
+Samples what a Postgres or SQL Server is running right now, top style. Each poll reads `pg_stat_activity` or `sys.dm_exec_requests` on the connection and records one row per running request, longest first: session, user, application, state, wait, blocker, elapsed time, transaction age and SQL. SQL Server rows also carry CPU, reads, writes, granted memory and the query hash. The engine follows the connection's type.
+
+```sh
+telltale run sql_top --connection connection://orders --duration 2m --poll 2s
+```
+
+Sessions that hold an open transaction are always recorded, even when idle, because they are usually the blockers. `--idle` records every idle session as well. `--databases` and `--text` filter with wildcard and exclusion patterns, and `--min-elapsed` drops short requests. `--top` keeps the longest requests per poll and defaults to 50; `--poll` defaults to 5 seconds. Every recorded column can be filtered and sorted, for example `blocked`, `waitType` or `elapsedMs`. This connection capture does not need a local process. Run `telltale run sql_top --help` for all options.
+
+In a TraceDefinition, `collect.postgres.top` and `collect.sqlserver.top` arm it against that section's default connection.
+<KindReference kind="sql_top" />

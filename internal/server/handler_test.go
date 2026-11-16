@@ -3,6 +3,7 @@ package server_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing/fstest"
 
 	"github.com/flanksource/telltale/internal/server"
@@ -72,6 +73,7 @@ var _ = Describe("HTTP routing", func() {
 		Entry("index", "GET", "/", 200, "no-cache"),
 		Entry("deep link", "GET", "/settings", 200, "no-cache"),
 		Entry("a program's top page, its name dotted", "GET", "/top/com.apple.WebKit.Networking", 200, "no-cache"),
+		Entry("a JVM diagnostic operation, its name dotted", "GET", "/jvm/java%2Ffixture/jvm.groovy.eval", 200, "no-cache"),
 		Entry("a missing file beside the page", "GET", "/favicon.ico", 404, ""),
 		Entry("hashed asset", "GET", "/assets/app-ab12.js", 200, "public, max-age=31536000, immutable"),
 		Entry("missing asset", "GET", "/assets/missing.js", 404, ""),
@@ -80,6 +82,13 @@ var _ = Describe("HTTP routing", func() {
 		Entry("API root", "GET", "/api", 404, ""),
 		Entry("unsupported UI method", "POST", "/settings", 405, ""),
 	)
+
+	DescribeTable("requires an operation for a diagnostic call", func(body string) {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/agents/missing/call", strings.NewReader(body)))
+		Expect(response.Code).To(Equal(http.StatusBadRequest))
+		Expect(response.Body.String()).To(ContainSubstring("operation are required"))
+	}, Entry("empty object", `{}`), Entry("null", `null`), Entry("parameters only", `{"params":{}}`))
 
 	It("serves Clicky's health and generated OpenAPI", func() {
 		for _, path := range []string{"/health", "/api/openapi.json"} {

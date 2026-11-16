@@ -1,0 +1,12 @@
+# sql_plancache
+
+import { KindReference } from '../_components/KindReference';
+
+Samples SQL Server's plan cache, recording interval execution and resource deltas, recompiles, and evictions. Each poll ranks plans by interval CPU.
+
+```sh
+telltale run sql_plancache --connection connection://warehouse --duration 2m --poll 30s --top 200
+```
+
+`--databases` and `--text` filter with wildcard and exclusion patterns; `--min-executions` sets a minimum interval execution count. `--top` defaults to 200 and `--poll` to 30 seconds. This connection capture does not need a local process. Run `telltale run sql_plancache --help` for all options.
+<KindReference kind="sql_plancache" />

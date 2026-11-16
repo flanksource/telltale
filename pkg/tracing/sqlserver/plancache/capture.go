@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/flanksource/commons-db/recordstore/sampleframe"
 	"github.com/flanksource/telltale/pkg/tracing"
 )
 
@@ -59,11 +60,26 @@ func (c *capture) poll(ctx context.Context, out tracing.Emitter[Sample]) error {
 		if err != nil {
 			return err
 		}
-		for _, row := range rows {
-			row.SampledAt, row.IntervalMs = at, float64(at.Sub(c.sampledAt))/float64(time.Millisecond)
-			if err := out.Emit(ctx, row); err != nil {
-				return err
+		observed := len(rows)
+		limit := c.params.Top
+		if limit == 0 {
+			limit = 200
+		}
+		active := 0
+		rows = slices.DeleteFunc(rows, func(row Sample) bool {
+			if row.Evicted {
+				return false
 			}
+			active++
+			return active > limit
+		})
+		for i := range rows {
+			rows[i].SampledAt, rows[i].IntervalMs = at, float64(at.Sub(c.sampledAt))/float64(time.Millisecond)
+		}
+		if err := tracing.PublishFrame(ctx, out, sampleframe.Frame{Source: c.params.Connection, StartedAt: c.sampledAt, CompletedAt: at, Observed: observed, Summary: map[string]any{"activePlanLimit": limit}}, rows); err != nil {
+			return err
+		}
+		for _, row := range rows {
 			c.summary.add(row)
 		}
 	}
@@ -89,13 +105,6 @@ func (c *capture) samples(current map[string]CachedPlan) ([]Sample, error) {
 		}
 	}
 	slices.SortFunc(rows, compareCPU)
-	top := c.params.Top
-	if top == 0 {
-		top = 200
-	}
-	if len(rows) > top {
-		rows = rows[:top]
-	}
 	for handle, plan := range c.previous {
 		if _, exists := current[handle]; exists {
 			continue

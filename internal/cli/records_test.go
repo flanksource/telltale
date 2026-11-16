@@ -2,6 +2,9 @@ package cli_test
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"time"
@@ -14,9 +17,28 @@ import (
 )
 
 var _ = Describe("records command", func() {
+	It("keeps followed NDJSON free of command output and final summaries", func() {
+		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, err := w.Write([]byte("command-output"))
+			Expect(err).NotTo(HaveOccurred())
+		}))
+		defer upstream.Close()
+		stdout, stderr, err := execute("trace", "run", "--data-dir", GinkgoT().TempDir(), "--follow", "--format", "ndjson", "--", "curl", "-sS", upstream.URL)
+		Expect(err).NotTo(HaveOccurred(), stderr)
+		lines := strings.Split(strings.TrimSpace(stdout), "\n")
+		Expect(lines).To(HaveLen(1))
+		var record struct {
+			Kind   string         `json:"kind"`
+			Record map[string]any `json:"record"`
+		}
+		Expect(json.Unmarshal([]byte(lines[0]), &record)).To(Succeed())
+		Expect(record.Kind).To(Equal("http"))
+		Expect(record.Record).To(HaveKey("request"))
+		Expect(stderr).To(ContainSubstring("command-output"))
+	})
 	It("registers follow on both run command forms", func() {
 		root := cli.NewRoot("test")
-		for _, args := range [][]string{{"run", "process_samples"}, {"trace", "run"}} {
+		for _, args := range [][]string{{"run", "process"}, {"trace", "run"}} {
 			cmd, _, err := root.Find(args)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(cmd.Flags().Lookup("follow")).NotTo(BeNil())
@@ -24,7 +46,7 @@ var _ = Describe("records command", func() {
 		}
 	})
 	DescribeTable("refuses invalid selections before opening stores", func(args []string, message string) {
-		_, _, err := execute(append([]string{"records", "process_samples", "--data-dir", GinkgoT().TempDir()}, args...)...)
+		_, _, err := execute(append([]string{"records", "process", "--data-dir", GinkgoT().TempDir()}, args...)...)
 		Expect(err).To(MatchError(ContainSubstring(message)))
 	},
 		Entry("follow across runs", []string{"--runs", "one,two", "--follow"}, "--follow requires a single run"),
@@ -68,7 +90,7 @@ var _ = Describe("records command", func() {
 	})
 	It("includes runnable examples and window semantics in help", func() {
 		page := help("records")
-		Expect(page).To(ContainSubstring("telltale records process_samples"))
+		Expect(page).To(ContainSubstring("telltale records process --result metrics"))
 		Expect(page).To(ContainSubstring("--from overrides"))
 	})
 })

@@ -1,6 +1,7 @@
 package com.flanksource.telltale;
 
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonObject;
 import java.lang.instrument.Instrumentation;
 import java.lang.management.ManagementFactory;
@@ -15,18 +16,21 @@ import java.time.Instant;
 import java.util.UUID;
 
 public final class Agent {
-  static final Gson JSON = new Gson();
+  static final Gson JSON = new GsonBuilder().serializeNulls().create();
   private static Agent instance;
   final JsonObject config;
+  final RuntimeClient diagnostics;
   final String pid = ManagementFactory.getRuntimeMXBean().getName().split("@")[0];
   final String started = Instant.now().toString();
   final String remoteID = "java/" + UUID.randomUUID();
   private final ServerSocket listener;
+  private HttpListener http;
 
   private Agent(JsonObject options) throws Exception {
     config = options;
     if (!config.has("token") || config.get("token").getAsString().length() < 16)
       throw new IllegalArgumentException("Agent token is required");
+    diagnostics = new RuntimeClient(JSON.fromJson(options, java.util.Map.class));
     listener = new ServerSocket(0, 16, InetAddress.getByName("127.0.0.1"));
     if (config.has("discovery")) {
       JsonObject endpoint = new JsonObject();
@@ -58,6 +62,11 @@ public final class Agent {
     accept.setDaemon(true);
     accept.start();
     if (config.has("url")) Hub.start(this, config.get("url").getAsString());
+    if (config.has("http")) {
+      if (!config.get("http").isJsonObject())
+        throw new IllegalArgumentException("Agent http must be an object");
+      http = HttpListener.start(JSON.fromJson(config.get("http"), java.util.Map.class));
+    }
   }
 
   private void accept() {
@@ -87,19 +96,24 @@ public final class Agent {
 
   public static synchronized void agentmain(String args, Instrumentation instrumentation)
       throws Exception {
-    start(args);
+    com.flanksource.telltale.diag.agent.DiagAgent.agentmain(args, instrumentation);
+    start(
+        JSON.fromJson(
+            new String(Files.readAllBytes(Paths.get(args)), StandardCharsets.UTF_8),
+            java.util.Map.class));
   }
 
   public static synchronized void premain(String args, Instrumentation instrumentation)
       throws Exception {
-    start(args);
+    com.flanksource.telltale.diag.agent.DiagAgent.premain(args, instrumentation);
+    start(
+        JSON.fromJson(
+            new String(Files.readAllBytes(Paths.get(args)), StandardCharsets.UTF_8),
+            java.util.Map.class));
   }
 
-  private static void start(String path) throws Exception {
-    JsonObject config =
-        JSON.fromJson(
-            new String(Files.readAllBytes(Paths.get(path)), StandardCharsets.UTF_8),
-            JsonObject.class);
+  public static synchronized void start(java.util.Map<String, Object> options) throws Exception {
+    JsonObject config = JSON.toJsonTree(options).getAsJsonObject();
     if (instance != null) {
       if (!instance.config.equals(config))
         throw new IllegalStateException(
@@ -109,7 +123,7 @@ public final class Agent {
     instance = new Agent(config);
   }
 
-  JsonObject hello(boolean remote) {
+  JsonObject hello(boolean remote) throws Exception {
     JsonObject hello = new JsonObject();
     hello.addProperty("agentId", remote ? remoteID : pid);
     hello.addProperty("protocol", 1);
@@ -126,13 +140,8 @@ public final class Agent {
     resource.addProperty("process.pid", pid);
     resource.addProperty("service.name", Recording.value(config, "service", "java"));
     hello.add("resource", resource);
-    JsonObject probe = new JsonObject();
-    probe.addProperty("name", "jvm_jfr");
-    probe.addProperty("title", "JVM JFR");
-    probe.addProperty("checkpoints", true);
-    com.google.gson.JsonArray probes = new com.google.gson.JsonArray();
-    probes.add(probe);
-    hello.add("probes", probes);
+    hello.add("probes", JSON.toJsonTree(RuntimeService.probes()));
+    hello.add("ops", JSON.toJsonTree(diagnostics.catalog()));
     return hello;
   }
 }

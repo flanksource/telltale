@@ -172,27 +172,34 @@ var _ = Describe("a served trace store", func() {
 		Expect(column(kinds, "name")).To(ConsistOf(terminal.Kind, stacks.Kind))
 	})
 
-	It("serves nothing but its trace routes", func() {
-		for _, path := range []string{"/", "/api/openapi.json", "/api/v1/profiles", "/api/v1/sessions"} {
+	It("serves nothing but its trace and session routes", func() {
+		for _, path := range []string{"/", "/api/openapi.json", "/api/v1/profiles"} {
 			status, body, _ := store.do(http.MethodGet, path)
 			Expect(status).To(Equal(http.StatusNotFound), path)
 			Expect(body).ToNot(ContainSubstring("<html"), path)
 		}
 	})
 
-	It("refuses to start or stop a capture, but checkpoints a running one into its records", func() {
+	It("lists and checkpoints a running capture into its records, but refuses to start or control one", func() {
 		status, _, _ := store.do(http.MethodPost, "/api/v1/traces/"+stacks.Kind+"/sessions")
-		Expect(status).To(Equal(http.StatusNotFound))
+		Expect(status).To(Equal(http.StatusForbidden))
 
 		managed, err := store.runtime.Start(dbcontext.New(), tracing.StartRequest{
 			Kind: stacks.Kind, Params: json.RawMessage(fmt.Sprintf(`{"target": {"pid": %d}}`, os.Getpid())),
 		})
 		Expect(err).ToNot(HaveOccurred())
 		session := managed.Session()
-		status, body, _ := store.do(http.MethodPost, "/api/v1/sessions/"+session.ID()+"/checkpoint")
-		Expect(status).To(Equal(http.StatusNoContent), body)
-		status, _, _ = store.do(http.MethodPost, "/api/v1/sessions/"+session.ID()+"/stop")
-		Expect(status).To(Equal(http.StatusNotFound))
+		status, body, _ := store.do(http.MethodGet, "/api/v1/sessions")
+		Expect(status).To(Equal(http.StatusOK), body)
+		Expect(body).To(ContainSubstring(session.ID()))
+		status, body, _ = store.do(http.MethodPost, "/api/v1/sessions/"+session.ID()+"/checkpoint")
+		Expect(status).To(Equal(http.StatusOK), body)
+		Expect(body).To(ContainSubstring(`"id":"` + session.ID() + `"`))
+		for _, control := range []string{"stop", "extend?duration=1m", "restart"} {
+			status, body, _ = store.do(http.MethodPost, "/api/v1/sessions/"+session.ID()+"/"+control)
+			Expect(status).To(Equal(http.StatusForbidden), control)
+			Expect(body).To(ContainSubstring("read-only"), control)
+		}
 
 		records := store.records(stacks.Kind, "stream="+session.Snapshot().Events.Stream)
 		Expect(records).To(ContainElement(And(
@@ -200,8 +207,17 @@ var _ = Describe("a served trace store", func() {
 		)), "the checkpoint dumped the host's goroutines")
 	})
 
-	It("answers a checkpoint of a session it runs no capture of as a conflict", func() {
+	It("answers a checkpoint of a session it does not know as not found, and of an ended one as a conflict", func() {
 		status, body, _ := store.do(http.MethodPost, "/api/v1/sessions/no-such-session/checkpoint")
+		Expect(status).To(Equal(http.StatusNotFound), body)
+
+		managed, err := store.runtime.Start(dbcontext.New(), tracing.StartRequest{
+			Kind: stacks.Kind, Params: json.RawMessage(fmt.Sprintf(`{"target": {"pid": %d}}`, os.Getpid())),
+		})
+		Expect(err).ToNot(HaveOccurred())
+		managed.Session().Stop("spec")
+		Eventually(managed.Session().Done()).WithTimeout(10 * time.Second).Should(BeClosed())
+		status, body, _ = store.do(http.MethodPost, "/api/v1/sessions/"+managed.Session().ID()+"/checkpoint")
 		Expect(status).To(Equal(http.StatusConflict), body)
 	})
 

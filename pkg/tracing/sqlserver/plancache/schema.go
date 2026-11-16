@@ -1,10 +1,13 @@
 package plancache
 
 import (
+	"github.com/flanksource/commons-db/models"
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
 )
+
+func (handler) ConnectionTypes() []string { return []string{models.ConnectionTypeSQLServer} }
 
 var byQueryView = recordresults.ResultView{
 	Name: "by_query", Title: "Plan costs by query",

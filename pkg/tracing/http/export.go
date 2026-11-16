@@ -92,8 +92,10 @@ func Summarize(rows iter.Seq[Exchange]) (map[string]any, error) {
 	methods, statuses, hosts := map[string]int{}, map[string]int{}, map[string]bool{}
 	requests := []map[string]any{}
 	entries, errors := 0, 0
+	durationMs := 0.0
 	for exchange := range rows {
 		entries++
+		durationMs += exchange.DurationMs
 		host, path, err := splitURL(exchange.URL)
 		if err != nil {
 			return nil, err
@@ -111,6 +113,7 @@ func Summarize(rows iter.Seq[Exchange]) (map[string]any, error) {
 	return map[string]any{
 		"entries": entries, "errors": errors, "hosts": slices.Sorted(maps.Keys(hosts)),
 		"methods": methods, "statuses": statuses, "requests": requests,
+		"durationMs": durationMs,
 	}, nil
 }
 

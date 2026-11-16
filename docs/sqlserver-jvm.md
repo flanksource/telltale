@@ -4,7 +4,7 @@
 
 ## SQL Server
 
-Configure a SQL Server connection using the [connection configuration](../README.md) and pass its `connection://name` reference. These captures need neither a local PID nor a command. An empty database filter selects the connection's database; `--databases '*'` selects all databases. Filters accept exact names, `*` wildcards, and `!` exclusions.
+Configure a SQL Server connection using the [connection configuration](https://github.com/flanksource/telltale#connections) and pass its `connection://name` reference. These captures need neither a local PID nor a command. An empty database filter selects the connection's database; `--databases '*'` selects all databases. Filters accept exact names, `*` wildcards, and `!` exclusions.
 
 ```sh
 telltale run sql_xevent --connection connection://orders --session-name diagnostic --min-duration 10ms --duration 30s
@@ -67,6 +67,12 @@ Start remote captures in the connected hub's browser, selecting the agent seam a
 
 ```json
 {"traces":{"sql_deadlock":{"enabled":true,"connection":"connection://orders","from":"2026-10-28T08:00:00Z","to":"2026-10-28T09:00:00Z"}}}
+```
+
+A kind may instead be an array of such objects, each its own capture with its own target and params; refusals of an element are reported at `/traces/<kind>/<index>`:
+
+```json
+{"traces":{"sql_deadlock":[{"enabled":true,"connection":"connection://orders"},{"enabled":true,"connection":"connection://billing"}]}}
 ```
 
 Use the run's existing result/export routes to read stored rows and the checkpoint route for JFR. The generated `/api/openapi.json` also exposes `agents install java` and the single-kind run commands. Installer API calls execute on the server and therefore use its filesystem, SSH configuration, and kubeconfig.

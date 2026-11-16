@@ -1,0 +1,18 @@
+# Run from the Java project's directory, adjusting the definition path:
+#   telltale run --definition ./examples/definitions/java-build.yaml -- ./gradlew --no-daemon build
+# Or: telltale run --definition ./examples/definitions/java-build.yaml -- mvn package
+# --no-daemon avoids reusing a Gradle daemon outside the traced process tree.
+apiVersion: telltale.flanksource.com/v1alpha1
+kind: TraceDefinition
+metadata:
+  name: java-build
+spec:
+  description: Follow a Java build's compiler and worker processes with CPU memory and disk IO samples
+  collect:
+    process:
+      tree:
+        facets: true
+        environment:
+          keys: [JAVA_HOME, GRADLE_USER_HOME, LANG]
+      resources:
+        - interval: 250ms

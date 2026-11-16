@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -18,11 +18,17 @@ function clickyAliases(uiDirectory: string) {
     const target = typeof value === "string" ? value : value.import;
     if (!target?.startsWith("./dist/")) return [];
     const entry = key === "." ? "@flanksource/clicky-ui" : `@flanksource/clicky-ui${key.slice(1)}`;
+    const pattern = entry.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (key.includes("*")) {
+      const source = resolve(packageRoot, target.replace("*", "$1"));
+      if (!existsSync(dirname(source))) throw new Error(`Missing local Clicky UI assets ${dirname(source)}; build the local package first`);
+      return [{ find: new RegExp(`^${pattern.replace("\\*", "(.+)")}$`), replacement: source }];
+    }
     const cssSource: Record<string, string> = { "./dist/styles.css": "styles/full.css", "./dist/mdx-editor.css": "styles/mdx-editor.css" };
     const relative = cssSource[target] ?? target.slice("./dist/".length).replace(/\.js$/, ".ts");
     const source = resolve(packageRoot, "src", relative);
     if (!existsSync(source)) throw new Error(`Missing local Clicky UI entrypoint ${source}`);
-    return [{ find: new RegExp(`^${entry.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`), replacement: source }];
+    return [{ find: new RegExp(`^${pattern}$`), replacement: source }];
   });
 }
 

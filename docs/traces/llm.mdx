@@ -1,0 +1,12 @@
+# llm
+
+import { KindReference } from '../_components/KindReference';
+
+Records Captain provider calls in Telltale or an instrumented agent. The default `self` seam observes Telltale itself.
+
+```sh
+telltale run llm --pid 1234 --include-prompts --duration 1m
+```
+
+Prompts and responses are excluded by default; enable them separately with `--include-prompts` and `--include-responses`. Use `--models` to filter model names by glob. Agent selection supports `--pid`, `--agent`, and `--selector`. Run `telltale run llm --help` for all options.
+<KindReference kind="llm" />

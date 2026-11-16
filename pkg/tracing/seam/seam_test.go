@@ -42,6 +42,16 @@ func (refusingProbe) Arm(context.Context, json.RawMessage, telltale.Sink) (func(
 	return nil, errors.New("mutation not allowed by agent")
 }
 
+type versionedProbe struct{ arms atomic.Int32 }
+
+func (*versionedProbe) Spec() protocol.ProbeSpec {
+	return protocol.ProbeSpec{Name: "versioned-arm", Version: 9}
+}
+func (p *versionedProbe) Arm(context.Context, json.RawMessage, telltale.Sink) (func() error, error) {
+	p.arms.Add(1)
+	return func() error { return nil }, nil
+}
+
 func testRegistry() *agentclient.Registry {
 	registry := agentclient.NewRegistry()
 	registry.Dir = GinkgoT().TempDir()
@@ -63,6 +73,25 @@ func (*emitter) Describe(string, ...query.SessionMetadata) {}
 func (*emitter) Export(string, string)                     {}
 
 var _ = Describe("agent seam", func() {
+	It("refuses params the agent's advertised probe version cannot honour, before arming", func() {
+		probe := &versionedProbe{}
+		telltale.RegisterProbe(probe)
+		registry := testRegistry()
+		server := telltale.Loopback()
+		a, err := agentclient.Connect(context.Background(), server.Connect(), "")
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() { _ = a.Close(); _ = server.Close() })
+		Expect(registry.Add(a)).To(Succeed())
+		var seen protocol.ProbeSpec
+		s := seam.AgentSeam[target.Target, string]{Probe: "versioned-arm", Registry: registry, Target: func(t target.Target) target.Target { return t }, Compatible: func(_ target.Target, spec protocol.ProbeSpec) error {
+			seen = spec
+			return errors.New("needs v10")
+		}}
+		_, _, err = s.Prepare(dbcontext.New(), target.Target{Seam: target.Agent, Agent: a.Hello.AgentID}, &emitter{})
+		Expect(err).To(MatchError(ContainSubstring("needs v10")))
+		Expect(seen.Version).To(Equal(9))
+		Expect(probe.arms.Load()).To(BeZero())
+	})
 	It("warns when one selector agent refuses to arm but another succeeds", func() {
 		telltale.RegisterProbe(&partialProbe{})
 		registry := testRegistry()

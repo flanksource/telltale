@@ -4,24 +4,16 @@ import (
 	"errors"
 
 	"github.com/flanksource/commons-db/models"
-	"github.com/flanksource/telltale/pkg/tracing/groups"
 	"github.com/flanksource/telltale/pkg/tracing/logs"
 	"github.com/flanksource/telltale/pkg/tracing/opensearch"
 	"github.com/flanksource/telltale/pkg/tracing/prometheus"
 	"github.com/flanksource/telltale/pkg/tracing/spans"
+	"github.com/flanksource/telltale/pkg/tracing/sqltop"
 	"github.com/flanksource/telltale/pkg/tracing/sqlserver/deadlock"
 	"github.com/flanksource/telltale/pkg/tracing/sqlserver/plancache"
 	"github.com/flanksource/telltale/pkg/tracing/sqlserver/xetrace"
 	"github.com/flanksource/telltale/pkg/tracing/sqlserver/xevent"
 )
-
-// ProcessGroups records what each tool's processes on the host use.
-type ProcessGroups struct {
-	Named
-	groups.Options
-}
-
-func (p *ProcessGroups) options(Located) (any, any, error) { return p.Options, nil, nil }
 
 // Scrape scrapes Prometheus endpoints into the managed Prometheus.
 type Scrape struct {
@@ -97,6 +89,28 @@ type DeadlockReport struct {
 func (d *DeadlockReport) options(Located) (any, any, error) { return d.Options, nil, nil }
 
 func (d *DeadlockReport) connection(Located) connectionSlot { return sqlServerSlot(&d.Connection) }
+
+// SQLServerTop samples the requests a SQL Server is running.
+type SQLServerTop struct {
+	Named
+	sqltop.Options
+}
+
+func (t *SQLServerTop) options(Located) (any, any, error) { return t.Options, nil, nil }
+
+func (t *SQLServerTop) connection(Located) connectionSlot { return sqlServerSlot(&t.Connection) }
+
+// PostgresTop samples the queries a Postgres server is running.
+type PostgresTop struct {
+	Named
+	sqltop.Options
+}
+
+func (t *PostgresTop) options(Located) (any, any, error) { return t.Options, nil, nil }
+
+func (t *PostgresTop) connection(Located) connectionSlot {
+	return connectionSlot{field: &t.Connection, connType: models.ConnectionTypePostgres}
+}
 
 func sqlServerSlot(field *string) connectionSlot {
 	return connectionSlot{field: field, connType: models.ConnectionTypeSQLServer}

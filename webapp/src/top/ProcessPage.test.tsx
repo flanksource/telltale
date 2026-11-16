@@ -114,9 +114,9 @@ describe("process totals", () => {
 
   it("sorts by CPU or RSS, highest first, and filters by name, command, owner and origin", () => {
     const processes = reading().processes;
-    expect(sortProcesses(processes, "cpu").map(p => p.pid)).toEqual([101, 202]);
-    expect(sortProcesses(processes, "rss").map(p => p.pid)).toEqual([101, 202]);
-    expect(sortProcesses([processes[1]!, { ...processes[0]!, rssBytes: 1 }], "rss").map(p => p.pid)).toEqual([202, 101]);
+    expect(sortProcesses(processes, { by: "cpu", sampledAt: reading().sampledAt }).map(p => p.pid)).toEqual([101, 202]);
+    expect(sortProcesses(processes, { by: "rss", sampledAt: reading().sampledAt }).map(p => p.pid)).toEqual([101, 202]);
+    expect(sortProcesses([processes[1]!, { ...processes[0]!, rssBytes: 1 }], { by: "rss", sampledAt: reading().sampledAt }).map(p => p.pid)).toEqual([202, 101]);
     expect(filterProcesses(processes, "--CHILD").map(p => p.pid)).toEqual([202]);
     expect(filterProcesses(processes, "root").map(p => p.pid)).toEqual([101]);
     expect(filterProcesses(processes, "launchd:com.example").map(p => p.pid)).toEqual([101]);
@@ -189,9 +189,9 @@ describe("ProcessPage", () => {
     renderPage("launchd");
     await screen.findByRole("row", { name: /--child/ });
     const cells = (name: RegExp) => within(screen.getByRole("row", { name })).getAllByRole("cell").map(cell => cell.textContent);
-    // PID, PPID, Name, Owner, Scope, Origin, CPU %, RSS, Disk read/s, Disk write/s, Net in/s, Net out/s, Sockets, Command
-    expect(cells(/^101/)).toEqual(["101", "1", "launchd", "root", "system", "launchd:com.example.launchd root", "150.0", "2 GiB", "2 KiB/s", "1 KiB/s", "4 KiB/s", "512 B/s", "3", "/usr/bin/launchd", "TerminateRenice"]);
-    expect(cells(/^202/)).toEqual(["202", "101", "launchd", "moshe", "user", "", "50.0", "1 GiB", "–", "–", "–", "–", "–", "launchd --child", "TerminateRenice"]);
+    // PID, PPID, Name, Owner, Scope, Origin, CPU %, RSS, Compressed, Swap, Disk read/s, Disk write/s, Net in/s, Net out/s, Sockets, Command
+    expect(cells(/^101/)).toEqual(["101", "1", "launchd", "root", "system", "launchd:com.example.launchd root", "150.0", "2 GiB", "–", "–", "2 KiB/s", "1 KiB/s", "4 KiB/s", "512 B/s", "3", "/usr/bin/launchd", "TerminateRenice"]);
+    expect(cells(/^202/)).toEqual(["202", "101", "launchd", "moshe", "user", "", "50.0", "1 GiB", "–", "–", "–", "–", "–", "–", "–", "launchd --child", "TerminateRenice"]);
     expect(screen.getAllByRole("row").slice(1).map(row => within(row).getAllByRole("cell")[0]!.textContent)).toEqual(["101", "202"]);
   });
 

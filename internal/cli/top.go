@@ -6,16 +6,17 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/flanksource/clicky"
 	"github.com/flanksource/telltale"
+	"github.com/flanksource/telltale/internal/shutdown"
 	"github.com/flanksource/telltale/internal/topui"
 	"github.com/flanksource/telltale/pkg/tracing/groups"
 	"github.com/flanksource/telltale/pkg/tracing/process"
+	"github.com/flanksource/telltale/pkg/tracing/processcapture"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -41,8 +42,8 @@ func newTopCommand() *cobra.Command {
 		Long: "Sorts every process on the host into the tool that owns it — claude, codex, cmux, gavel, go test, vitest, agent-browser, chrome, " +
 			"brew services and more — as a tree of groups, each with its checkout, agent session, cmux workspace and what started it, " +
 			"and shows what each group and those under it use, full screen. The processes no tool holds are kept under other (the user's) " +
-			"and system (root's and the role accounts'), by program.\n\n" +
-			"Keys: ↑↓ move, ←→ fold, enter lists the selected group's processes, s sorts, S reverses, / filters, o shows other processes, " +
+			"and system (root's and the role accounts'), by program. Gavel groups add the test and lint progress and slots their process publishes.\n\n" +
+			"Keys: ↑↓ move, ←→ fold, enter lists the selected group's processes in the tree, f opens the process pane, s sorts, S reverses, / filters, o shows other processes, " +
 			"b cycles grouping, n reads network bytes, q quits.\n\n" +
 			"Nothing is kept unless --record records a run into the data dir, which `telltale trace list` and `telltale serve` show. " +
 			"Rules come from the built-in catalog and groups.yaml in ./.telltale, else the global config dir (or --catalog).",
@@ -86,8 +87,7 @@ func (f topFlags) run(cmd *cobra.Command) error {
 			return err
 		}
 	}
-	ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	ctx := cmd.Context()
 	if f.record {
 		return f.recordRun(ctx)
 	}
@@ -170,9 +170,9 @@ func (f topFlags) printOnce(ctx context.Context, top *groups.Top) error {
 // store commits until it is stopped or its duration passes, then what it
 // recorded.
 func (f topFlags) recordRun(ctx context.Context) error {
-	raw, err := json.Marshal(f.params)
+	raw, err := json.Marshal(processcapture.Params{Options: processcapture.Options{Options: process.Options{Interval: f.params.Interval}, Catalog: f.params.Catalog, Net: f.params.Net, Facets: []string{processcapture.Files, processcapture.Sockets, "connections"}}, Target: target.Target{Seam: target.Host}})
 	if err != nil {
-		return fmt.Errorf("encode %s params: %w", groups.Kind, err)
+		return fmt.Errorf("encode %s params: %w", processcapture.Kind, err)
 	}
 	connections, err := telltale.OpenConnections()
 	if err != nil {
@@ -180,13 +180,13 @@ func (f topFlags) recordRun(ctx context.Context) error {
 	}
 	run, err := telltale.Start(ctx, telltale.StartOptions{
 		DataDir: f.dataDir, Duration: f.duration, Connections: connections,
-		Traces: []telltale.TraceSpec{{Kind: groups.Kind, Params: raw}},
+		Traces: []telltale.TraceSpec{{Kind: processcapture.Kind, Params: raw}},
 	})
 	if err != nil {
 		return err
 	}
 	if interactive() {
-		follower, err := groups.NewFollower(run.Runtime(), run.Info().Captures[0].Ref)
+		follower, err := processcapture.NewFollower(run.Runtime(), run.Info().Captures[0].Ref)
 		if err != nil {
 			return errors.Join(err, run.Stop())
 		}
@@ -226,7 +226,14 @@ func ended(done <-chan struct{}) bool {
 func (f topFlags) show(ctx context.Context, options topui.Options) error {
 	options.GroupBy = groups.GroupBy(f.groupBy)
 	model := topui.New(ctx, options)
+	restore, err := shutdown.Terminal(ctx)
+	if err != nil {
+		return err
+	}
+	defer restore()
 	final, err := tea.NewProgram(model, tea.WithContext(ctx)).Run()
+	restore()
+	shutdownErr := shutdown.Request(ctx)
 	if last, ok := final.(topui.Model); ok {
 		last.Close()
 		if err == nil {
@@ -234,7 +241,7 @@ func (f topFlags) show(ctx context.Context, options topui.Options) error {
 		}
 	}
 	if errors.Is(err, tea.ErrProgramKilled) && ctx.Err() != nil {
-		return nil
+		return shutdownErr
 	}
-	return err
+	return errors.Join(err, shutdownErr)
 }

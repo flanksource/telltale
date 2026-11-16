@@ -154,6 +154,15 @@ func Rows(ctx context.Context, refs []Ref, q Query) iter.Seq2[query.Row, error] 
 				yield(nil, err)
 				return
 			}
+			if q.profile != nil {
+				p = *q.profile
+			}
+			if q.seqOrder {
+				p.Order = query.Order{{Column: "seq", Unique: true}}
+			}
+			if len(q.order) > 0 {
+				p.Order = q.order
+			}
 			params, err := q.params(ref, p)
 			if err != nil {
 				yield(nil, err)
@@ -168,7 +177,7 @@ func Rows(ctx context.Context, refs []Ref, q Query) iter.Seq2[query.Row, error] 
 				defer release()
 				cursor := pos.Cursor
 				for {
-					page := query.PageRequest{Limit: 500, Strategy: query.PagingCursor, Cursor: cursor}
+					page := query.PageRequest{Limit: 500, Strategy: query.PagingCursor, Cursor: cursor, Sort: q.Sort, Desc: q.Desc}
 					if !q.All {
 						page.Limit = min(remaining, 500)
 					}

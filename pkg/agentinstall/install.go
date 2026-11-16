@@ -1,6 +1,7 @@
 package agentinstall
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -12,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	posixpath "path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -21,14 +23,46 @@ import (
 )
 
 type Options struct {
-	Destination Destination `json:"destination"`
-	PID         int         `json:"pid"`
-	Directory   string      `json:"directory"`
-	JavaHome    string      `json:"javaHome,omitempty"`
-	HubURL      string      `json:"hubUrl,omitempty"`
-	TokenFile   string      `json:"tokenFile,omitempty"`
-	Service     string      `json:"service"`
-	DryRun      bool        `json:"dryRun,omitempty"`
+	Destination   Destination `json:"destination"`
+	PID           int         `json:"pid"`
+	Directory     string      `json:"directory"`
+	JavaHome      string      `json:"javaHome,omitempty"`
+	HubURL        string      `json:"hubUrl,omitempty"`
+	TokenFile     string      `json:"tokenFile,omitempty"`
+	Service       string      `json:"service"`
+	DryRun        bool        `json:"dryRun,omitempty"`
+	AllowMutation bool        `json:"allowMutation,omitempty"`
+	ExtensionsDir string      `json:"extensionsDir,omitempty"`
+	// HTTP starts the agent's HTTP listener, which executions reach directly
+	// with a token the listener verifies; it needs no hub.
+	HTTP *HTTPListener `json:"http,omitempty"`
+}
+
+// HTTPListener is the attached agent's direct-HTTP endpoint and the key its
+// executions are verified with. It carries no shared secret.
+type HTTPListener struct {
+	Bind         string          `json:"bind"`
+	Port         int             `json:"port"`
+	PortFile     string          `json:"portFile,omitempty"`
+	Issuer       string          `json:"issuer"`
+	Audience     string          `json:"audience"`
+	JWKS         json.RawMessage `json:"jwks,omitempty"`
+	JWKSURL      string          `json:"jwksUrl,omitempty"`
+	ConfigDigest string          `json:"configDigest,omitempty"`
+}
+
+func (h HTTPListener) validate() error {
+	switch {
+	case h.Bind == "":
+		return fmt.Errorf("agent HTTP listener bind address is required")
+	case h.Port < 0 || h.Port > 65535:
+		return fmt.Errorf("agent HTTP listener port %d is out of range", h.Port)
+	case h.Issuer == "" || h.Audience == "":
+		return fmt.Errorf("agent HTTP listener requires an issuer and an audience")
+	case len(h.JWKS) == 0 && h.JWKSURL == "":
+		return fmt.Errorf("agent HTTP listener requires jwks or jwksUrl")
+	}
+	return nil
 }
 
 type Result struct {
@@ -50,8 +84,13 @@ func (o Options) Validate() error {
 	if !strings.HasPrefix(o.Directory, "/") || strings.ContainsAny(o.Directory, "\x00\n\r") {
 		return fmt.Errorf("an absolute installation directory is required")
 	}
-	if o.Destination.Kind != "local" && (o.HubURL == "" || o.TokenFile == "") {
-		return fmt.Errorf("remote installation requires hub URL and agent token file")
+	if o.HTTP != nil {
+		if err := o.HTTP.validate(); err != nil {
+			return err
+		}
+	}
+	if o.Destination.Kind != "local" && o.HTTP == nil && (o.HubURL == "" || o.TokenFile == "") {
+		return fmt.Errorf("remote installation requires an HTTP listener, or a hub URL and agent token file")
 	}
 	if o.HubURL != "" {
 		u, err := url.Parse(o.HubURL)
@@ -114,7 +153,7 @@ func (i Installer) Install(ctx context.Context, o Options) (Result, error) {
 				return result, dialErr
 			}
 			defer func() { _ = client.Close() }()
-			if client.Hello.Resource["telltale.artifact.sha256"] != result.SHA256 || client.Hello.Service != o.Service || client.Hello.Resource["telltale.hub.url"] != o.HubURL {
+			if client.Hello.Resource["telltale.artifact.sha256"] != result.SHA256 || client.Hello.Service != o.Service || client.Hello.Resource["telltale.hub.url"] != o.HubURL || client.Hello.Resource["telltale.allowMutation"] != strconv.FormatBool(o.AllowMutation) || client.Hello.Resource["telltale.extensionsDir"] != o.ExtensionsDir {
 				return result, fmt.Errorf("an incompatible agent is already installed; restart the JVM before changing its agent")
 			}
 			result.Agent = client.Hello.AgentID
@@ -170,12 +209,18 @@ func (i Installer) Install(ctx context.Context, o Options) (Result, error) {
 			return result, fmt.Errorf("agent token is invalid")
 		}
 	}
-	config := map[string]any{"token": secret, "service": o.Service}
+	config := map[string]any{"token": secret, "service": o.Service, "allowMutation": o.AllowMutation}
+	if o.ExtensionsDir != "" {
+		config["extensionsDir"] = o.ExtensionsDir
+	}
 	installIdentity := sha256.Sum256(append([]byte(fmt.Sprintf("%+v/%d/", o.Destination, o.PID)), identity...))
 	installationID := hex.EncodeToString(installIdentity[:])
-	config["resource"] = map[string]string{"telltale.install.id": installationID, "telltale.artifact.sha256": result.SHA256, "telltale.hub.url": o.HubURL}
+	config["resource"] = map[string]string{"telltale.install.id": installationID, "telltale.artifact.sha256": result.SHA256, "telltale.hub.url": o.HubURL, "telltale.allowMutation": strconv.FormatBool(o.AllowMutation), "telltale.extensionsDir": o.ExtensionsDir}
 	if o.HubURL != "" {
 		config["url"] = o.HubURL
+	}
+	if o.HTTP != nil {
+		config["http"] = o.HTTP
 	}
 	if o.Destination.Kind == "local" {
 		root, rootErr := os.UserConfigDir()
@@ -203,6 +248,11 @@ func (i Installer) Install(ctx context.Context, o Options) (Result, error) {
 	if err != nil {
 		return result, fmt.Errorf("attach Java agent (requires compatible JDK Attach API and permission to attach): %w", err)
 	}
+	if o.Destination.Kind != "local" && o.HubURL == "" {
+		// A hub-less agent is ready when its listener answers, which only the
+		// caller can reach: the deployer reads its /health.
+		return result, nil
+	}
 	return await(ctx, o, result, installationID)
 }
 
@@ -211,8 +261,11 @@ func write(ctx context.Context, t Transport, path string, data []byte) error {
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return err
 	}
-	staged := path + ".stage-" + hex.EncodeToString(nonce[:])
-	if _, err := t.Run(ctx, []string{"install", "-m", "600", "/dev/null", staged}, nil); err != nil {
+	dir, name := posixpath.Split(path)
+	stagedName := name + ".stage-" + hex.EncodeToString(nonce[:])
+	staged := dir + stagedName
+	archive, err := tarFile(stagedName, data)
+	if err != nil {
 		return err
 	}
 	defer func() {
@@ -220,11 +273,29 @@ func write(ctx context.Context, t Transport, path string, data []byte) error {
 		defer cancel()
 		_, _ = t.Run(cleanup, []string{"rm", "-f", staged}, nil)
 	}()
-	if _, err := t.Run(ctx, []string{"dd", "of=" + staged}, bytes.NewReader(data)); err != nil {
+	// A tar stream, as kubectl cp sends one: in a pod, a bare `dd of=` can read
+	// end of input before the exec attaches its stdin, staging an empty file.
+	if _, err := t.Run(ctx, []string{"tar", "-x", "-m", "--no-same-owner", "-f", "-", "-C", dir}, bytes.NewReader(archive)); err != nil {
 		return err
 	}
-	_, err := t.Run(ctx, []string{"mv", "-f", staged, path}, nil)
+	_, err = t.Run(ctx, []string{"mv", "-f", staged, path}, nil)
 	return err
+}
+
+// tarFile is an archive of one private file.
+func tarFile(name string, data []byte) ([]byte, error) {
+	var archive bytes.Buffer
+	writer := tar.NewWriter(&archive)
+	if err := writer.WriteHeader(&tar.Header{Name: name, Mode: 0o600, Size: int64(len(data)), ModTime: time.Now()}); err != nil {
+		return nil, err
+	}
+	if _, err := writer.Write(data); err != nil {
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	return archive.Bytes(), nil
 }
 
 func await(ctx context.Context, o Options, result Result, installationID string) (Result, error) {

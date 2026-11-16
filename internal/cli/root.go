@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/flanksource/clicky"
+	"github.com/flanksource/clicky/rpc"
 	"github.com/flanksource/telltale/internal/otelreceiver"
 	"github.com/flanksource/telltale/internal/server"
 	"github.com/flanksource/telltale/pkg/datadir"
@@ -50,7 +51,11 @@ func NewRoot(version string) *cobra.Command {
 	serve.Flags().IntVar(&options.OTLP.MaxSpans, "otlp-max-spans", options.OTLP.MaxSpans, "Maximum spans per OTLP request")
 	serve.Flags().IntVar(&options.OTLP.MaxInflight, "otlp-max-inflight", options.OTLP.MaxInflight, "Maximum concurrent OTLP exports across both transports")
 	root.AddCommand(serve, newTraceCommand(), newConnectionCommand(), newRunCommand(), newTopCommand(), newRulesCommand(), newAgentsCommand())
-	root.AddCommand(newRecordsCommand(), newDefinitionsCommand())
+	root.AddCommand(newRecordsCommand(), newDefinitionsCommand(), newExplainCommand(), newJVMCommand())
+	// Kind presets first, so an operation declared below one, such as
+	// `jvm trace probes`, becomes a subcommand of the runnable preset.
+	addKindCommands(root)
+	addJVMOperations(root)
 	builtins, err := definition.Builtins()
 	if err != nil {
 		panic(err)
@@ -61,5 +66,6 @@ func NewRoot(version string) *cobra.Command {
 		}
 		root.AddCommand(newPresetCommand(def))
 	}
+	rpc.InstallInteractive(root)
 	return root
 }

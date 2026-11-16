@@ -107,12 +107,12 @@ func init() {
 			{Args: "--profile pod-cpu-by-pod --every 30s --duration 10m", Says: "poll a saved profile every 30 seconds for ten minutes"},
 		},
 		New: func(deps KindDeps) tracing.TracePlugin {
-			reads, err := query.NewReads(query.Options{Profiles: configProfiles{}, BeforeExecute: deps.BeforeExecute})
+			reads, err := query.NewReads(query.Options{Sampled: true, Profiles: configProfiles{}, BeforeExecute: deps.BeforeExecute})
 			if err != nil {
 				panic(fmt.Sprintf("query kind: %v", err))
 			}
 			capabilities := tracing.Capabilities{Live: query.Capabilities.Live, Historical: query.Capabilities.Historical, Follow: query.Capabilities.Follow}
-			return tracing.NewHandler[QueryParams, query.Row](queryReads{reads}, capabilities, target.Host)
+			return tracing.NewHandler[QueryParams, query.Row](queryReads{reads}, capabilities, target.Host).WithTop(tracing.TopSpec{ProjectionColumn: "row"})
 		},
 	})
 }

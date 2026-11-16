@@ -1,0 +1,13 @@
+# jvm_ognl
+
+import { KindReference } from '../_components/KindReference';
+
+Evaluate an OGNL expression periodically in a connected JVM and record scalar values or bounded object graphs. Select an application loader hash when the expression references application classes.
+
+```sh
+telltale run jvm_ognl --agent 1234 --allow-mutation --duration 5s --expression '@java.lang.Runtime@getRuntime().freeMemory()'
+```
+
+Expressions can invoke application code and require both agent and caller mutation consent. `--interval-ms` sets the sample interval. See [JVM diagnostics](/jvm-diagnostics-port) for loader selection and one-shot expressions or Groovy scripts.
+
+<KindReference kind="jvm_ognl" />

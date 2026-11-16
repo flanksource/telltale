@@ -78,7 +78,7 @@ spec:
         - {}
       resources:
         - interval: 1s
-          facets: [ports]
+          facets: [sockets]
     logs:
       kubernetes:
         - namespace: checkout

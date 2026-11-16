@@ -21,11 +21,23 @@ func (profiler) Formats() []tracing.ExportFormat { return []tracing.ExportFormat
 func (profiler) Summarize(rows iter.Seq[Sample]) (map[string]any, error) {
 	checkpoints := map[string]bool{}
 	totals := map[string]int64{}
+	functions := map[string]map[string]int64{}
 	for record := range rows {
 		checkpoints[record.CheckpointID] = true
 		totals[record.SampleType+"/"+record.Unit] += record.Value
+		if len(record.Frames) > 0 {
+			key := record.SampleType + "/" + record.Unit
+			if functions[key] == nil {
+				functions[key] = map[string]int64{}
+			}
+			functions[key][record.Frames[0].Func] += record.Value
+		}
 	}
-	return map[string]any{"checkpoints": len(checkpoints), "totals": totals}, nil
+	ranked := map[string]any{}
+	for key, values := range functions {
+		ranked[key] = tracing.RankedValues(values)
+	}
+	return map[string]any{"checkpoints": len(checkpoints), "totals": totals, "functions": ranked}, nil
 }
 
 // Export rebuilds the window's records into one pprof profile: its sample
