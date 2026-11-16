@@ -2,6 +2,7 @@ package telltale
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,7 +13,51 @@ import (
 	. "github.com/onsi/gomega"
 )
 
+type metadataTransport func(*http.Request) (*http.Response, error)
+
+func (f metadataTransport) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+type metadataBody struct {
+	io.Reader
+	err error
+}
+
+func (b metadataBody) Close() error { return b.err }
+
 var _ = Describe("resource detection", func() {
+	DescribeTable("reports response close failures from cloud metadata", func(provider string, status int) {
+		closeErr := errors.New("metadata response close failed")
+		client := &http.Client{Transport: metadataTransport(func(r *http.Request) (*http.Response, error) {
+			if r.Method == http.MethodPut {
+				return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader("token"))}, nil
+			}
+			body := `{}`
+			if provider == "gcp" {
+				body = "example-project"
+			}
+			return &http.Response{StatusCode: status, Status: http.StatusText(status), Body: metadataBody{Reader: strings.NewReader(body), err: closeErr}}, nil
+		})}
+		resource := map[string]string{"cloud.provider": provider}
+		var warning string
+		switch provider {
+		case "aws":
+			_, warning = awsMetadata(resource, client, time.Second)
+		case "ecs":
+			_, warning = ecsMetadata(resource, client, "http://metadata.example")
+		default:
+			_, warning = otherMetadata(resource, client)
+		}
+		Expect(warning).To(ContainSubstring(closeErr.Error()))
+		if status != http.StatusOK {
+			Expect(warning).To(ContainSubstring(http.StatusText(status)))
+		}
+	},
+		Entry("GCP", "gcp", http.StatusOK),
+		Entry("Azure", "azure", http.StatusOK),
+		Entry("AWS", "aws", http.StatusOK),
+		Entry("ECS", "ecs", http.StatusOK),
+		Entry("HTTP error", "ecs", http.StatusForbidden),
+	)
 	It("enables metadata detection from the environment at startup", func() {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(`{"Cluster":"from-env"}`)) }))
 		defer server.Close()
@@ -21,7 +66,7 @@ var _ = Describe("resource detection", func() {
 		GinkgoT().Setenv("ECS_CONTAINER_METADATA_URI_V4", server.URL)
 		a, err := Start(Options{Listen: "tcp"})
 		Expect(err).NotTo(HaveOccurred())
-		defer a.Close()
+		defer func() { Expect(a.Close()).To(Succeed()) }()
 		Expect(a.endpoint.Resource).To(HaveKeyWithValue("aws.ecs.cluster.name", "from-env"))
 	})
 	It("does not route metadata requests through environment proxies", func() {

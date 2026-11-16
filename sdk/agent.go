@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/flanksource/telltale/sdk/protocol"
@@ -208,7 +209,10 @@ func (a *Agent) accept() {
 			if closed {
 				return
 			}
-			if temporary, ok := err.(net.Error); ok && temporary.Temporary() {
+			if os.IsTimeout(err) || errors.Is(err, syscall.EINTR) || errors.Is(err, syscall.EAGAIN) ||
+				errors.Is(err, syscall.EMFILE) || errors.Is(err, syscall.ENFILE) ||
+				errors.Is(err, syscall.ENOBUFS) || errors.Is(err, syscall.ENOMEM) ||
+				errors.Is(err, syscall.ECONNABORTED) || errors.Is(err, syscall.ECONNRESET) {
 				if delay == 0 {
 					delay = 5 * time.Millisecond
 				} else {

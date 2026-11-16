@@ -20,8 +20,8 @@ import (
 var _ = Describe("framed protocol", func() {
 	It("times out a write when the peer stops reading", func() {
 		left, right := net.Pipe()
-		defer left.Close()
-		defer right.Close()
+		defer func() { Expect(left.Close()).To(Succeed()) }()
+		defer func() { Expect(right.Close()).To(Succeed()) }()
 		err := protocol.NewConn(left).Send("ping", protocol.Ping{})
 		Expect(errors.Is(err, os.ErrDeadlineExceeded)).To(BeTrue())
 	})

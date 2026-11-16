@@ -26,13 +26,13 @@ var _ = Describe("probe installation", func() {
 		p := &installedProbe{}
 		RegisterProbe(p)
 		a := Loopback()
-		defer a.Close()
+		defer func() { Expect(a.Close()).To(Succeed()) }()
 		b := Loopback()
-		defer b.Close()
+		defer func() { Expect(b.Close()).To(Succeed()) }()
 		firstStream, first := openAgent(a)
-		defer firstStream.Close()
+		defer func() { Expect(firstStream.Close()).To(Succeed()) }()
 		secondStream, second := openAgent(b)
-		defer secondStream.Close()
+		defer func() { Expect(secondStream.Close()).To(Succeed()) }()
 		for _, conn := range []*protocol.Conn{first, second} {
 			Expect(conn.Send("arm", protocol.Arm{Session: "install", Probe: "install-test", Params: json.RawMessage(`{}`)})).To(Succeed())
 			frame, _, err := conn.Read()

@@ -3,6 +3,7 @@ package telltale
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -35,7 +36,7 @@ func resourceWithCloud(getenv func(string) string, readFile func(string) ([]byte
 	return ecsMetadata(resource, client, getenv("ECS_CONTAINER_METADATA_URI_V4"))
 }
 
-func otherMetadata(resource map[string]string, client *http.Client) (map[string]string, string) {
+func otherMetadata(resource map[string]string, client *http.Client) (result map[string]string, warning string) {
 	var endpoint, header string
 	switch resource["cloud.provider"] {
 	case "gcp":
@@ -58,7 +59,7 @@ func otherMetadata(resource map[string]string, client *http.Client) (map[string]
 	if err != nil {
 		return resource, fmt.Sprintf("cloud metadata: %v", err)
 	}
-	defer response.Body.Close()
+	defer closeMetadataBody(response.Body, &warning)
 	if response.StatusCode != http.StatusOK {
 		return resource, fmt.Sprintf("cloud metadata: HTTP %s", response.Status)
 	}
@@ -86,7 +87,7 @@ func otherMetadata(resource map[string]string, client *http.Client) (map[string]
 	return resource, ""
 }
 
-func awsMetadata(resource map[string]string, client *http.Client, timeout time.Duration) (map[string]string, string) {
+func awsMetadata(resource map[string]string, client *http.Client, timeout time.Duration) (result map[string]string, warning string) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	request, err := http.NewRequestWithContext(ctx, http.MethodPut, "http://169.254.169.254/latest/api/token", nil)
@@ -99,7 +100,7 @@ func awsMetadata(resource map[string]string, client *http.Client, timeout time.D
 		return resource, fmt.Sprintf("cloud metadata: %v", err)
 	}
 	token, err := io.ReadAll(io.LimitReader(response.Body, 4096))
-	_ = response.Body.Close()
+	err = errors.Join(err, response.Body.Close())
 	if err != nil || response.StatusCode != http.StatusOK {
 		return resource, fmt.Sprintf("cloud metadata: token request failed: %v (%s)", err, response.Status)
 	}
@@ -112,7 +113,7 @@ func awsMetadata(resource map[string]string, client *http.Client, timeout time.D
 	if err != nil {
 		return resource, fmt.Sprintf("cloud metadata: %v", err)
 	}
-	defer response.Body.Close()
+	defer closeMetadataBody(response.Body, &warning)
 	if response.StatusCode != http.StatusOK {
 		return resource, fmt.Sprintf("cloud metadata: HTTP %s", response.Status)
 	}
@@ -132,12 +133,12 @@ func awsMetadata(resource map[string]string, client *http.Client, timeout time.D
 	return resource, ""
 }
 
-func ecsMetadata(resource map[string]string, client *http.Client, address string) (map[string]string, string) {
+func ecsMetadata(resource map[string]string, client *http.Client, address string) (result map[string]string, warning string) {
 	response, err := client.Get(strings.TrimRight(address, "/") + "/task")
 	if err != nil {
 		return resource, fmt.Sprintf("cloud metadata: %v", err)
 	}
-	defer response.Body.Close()
+	defer closeMetadataBody(response.Body, &warning)
 	if response.StatusCode != http.StatusOK {
 		return resource, fmt.Sprintf("cloud metadata: HTTP %s", response.Status)
 	}
@@ -159,6 +160,15 @@ func ecsMetadata(resource map[string]string, client *http.Client, address string
 		}
 	}
 	return resource, ""
+}
+
+func closeMetadataBody(body io.Closer, warning *string) {
+	if err := body.Close(); err != nil {
+		if *warning != "" {
+			*warning += "; "
+		}
+		*warning += fmt.Sprintf("cloud metadata response close: %v", err)
+	}
 }
 
 func detectResource(getenv func(string) string, readFile func(string) ([]byte, error)) map[string]string {

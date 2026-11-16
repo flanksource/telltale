@@ -27,7 +27,7 @@ func (s *checkpointSink) TryEmit(value any) bool {
 		return false
 	}
 	if len(s.records) >= 256 || s.bytes+len(data)+1 > maxBatchBytes-1024 {
-		s.session.dropped.Add(1)
+		s.dropped.Add(1)
 		return false
 	}
 	s.records = append(s.records, data)
@@ -38,7 +38,7 @@ func (s *checkpointSink) TryEmit(value any) bool {
 func (s *checkpointSink) Blob(name, contentType string, data []byte, meta any) error {
 	metadata, err := json.Marshal(meta)
 	if err == nil {
-		err = send(s.conn, protocol.TypeBlob, protocol.Blob{Session: s.session.id, Checkpoint: s.id, Seq: s.session.blobSeq.Add(1), Name: name, ContentType: contentType, Len: len(data), Meta: metadata}, data)
+		err = send(s.conn, protocol.TypeBlob, protocol.Blob{Session: s.session.id, Checkpoint: s.id, Seq: s.blobSeq.Add(1), Name: name, ContentType: contentType, Len: len(data), Meta: metadata}, data)
 	}
 	s.mu.Lock()
 	s.err = errors.Join(s.err, err)
