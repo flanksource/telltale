@@ -87,7 +87,7 @@ var _ = Describe("HTTP routing", func() {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/agents/missing/call", strings.NewReader(body)))
 		Expect(response.Code).To(Equal(http.StatusBadRequest))
-		Expect(response.Body.String()).To(ContainSubstring("operation are required"))
+		Expect(response.Body.String()).To(ContainSubstring("an operation is required"))
 	}, Entry("empty object", `{}`), Entry("null", `null`), Entry("parameters only", `{"params":{}}`))
 
 	It("serves Clicky's health and generated OpenAPI", func() {
