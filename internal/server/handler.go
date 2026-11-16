@@ -63,7 +63,7 @@ func routes(options HandlerOptions, ui http.Handler) (http.Handler, error) {
 	}
 	api := http.NewServeMux()
 	rpc.NewSwaggerServer(&rpc.ServeConfig{Version: options.Version}, options.Root,
-		&rpc.OpenAPIConfig{Title: "Telltale", Version: options.Version, Extensions: []func(*rpc.OpenAPISpec){addRulesPaths, connections.AddConnectionsOpenAPI, addConnectionPaths, addOtelPaths, addReceiverPath, addFeedPaths}}).RegisterRoutes(route.NewRouter(api))
+		&rpc.OpenAPIConfig{Title: "Telltale", Version: options.Version, Extensions: []func(*rpc.OpenAPISpec){addRulesPaths, connections.AddConnectionsOpenAPI, addConnectionPaths, addOtelPaths, addReceiverPath, addFeedPaths, addJVMSnapshotPath}}).RegisterRoutes(route.NewRouter(api))
 	root := http.NewServeMux()
 	if options.OTLP == nil {
 		options.OTLP = http.NotFoundHandler()
@@ -75,6 +75,7 @@ func routes(options HandlerOptions, ui http.Handler) (http.Handler, error) {
 		RegisterExecutionRoutes(route.NewRouter(installer))
 	root.Handle("/api/v1/agents/install/java", http.NewCrossOriginProtection().Handler(installer))
 	root.Handle("/api/v1/jvm/", http.NewCrossOriginProtection().Handler(installer))
+	root.Handle("POST /api/v1/jvm/snapshot", http.NewCrossOriginProtection().Handler(http.HandlerFunc(jvmSnapshotHandler)))
 	hub := agentclient.NewHub(agentclient.Default, agentclient.NewTokenStore(options.ConfigDirs))
 	root.HandleFunc("/api/agents", hub.List)
 	root.HandleFunc("GET /api/agents/{agent}/catalog", jvmHandler)

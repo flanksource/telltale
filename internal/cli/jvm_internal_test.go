@@ -75,7 +75,9 @@ func startedTrace(ctx context.Context, args ...string) (telltale.TraceSpec, time
 	DeferCleanup(func(previous *agentclient.Registry) { agentclient.Default = previous }, agentclient.Default)
 	agentclient.Default = registry
 	var started telltale.StartOptions
-	DeferCleanup(func(previous func(context.Context, telltale.StartOptions) (*telltale.Run, error)) { startKindRun = previous }, startKindRun)
+	DeferCleanup(func(previous func(context.Context, telltale.StartOptions) (*telltale.Run, error)) {
+		startKindRun = previous
+	}, startKindRun)
 	startKindRun = func(_ context.Context, options telltale.StartOptions) (*telltale.Run, error) {
 		started = options
 		return nil, errNotStarted
@@ -99,6 +101,7 @@ var _ = Describe("JVM command tree", func() {
 			}
 		}
 		Expect(served).To(Equal(map[string]string{
+			"jvm settings": "jvm.settings", "jvm resources": "jvm.resources", "jvm flags": "jvm.flags", "jvm heap histogram": "jvm.heap.histogram",
 			"jvm decompile": "jvm.classes.source", "jvm decompile bytecode": "jvm.classes.bytecode",
 			"jvm patch apply": "jvm.classes.patch", "jvm patch restore": "jvm.classes.restore", "jvm patch list": "jvm.classes.patches",
 			"jvm patch compile": "jvm.classes.compile", "jvm patch lease": "jvm.classes.lease",
