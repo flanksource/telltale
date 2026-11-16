@@ -58,7 +58,7 @@ func collect(ctx context.Context, options Options, call caller) (*Result, error)
 		{"jvm.logging.list", "logging.json"}, {"jvm.status", "status.json"},
 	}
 	if options.HeapHistogram {
-		operations = append(operations, struct{ op, file string }{"jvm.heap.histogram", "heap-histogram.txt"})
+		operations = append(operations, struct{ op, file string }{"jvm.heap.histogram", "heap-histogram.json"})
 	}
 	for _, operation := range operations {
 		if err := ctx.Err(); err != nil {

@@ -11,6 +11,9 @@ final class DiagnosticSchemas {
   }
 
   static {
+    doc("jvm.settings", "jvm settings", "Read OS/JVM properties, environment and resource settings");
+    doc("jvm.resources", "jvm resources", "Read filesystem capacity and Linux process and cgroup resources");
+    doc("jvm.flags", "jvm flags", "Read effective HotSpot VM flags");
     doc("jvm.extensions.list", "jvm extensions list", "List loaded diagnostic extensions");
     doc("jvm.extensions.install", "jvm extensions install", "Install a diagnostic extension JAR");
     doc("jvm.extensions.replace", "jvm extensions replace", "Replace a loaded diagnostic extension with a new JAR");
@@ -64,7 +67,7 @@ final class DiagnosticSchemas {
   static Map<String, Object> result(String name) {
     Map<String, Object> schema = new LinkedHashMap<>();
     if (name.equals("jvm.jmx.read") || name.equals("jvm.jmx.invoke")) return schema;
-    if (name.equals("jvm.threads.dump")) {
+    if (name.equals("jvm.threads.dump") || name.equals("jvm.flags")) {
       schema.put("type", "string");
       return schema;
     }

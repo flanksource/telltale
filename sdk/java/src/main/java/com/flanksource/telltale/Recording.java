@@ -54,6 +54,20 @@ final class Recording implements Capture {
                 .invoke(null, value(params, "settings", "profile"));
         type = Class.forName("jdk.jfr.Recording");
         recorder = type.getConstructor(configType).newInstance(config);
+        if (params.has("supportSnapshot") && params.get("supportSnapshot").getAsBoolean()) {
+          java.util.Map<String, String> settings = new java.util.HashMap<>();
+          java.util.Map<?, ?> original = (java.util.Map<?, ?>) type.getMethod("getSettings").invoke(recorder);
+          java.util.Set<String> allowed = new java.util.HashSet<>(java.util.Arrays.asList(
+              "jdk.ExecutionSample", "jdk.NativeMethodSample", "jdk.ObjectAllocationSample",
+              "jdk.ObjectAllocationInNewTLAB", "jdk.ObjectAllocationOutsideTLAB",
+              "jdk.JavaMonitorEnter", "jdk.ThreadPark", "jdk.GarbageCollection", "jdk.GCHeapSummary"));
+          for (java.util.Map.Entry<?, ?> entry : original.entrySet()) {
+            String key = entry.getKey().toString();
+            settings.put(key, key.endsWith("#enabled") && !allowed.contains(key.split("#")[0]) ? "false" : entry.getValue().toString());
+          }
+          type.getMethod("setSettings", java.util.Map.class).invoke(recorder, settings);
+          type.getMethod("setMaxSize", long.class).invoke(recorder, 60L * 1024 * 1024);
+        }
         type.getMethod("start").invoke(recorder);
       }
     } catch (Exception error) {

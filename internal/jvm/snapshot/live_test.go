@@ -41,7 +41,7 @@ var _ = Describe("disposable JVM support snapshot", func() {
 		result, err := Collect(ctx, Options{Agent: id, JFR: "1s", HeapHistogram: true})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(result.Manifest.Complete).To(BeTrue(), "%+v", result.Manifest.Collectors)
-		Expect(string(result.Files["heap-histogram.txt"])).To(ContainSubstring("java.lang.String"))
+		Expect(string(result.Files["heap-histogram.json"])).To(ContainSubstring("java.lang.String"))
 		for name, content := range result.Files {
 			Expect(bytes.Contains(content, []byte("snapshot-private-value"))).To(BeFalse(), name)
 		}
