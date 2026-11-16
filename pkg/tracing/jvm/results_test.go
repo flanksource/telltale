@@ -28,7 +28,7 @@ var _ = Describe("operation results", func() {
 				}
 			}
 		}
-		Expect(catalog.Operations()).To(HaveLen(34))
+		Expect(catalog.Operations()).To(HaveLen(37))
 		Expect(raw).To(BeEmpty())
 	})
 

@@ -26,8 +26,8 @@ func lines(text interface{ String() string }) []string {
 
 var _ = Describe("registry", func() {
 	It("decodes every runtime operation", func() {
-		Expect(jvmruntime.Results).To(HaveLen(5))
-		for _, op := range []string{jvmruntime.StatusOp, jvmruntime.MetricsOp, jvmruntime.ThreadsOp, jvmruntime.ThreadDumpOp, jvmruntime.ThreadStackOp} {
+		Expect(jvmruntime.Results).To(HaveLen(8))
+		for _, op := range []string{jvmruntime.StatusOp, jvmruntime.MetricsOp, jvmruntime.ThreadsOp, jvmruntime.ThreadDumpOp, jvmruntime.ThreadStackOp, jvmruntime.SettingsOp, jvmruntime.ResourcesOp, jvmruntime.FlagsOp} {
 			Expect(jvmruntime.Results).To(HaveKey(op))
 			_, err := jvmruntime.Results[op](json.RawMessage(`{}`))
 			Expect(err).To(HaveOccurred(), op)

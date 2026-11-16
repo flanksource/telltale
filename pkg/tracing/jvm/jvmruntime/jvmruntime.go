@@ -1,5 +1,6 @@
 // Package jvmruntime holds the typed results of the Java agent's runtime
-// operations: status, metrics, and the thread sample, dump and stack.
+// operations: status, metrics, settings, resources, VM flags, and the thread
+// sample, dump and stack.
 package jvmruntime
 
 import (
@@ -15,6 +16,9 @@ var Results = map[string]func(json.RawMessage) (any, error){
 	ThreadsOp:     func(raw json.RawMessage) (any, error) { return DecodeThreads(raw) },
 	ThreadDumpOp:  func(raw json.RawMessage) (any, error) { return DecodeThreadDump(raw) },
 	ThreadStackOp: func(raw json.RawMessage) (any, error) { return DecodeThreadStack(raw) },
+	SettingsOp:    func(raw json.RawMessage) (any, error) { return DecodeSettings(raw) },
+	ResourcesOp:   func(raw json.RawMessage) (any, error) { return DecodeResources(raw) },
+	FlagsOp:       func(raw json.RawMessage) (any, error) { return DecodeFlags(raw) },
 }
 
 // decodeObject decodes an agent result object, refusing one that is missing

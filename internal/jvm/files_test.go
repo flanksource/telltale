@@ -56,6 +56,7 @@ var _ = Describe("embedded operation catalog", func() {
 			"jvm.catalog": "jvm catalog", "jvm.status": "jvm status",
 			"jvm.jmx.search": "jvm jmx search", "jvm.jmx.info": "jvm jmx info", "jvm.jmx.read": "jvm jmx read",
 			"jvm.jmx.write": "jvm jmx write", "jvm.jmx.invoke": "jvm jmx invoke", "jvm.metrics": "jvm metrics",
+			"jvm.settings": "jvm settings", "jvm.resources": "jvm resources", "jvm.flags": "jvm flags",
 			"jvm.threads": "jvm threads", "jvm.threads.dump": "jvm threads dump", "jvm.threads.stack": "jvm threads stack", "jvm.heap.histogram": "jvm heap histogram",
 			"jvm.logging.list": "jvm logging list", "jvm.logging.set": "jvm logging set",
 			"jvm.classes": "jvm classes", "jvm.loaders": "jvm loaders",
