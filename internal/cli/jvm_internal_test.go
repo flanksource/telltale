@@ -101,7 +101,7 @@ var _ = Describe("JVM command tree", func() {
 			}
 		}
 		Expect(served).To(Equal(map[string]string{
-			"jvm settings": "jvm.settings", "jvm resources": "jvm.resources", "jvm flags": "jvm.flags", "jvm heap histogram": "jvm.heap.histogram",
+			"jvm settings": "jvm.settings", "jvm resources": "jvm.resources", "jvm flags": "jvm.flags",
 			"jvm decompile": "jvm.classes.source", "jvm decompile bytecode": "jvm.classes.bytecode",
 			"jvm patch apply": "jvm.classes.patch", "jvm patch restore": "jvm.classes.restore", "jvm patch list": "jvm.classes.patches",
 			"jvm patch compile": "jvm.classes.compile", "jvm patch lease": "jvm.classes.lease",
