@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/flanksource/commons-db/cmd/query/profiles"
@@ -122,7 +120,7 @@ func (s *Service) Handler(prefix string, next http.Handler) (http.Handler, error
 
 // sessionHandler serves the session API:
 //
-//	POST {prefix}/profile/{name}/sessions        start (?interval samples, ?follow tails)
+//	POST {prefix}/profile/{name}/sessions        start (?interval samples; ?follow is refused: GET {prefix}/profile/{name}?follow=true tails)
 //	POST {prefix}/connection/{id}/trace/sessions start a connection trace
 //	GET  {prefix}/traces/kinds                   the trace plugin kinds served
 //	POST {prefix}/traces/{kind}/sessions         start a trace plugin capture
@@ -216,28 +214,9 @@ func (h *sessionHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// queryFlag reads a boolean query parameter in both the forms a caller writes
-// it: `?follow` and `?follow=true`. A value that is neither is refused rather
-// than read as false, because a misspelled flag that quietly does nothing is
-// indistinguishable from a feature that does not work.
-func queryFlag(values url.Values, key string) (bool, error) {
-	raw, ok := values[key]
-	if !ok || len(raw) == 0 {
-		return false, nil
-	}
-	if raw[0] == "" {
-		return true, nil
-	}
-	flag, err := strconv.ParseBool(raw[0])
-	if err != nil {
-		return false, fmt.Errorf("invalid %s %q: expected a boolean", key, raw[0])
-	}
-	return flag, nil
-}
-
 // sessionReservedParam extends reservedParam with the session transport keys.
 func sessionReservedParam(key string) bool {
-	return profiles.IsReservedParam(key) || key == "interval" || key == "duration" || key == "follow"
+	return profiles.IsReservedParam(key) || key == "interval" || key == "duration"
 }
 
 func writeSessionJSON(w http.ResponseWriter, status int, v any) {

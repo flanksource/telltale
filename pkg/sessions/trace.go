@@ -121,7 +121,7 @@ func (r *Runner) startCLISession(store profilestore.Store, p query.Profile, para
 			return profilestore.PrepareReads(ctx, r.beforeExecute, []profilestore.ReadRequest{{Profile: p, Params: params}})
 		},
 	})
-	return query.ExecuteStream(profiles.WithSessionProfiles(r.context(), store, registry), registry, p, params)
+	return query.ExecuteStream(withSessionProfiles(r.context(), store, registry), registry, p, params)
 }
 
 func sessionSpecDuration(p query.Profile) time.Duration {

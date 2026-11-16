@@ -67,7 +67,7 @@ func TestSessionAPIRejectsAnUnreadableLastEventID(t *testing.T) {
 func TestSSEKeepalivePingsAnIdleStream(t *testing.T) {
 	session, err := query.NewSession(query.SessionOptions{
 		ID: "keepalive", Profile: traceTestProfile("idle", "sess-api-idle"),
-		Kind: query.KindTrace, Role: query.SessionRoleView,
+		Kind: query.KindTrace, Role: query.SessionRoleCapture,
 	})
 	require.NoError(t, err)
 
@@ -84,7 +84,7 @@ func TestSSEKeepalivePingsAnIdleStream(t *testing.T) {
 func TestSSEKeepaliveNeverSplitsAnEventFrame(t *testing.T) {
 	session, err := query.NewSession(query.SessionOptions{
 		ID: "interleave", Profile: traceTestProfile("busy", "sess-api-busy"),
-		Kind: query.KindTrace, Role: query.SessionRoleView,
+		Kind: query.KindTrace, Role: query.SessionRoleCapture,
 	})
 	require.NoError(t, err)
 	go func() {

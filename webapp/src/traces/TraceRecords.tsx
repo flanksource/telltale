@@ -2,13 +2,13 @@ import { useQuery } from "@tanstack/react-query";
 import { QueryBrowser } from "@flanksource/clicky-ui/data";
 import type { JsonSchemaObject } from "@flanksource/clicky-ui/components";
 import { fetchJSON } from "@flanksource/clicky-ui/profiles";
-import { traceRecordsUrl, type TraceRef } from "./api";
+import { runMount, traceRecordsUrl, type TraceRef } from "./api";
 import { executeRecordQuery, recordQueryColumns, type RecordProfileColumn } from "./recordQuery";
 import { InvocationView } from "../jvm/InvocationView";
 
 export function TraceRecords({ run, kind, stream }: { run: string; kind: string; stream: string }) {
   const params = new URLSearchParams(window.location.search);
-  const mount = `/api/traces/${encodeURIComponent(run)}`;
+  const mount = runMount(run);
   const ref: TraceRef = { kind, stream, afterSeq: Number(params.get("afterSeq") ?? 0), toSeq: Number(params.get("toSeq") ?? 0) };
   const url = traceRecordsUrl(mount, ref);
   const schema = useQuery({ queryKey: ["record-query-schema", url], queryFn: async () => {

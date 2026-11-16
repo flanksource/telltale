@@ -12,7 +12,7 @@ import (
 	dbcontext "github.com/flanksource/commons-db/context"
 	dbquery "github.com/flanksource/commons-db/query"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
-	"github.com/flanksource/commons-db/tracing/query"
+	"github.com/flanksource/telltale/pkg/tracing/query"
 
 	"github.com/flanksource/telltale/pkg/datadir"
 	"github.com/flanksource/telltale/pkg/tracing"
@@ -35,7 +35,7 @@ type QueryParams struct {
 	Provider *query.Provider `json:"provider,omitempty" clicky:"format=json,title=Provider,desc=A provider read in place: its type and connection or query and that provider's typed options"`
 }
 
-// Query is the params commons-db's handler reads.
+// Query is the params the query kind's handler reads.
 func (p QueryParams) Query() query.Params {
 	params := p.Params
 	params.Provider = p.Provider
@@ -44,8 +44,8 @@ func (p QueryParams) Query() query.Params {
 
 func (p QueryParams) Validate() error { return p.Query().Validate() }
 
-// queryReads is commons-db's query handler under telltale's runtime: the two
-// runtimes' emitters and record readers are the same interfaces.
+// queryReads is the query handler over QueryParams, the params carrying the
+// host target every telltale capture takes.
 type queryReads struct{ reads query.Reads }
 
 func (q queryReads) Params() QueryParams {
@@ -111,8 +111,7 @@ func init() {
 			if err != nil {
 				panic(fmt.Sprintf("query kind: %v", err))
 			}
-			capabilities := tracing.Capabilities{Live: query.Capabilities.Live, Historical: query.Capabilities.Historical, Follow: query.Capabilities.Follow}
-			return tracing.NewHandler[QueryParams, query.Row](queryReads{reads}, capabilities, target.Host).WithTop(tracing.TopSpec{ProjectionColumn: "row"})
+			return tracing.NewHandler[QueryParams, query.Row](queryReads{reads}, query.Capabilities, target.Host).WithTop(tracing.TopSpec{ProjectionColumn: "row"})
 		},
 	})
 }

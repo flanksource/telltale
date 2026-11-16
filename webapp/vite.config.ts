@@ -34,6 +34,9 @@ function clickyAliases(uiDirectory: string) {
 
 export function createViteConfig(options: ViteOptions): UserConfig {
   return {
+    // Assets resolve against index.html's <base href>, which a host mounting the
+    // viewer under a prefix rewrites (webapp.Handler).
+    base: "./",
     plugins: [react(), tailwindcss(), options.localUI && {
       name: "watch-clicky-source",
       configureServer(server) { server.watcher.add(resolve(options.uiDirectory, "packages/ui/src")); },

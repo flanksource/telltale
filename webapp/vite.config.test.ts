@@ -64,6 +64,10 @@ describe("Clicky UI resolution", () => {
     expect(aliases.find((alias) => new RegExp(alias.find).test("@flanksource/clicky-ui/components"))?.replacement).toBe(`${uiDirectory}/packages/ui/src/components.ts`);
   });
 
+  it("builds relative asset URLs, so a host can mount the viewer under a prefix", () => {
+    expect(createViteConfig(options).base).toBe("./");
+  });
+
   it("keeps production builds on installed dependencies", () => {
     const config = createViteConfig(options);
     expect(config.resolve?.alias).toEqual([]);

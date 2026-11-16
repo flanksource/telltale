@@ -1,7 +1,6 @@
 package sessions
 
 import (
-	"net/url"
 	"testing"
 	"time"
 
@@ -48,40 +47,6 @@ func TestApplySessionSpecOverrides(t *testing.T) {
 		_, err = applySessionSpecOverrides(execProfile("p"), sessionSpec{Interval: "fast"})
 		require.ErrorContains(t, err, "invalid interval")
 	})
-
-	t.Run("promotes a plain profile to a trace when followed", func(t *testing.T) {
-		query.RegisterProvider(&sessionStreamMock{typ: "spec-follow"})
-		in := execProfile("followable")
-		in.Provider.Type = "spec-follow"
-
-		p, err := applySessionSpecOverrides(in, sessionSpec{Follow: true})
-		require.NoError(t, err)
-		require.Equal(t, query.KindTrace, p.Kind())
-		require.NotNil(t, p.Trace.Buffer, "a follow batches raw rows so page processors still fold")
-	})
-
-	t.Run("refuses to follow a provider that cannot stream", func(t *testing.T) {
-		query.RegisterProvider(&execMock{})
-		_, err := applySessionSpecOverrides(execProfile("unfollowable"), sessionSpec{Follow: true})
-		require.ErrorContains(t, err, "does not stream")
-	})
-}
-
-func TestQueryFlag(t *testing.T) {
-	for raw, want := range map[string]bool{"follow": true, "follow=true": true, "follow=1": true, "follow=false": false} {
-		values, err := url.ParseQuery(raw)
-		require.NoError(t, err)
-		got, err := queryFlag(values, "follow")
-		require.NoError(t, err)
-		require.Equal(t, want, got, raw)
-	}
-
-	got, err := queryFlag(url.Values{}, "follow")
-	require.NoError(t, err)
-	require.False(t, got, "an absent flag is off, not an error")
-
-	_, err = queryFlag(url.Values{"follow": {"perhaps"}}, "follow")
-	require.ErrorContains(t, err, "expected a boolean")
 }
 
 func TestParseSessionParams(t *testing.T) {

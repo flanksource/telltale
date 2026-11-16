@@ -19,7 +19,6 @@ require (
 	github.com/flanksource/commons-db v0.1.72
 	github.com/flanksource/commons-db/cmd/query v0.1.70
 	github.com/flanksource/commons-db/recordstore v0.1.72
-	github.com/flanksource/commons-db/tracing v0.1.70
 	github.com/flanksource/deps/start v0.0.0-20261028154603-ac4c84178264
 	github.com/flanksource/gavel/sdk v0.0.0-20261108204313-d40d4b480181
 	github.com/flanksource/gomplate/v3 v3.24.91

@@ -10,10 +10,15 @@ import (
 	"github.com/flanksource/commons-db/cmd/query/profiles"
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/query"
+	"github.com/flanksource/commons-db/query/profilestore"
 	"github.com/flanksource/commons-db/types"
 )
 
 func (h *sessionHandler) start(w http.ResponseWriter, r *http.Request, name string) {
+	if _, ok := r.URL.Query()["follow"]; ok {
+		http.Error(w, fmt.Sprintf("a session does not follow: live-tailing profile %q is a query read, GET %s/profile/%s?follow=true", name, h.prefix, name), http.StatusBadRequest)
+		return
+	}
 	// A surface key is the path the OpenAPI document hands out for a profile's
 	// session start, and the only one a name holding a "/" can take.
 	stored, err := profiles.StoredProfileName(r.Context(), h.store, name)
@@ -33,16 +38,10 @@ func (h *sessionHandler) start(w http.ResponseWriter, r *http.Request, name stri
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	follow, err := queryFlag(r.URL.Query(), "follow")
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
 	p := resolved.Profile
 	if p, err = applySessionSpecOverrides(p, sessionSpec{
 		Interval: r.URL.Query().Get("interval"),
 		Duration: r.URL.Query().Get("duration"),
-		Follow:   follow,
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -96,7 +95,22 @@ func (h *sessionHandler) writeLive(w http.ResponseWriter, r *http.Request, statu
 // Wrap, as every profile read does, and `profiles.<name>` resolves from the
 // handler's store.
 func (h *sessionHandler) sessionContext(r *http.Request) dbcontext.Context {
-	return profiles.WithSessionProfiles(h.ctx.Wrap(context.WithoutCancel(r.Context())), h.store, h.registry)
+	return withSessionProfiles(h.ctx.Wrap(context.WithoutCancel(r.Context())), h.store, h.registry)
+}
+
+// withSessionProfiles binds the `profiles.<name>` references a top or trace
+// session started under execCtx reads to store. Each is prepared by registry's
+// BeforeRead under the context the reference is read in — the session's run
+// context, which keeps the starting caller's values — as the session's own
+// read is, at its start and before every later sample.
+func withSessionProfiles(execCtx dbcontext.Context, store profilestore.Store, registry *query.SessionRegistry) dbcontext.Context {
+	return query.WithProfileResolver(execCtx, query.ProfileResolver{
+		Resolve: func(ctx context.Context, name string) (query.Profile, error) {
+			resolved, err := profiles.Resolve(ctx, store, name)
+			return resolved.Profile, err
+		},
+		Prepare: registry.PrepareRead,
+	})
 }
 
 // sessionSpec is the transport's side of a session request: the HTTP query
@@ -104,31 +118,14 @@ func (h *sessionHandler) sessionContext(r *http.Request) dbcontext.Context {
 type sessionSpec struct {
 	Interval string
 	Duration string
-	Follow   bool
 }
 
-// applySessionSpecOverrides maps the transport inputs onto the profile: follow
-// tails any plain profile as a trace, interval samples one as top (or overrides
-// a declared interval), and duration lowers the session bound (the registry
-// still clamps it).
-//
-// Follow is applied first so that asking for both it and an interval is caught
-// by the trace/interval guard below rather than needing a rule of its own —
-// they are two answers to one question, and a profile cannot be sampled on a
-// clock and tailed continuously at the same time.
+// applySessionSpecOverrides maps the transport inputs onto the profile:
+// interval samples a plain profile as top (or overrides a declared interval),
+// and duration lowers the session bound (the registry still clamps it).
+// Live-tailing a plain profile is not a session but a query read, served by
+// the profile route's ?follow.
 func applySessionSpecOverrides(p query.Profile, spec sessionSpec) (query.Profile, error) {
-	if spec.Follow {
-		// Asked here rather than left to ExecuteStream so the refusal names the
-		// capability the caller asked for. Falling back to polling would answer a
-		// question nobody asked: an interval is a different session with a
-		// different cost, and choosing it silently hides that the provider cannot
-		// do what the Follow control offered.
-		if !query.SupportsStreaming(p.Provider.Type) {
-			return p, fmt.Errorf("profile %q cannot be followed: provider %q does not stream; pass ?interval to sample it instead",
-				p.Name, p.Provider.Type)
-		}
-		p = query.Follow(p)
-	}
 	if spec.Interval != "" {
 		d, err := time.ParseDuration(spec.Interval)
 		if err != nil {
@@ -143,7 +140,7 @@ func applySessionSpecOverrides(p query.Profile, spec sessionSpec) (query.Profile
 		p.Top.Interval = types.Duration{Duration: d}
 	}
 	if p.Kind() == query.KindQuery {
-		return p, fmt.Errorf("profile %q declares neither trace nor top; pass ?follow to tail it or ?interval to sample it", p.Name)
+		return p, fmt.Errorf("profile %q declares neither trace nor top; pass ?interval to sample it, or GET the profile with ?follow=true to tail it", p.Name)
 	}
 	if spec.Duration != "" {
 		d, err := time.ParseDuration(spec.Duration)

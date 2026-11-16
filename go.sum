@@ -366,8 +366,6 @@ github.com/flanksource/commons-db/cmd/query v0.1.70 h1:ONcy93yi4wUYahI0LdoVmbp7F
 github.com/flanksource/commons-db/cmd/query v0.1.70/go.mod h1:tJGkIRrcKd0oA6C9/5yMLLi7UOTDf8qV4EeY+8JMoS0=
 github.com/flanksource/commons-db/recordstore v0.1.72 h1:iz6WhPHmYkWHhRHY5xze635bXz3VPidqgAh3ETdf2io=
 github.com/flanksource/commons-db/recordstore v0.1.72/go.mod h1:0hrPbUxv/FB7rrB8k3eJIRTgh5HW9fLXgSlLb7d2PoY=
-github.com/flanksource/commons-db/tracing v0.1.70 h1:+Kq9vNBJKpwUrn/uTiJhREiVuxhlXOG0fuwkZiSoX04=
-github.com/flanksource/commons-db/tracing v0.1.70/go.mod h1:bNv3jEZzUzriVamZzjfpDPg10Ri6NbTW9E6yGZTlhMM=
 github.com/flanksource/deps v1.0.51 h1:i5iOzDTVTLdvXfMfan0tNZQAtaYxcipk0nJwE9FhMEk=
 github.com/flanksource/deps v1.0.51/go.mod h1:/AdWJJhDH/Phs+NxR2RLiwM3sHgBzb+LNgqAwtcyYgU=
 github.com/flanksource/deps/start v0.0.0-20261028154603-ac4c84178264 h1:ehw9wz74TiCvqKFgixIAJuYypXR5NH1u0Pvsu7QNkfg=

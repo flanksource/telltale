@@ -3,6 +3,7 @@ import { AppShell, Button } from "@flanksource/clicky-ui/components";
 import { useTheme } from "@flanksource/clicky-ui/hooks";
 import { RouterProvider, useBrowserRouter, useRouter } from "@flanksource/clicky-ui/rpc";
 import { AppRoutes, matchRoute } from "./routes";
+import { basenameRouter } from "./base";
 import { CommandSearch } from "./search/CommandSearch";
 import TracesPage from "./traces/TracesPage";
 import { RunShellContext } from "./layout/run-shell";
@@ -50,6 +51,7 @@ function Shell() {
 }
 
 export default function App() {
-  const router = useBrowserRouter();
+  const browser = useBrowserRouter();
+  const router = useMemo(() => basenameRouter(browser), [browser]);
   return <RouterProvider adapter={router}><Shell /></RouterProvider>;
 }

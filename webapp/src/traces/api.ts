@@ -1,10 +1,21 @@
 import type { ProcessNodeRow, ProcessSampleRow, TopMetric } from "@flanksource/clicky-ui/data";
+import { BASE_PATH, withBase } from "../base";
 
 // The server lists, starts and stops runs at /api/traces (telltale.Handler),
 // and serves each one's trace routes under its mount, /api/traces/<run id>
-// (traceserve.Handler).
+// (traceserve.Handler), both under the base a host mounts the viewer at.
 
-export const TRACES_ENDPOINT = "/api/traces";
+/** The traces API under base. */
+export function tracesEndpoint(base: string = BASE_PATH): string {
+  return withBase("/api/traces", base);
+}
+
+export const TRACES_ENDPOINT = tracesEndpoint();
+
+/** The mount of run's trace routes under the traces API at endpoint. */
+export function runMount(run: string, endpoint: string = TRACES_ENDPOINT): string {
+  return `${endpoint}/${encodeURIComponent(run)}`;
+}
 
 /** A window of a trace stream: the records after afterSeq through toSeq (0 = unbounded) of kind's stream. */
 export interface TraceRef {
