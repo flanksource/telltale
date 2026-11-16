@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { JvmInstrument } from "./JvmInstrument";
 import { JvmNotifications } from "./JvmNotifications";
 import { JvmTraces } from "./JvmTraces";
+import { JvmRuntime } from "./runtime";
 
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); window.history.replaceState(null, "", "/"); });
 
@@ -20,7 +21,7 @@ it("instruments the selected overload with consent and preserves the recording s
     throw new Error(`Unexpected request: ${url} ${operation}`);
   });
   vi.stubGlobal("fetch", request);
-  function Harness() { return <RouterProvider adapter={useMemoryRouter(window.location.pathname + window.location.search)}><JvmInstrument agent="demo" /></RouterProvider>; }
+  function Harness() { return <RouterProvider adapter={useMemoryRouter(window.location.pathname + window.location.search)}><JvmRuntime.Provider value={true}><JvmInstrument agent="demo" /></JvmRuntime.Provider></RouterProvider>; }
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><Harness /></QueryClientProvider>);
   const start = await screen.findByRole("button", { name: "Instrument method" });
   expect(start).toBeDisabled();
@@ -45,7 +46,7 @@ it("sends the root-call filters from the instrument form and blocks a match it c
     return new Response(JSON.stringify({ total: 0, classes: [] }));
   });
   vi.stubGlobal("fetch", request);
-  function Harness() { return <RouterProvider adapter={useMemoryRouter(window.location.pathname + window.location.search)}><JvmInstrument agent="demo" /></RouterProvider>; }
+  function Harness() { return <RouterProvider adapter={useMemoryRouter(window.location.pathname + window.location.search)}><JvmRuntime.Provider value={true}><JvmInstrument agent="demo" /></JvmRuntime.Provider></RouterProvider>; }
   render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><Harness /></QueryClientProvider>);
   fireEvent.click(screen.getByLabelText("Allow method instrumentation"));
   fireEvent.change(screen.getByLabelText("Minimum cost"), { target: { value: "250ms" } });

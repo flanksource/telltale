@@ -1,3 +1,4 @@
+import { Select, InputField } from "@flanksource/clicky-ui/components";
 import { useState } from "react";
 import { Button } from "@flanksource/clicky-ui/components";
 import { DataTable, type DataTableColumn } from "@flanksource/clicky-ui/data";
@@ -20,8 +21,8 @@ export function JvmRecordings({ recordings, loading, error, selected, onSelect, 
   ];
   return <div className="flex h-full min-h-0 min-w-0 flex-col gap-3">
     <div className="flex flex-wrap items-end gap-3">
-      <label className="min-w-0 flex-1 text-sm">Filter recordings<input className={fieldClass} value={filter} onChange={event => { setFilter(event.target.value); persistFilter("recordingFilter", event.target.value); }} /></label>
-      <label className="text-sm">Recording state<select className={fieldClass} value={state} onChange={event => { setState(event.target.value); persistFilter("recordingState", event.target.value); }}><option value="">All states</option>{["running", "succeeded", "failed", "unfinished"].map(value => <option key={value}>{value}</option>)}</select></label>
+      <label className="min-w-0 flex-1 text-sm">Filter recordings<InputField value={filter} onChange={value => { setFilter(value); persistFilter("recordingFilter", value); }} /></label>
+      <label className="text-sm">Recording state<Select className={fieldClass} value={state} onChange={event => { setState(event.target.value); persistFilter("recordingState", event.target.value); }}><option value="">All states</option>{["running", "succeeded", "failed", "unfinished"].map(value => <option key={value}>{value}</option>)}</Select></label>
       <Button variant="outline" onClick={onRefresh}>Refresh recordings</Button>
     </div>
     {error && <p role="alert" className="text-sm">{error.message}</p>}

@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Panel, Tabs } from "@flanksource/clicky-ui/components";
+import { Button, Panel, Tabs, Checkbox, InputField } from "@flanksource/clicky-ui/components";
 import { useRouter } from "@flanksource/clicky-ui/rpc";
 import { call, persistFilter } from "./api";
-import { inspect, fieldClass, type MBeanAttribute, type MBeanInfo, type MBeanOperation } from "./diagnostics";
+import { inspect, type MBeanAttribute, type MBeanInfo, type MBeanOperation } from "./diagnostics";
 import { buildMBeanBrowserTree, parseMBeanArgument } from "./mbeans";
 import { JvmResults } from "./JvmResults";
 import { MutationChoice } from "./MutationChoice";
@@ -15,7 +15,7 @@ export function JvmMBeans({ agent }: { agent: string }) {
   const tree = buildMBeanBrowserTree((names.data ?? []).filter(name => name.toLowerCase().includes(filter.toLowerCase())));
   return <div className="grid min-w-0 gap-4 lg:grid-cols-[minmax(220px,1fr)_minmax(0,3fr)]">
     <Panel title="MBeans">
-      <label className="block text-sm">Filter MBeans<input className={fieldClass} value={filter} onChange={event => { setFilter(event.target.value); persistFilter("mbeanFilter", event.target.value); }} /></label>
+      <label className="block text-sm">Filter MBeans<InputField value={filter} onChange={value => { setFilter(value); persistFilter("mbeanFilter", value); }} /></label>
       <p className="my-2 text-xs text-muted-foreground">{tree.reduce((total, domain) => total + domain.count, 0)} of {names.data?.length ?? 0} MBeans</p>
       {names.isPending && <p role="status">Loading MBeans…</p>}
       {names.error && <p role="alert">{names.error.message}</p>}
@@ -61,19 +61,19 @@ function Attribute({ agent, objectName, attribute, value, allowMutation }: { age
     <div className="flex flex-wrap items-center gap-2"><h3 className="font-mono text-sm font-medium">{attribute.name}</h3><span className="text-xs text-muted-foreground">{attribute.type} · {attribute.writable ? "writable" : "read only"}</span>{attribute.writable && <Button variant="outline" onClick={() => { setDraft(typeof value === "object" ? JSON.stringify(value) : String(value ?? "")); setEditing(!editing); }}>Edit {attribute.name}</Button>}</div>
     {attribute.description && <p className="text-xs text-muted-foreground">{attribute.description}</p>}
     {attribute.readable && (value === undefined ? <p className="text-xs text-muted-foreground">Value unavailable.</p> : <JvmResults value={value} />)}
-    {editing && <form className="space-y-2" onSubmit={event => { event.preventDefault(); write.mutate(); }}><label className="block text-sm">New {attribute.name} ({attribute.type})<input className={fieldClass} value={draft} onChange={event => setDraft(event.target.value)} /></label><Button type="submit" disabled={!allowMutation || write.isPending}>Write {attribute.name}</Button></form>}
+    {editing && <form className="space-y-2" onSubmit={event => { event.preventDefault(); write.mutate(); }}><label className="block text-sm">New {attribute.name} ({attribute.type}){attribute.type === "boolean" || attribute.type === "java.lang.Boolean" ? <Checkbox checked={draft === "true"} onChange={value => setDraft(String(value))} /> : <InputField value={draft} onChange={setDraft} />}</label><Button type="submit" disabled={!allowMutation || write.isPending}>Write {attribute.name}</Button></form>}
     {write.error && <p role="alert">{write.error.message}</p>}
   </section>;
 }
 
 function MBeanInvoke({ agent, objectName, operation, allowMutation }: { agent: string; objectName: string; operation: MBeanOperation; allowMutation: boolean }) {
-  const [args, setArgs] = useState<string[]>(operation.signature.map(() => ""));
+  const [args, setArgs] = useState<string[]>(operation.signature.map(arg => ["boolean", "java.lang.Boolean"].includes(arg.type) ? "false" : ""));
   const client = useQueryClient();
   const invoke = useMutation({ mutationFn: () => call(agent, "jvm.jmx.invoke", { objectName, operation: operation.name, args: args.map((value, index) => parseMBeanArgument(value, operation.signature[index].type)), signature: operation.signature.map(arg => arg.type) }, allowMutation), onSuccess: () => { void client.invalidateQueries({ queryKey: ["jvm-mbean-values", agent, objectName] }); } });
   return <form className="min-w-0 space-y-2 rounded border border-border p-3" onSubmit={event => { event.preventDefault(); invoke.mutate(); }}>
     <h3 className="break-all font-mono text-sm font-medium">{operation.name}({operation.signature.map(arg => arg.type).join(", ")}) → {operation.returnType}</h3>
     {operation.description && <p className="text-xs text-muted-foreground">{operation.description}</p>}
-    {operation.signature.map((arg, index) => <label key={`${arg.name}:${index}`} className="block text-sm">{arg.name} ({arg.type})<input className={fieldClass} value={args[index]} onChange={event => setArgs(current => current.map((value, i) => i === index ? event.target.value : value))} /></label>)}
+    {operation.signature.map((arg, index) => <label key={`${arg.name}:${index}`} className="block text-sm">{arg.name} ({arg.type}){["boolean", "java.lang.Boolean"].includes(arg.type) ? <Checkbox checked={args[index] === "true"} onChange={value => setArgs(current => current.map((other, i) => i === index ? String(value) : other))} /> : <InputField value={args[index]} onChange={value => setArgs(current => current.map((other, i) => i === index ? value : other))} />}</label>)}
     <Button type="submit" disabled={!allowMutation || invoke.isPending}>Invoke {operation.name}</Button>
     {invoke.error && <p role="alert">{invoke.error.message}</p>}
     {invoke.isSuccess && <JvmResults value={invoke.data} />}

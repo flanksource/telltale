@@ -13,7 +13,7 @@ function Shell() {
   const page = matchRoute(pathname).page;
   const params = new URLSearchParams(window.location.search);
   const viewer = params.get("viewer") === "1";
-  const framed = viewer || (page === "overview" && !!params.get("run"));
+  const framed = page === "jvm" || viewer || (page === "overview" && !!params.get("run"));
   const [nav, setNav] = useState<HTMLElement | null>(null);
   const [header, setHeader] = useState<HTMLElement | null>(null);
   const [actions, setActions] = useState<HTMLElement | null>(null);

@@ -7,11 +7,14 @@ import { JvmClasses } from "./JvmClasses";
 import { RouterProvider, useMemoryRouter } from "@flanksource/clicky-ui/rpc";
 import { buildMBeanBrowserTree, parseMBeanArgument } from "./mbeans";
 import classSource from "./class-source.fixture.json";
+import { JvmRuntime } from "./runtime";
+
+vi.mock("./SourceEditor", () => ({ SourceEditor: ({ value, onChange }: { value: string; onChange: (value: string) => void }) => <label>Replacement source<textarea value={value} onChange={event => onChange(event.target.value)} /></label> }));
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); window.history.replaceState(null, "", "/"); });
 
 function view(component: React.ReactNode) {
-  function Harness() { return <RouterProvider adapter={useMemoryRouter(window.location.pathname)}>{component}</RouterProvider>; }
+  function Harness() { return <RouterProvider adapter={useMemoryRouter(window.location.pathname)}><JvmRuntime.Provider value={true}>{component}</JvmRuntime.Provider></RouterProvider>; }
   return render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } })}><Harness /></QueryClientProvider>);
 }
 

@@ -35,13 +35,18 @@ export function persistParameters(value: Record<string, unknown>) {
   for (const key of ["class", "method", "loader", "objectName", "query", "pattern", "key"]) {
     if (typeof value[key] === "string" && value[key]) params.set(key, value[key]); else params.delete(key);
   }
-  window.history.replaceState(null, "", `${window.location.pathname}${params.size ? `?${params}` : ""}`);
+  persistSearch(params.toString());
 }
 
 export function persistFilter(key: string, value: string) {
   const params = new URLSearchParams(window.location.search);
   if (value) params.set(key, value); else params.delete(key);
-  window.history.replaceState(null, "", `${window.location.pathname}${params.size ? `?${params}` : ""}`);
+  persistSearch(params.toString());
+}
+
+export function persistSearch(search: string) {
+  window.history.replaceState(null, "", `${window.location.pathname}${search ? `?${search}` : ""}`);
+  window.dispatchEvent(new PopStateEvent("popstate"));
 }
 
 export function captureParameters(kind: string | undefined, selection: Record<string, string>): Record<string, unknown> {

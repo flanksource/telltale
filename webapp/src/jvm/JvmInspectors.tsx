@@ -1,3 +1,4 @@
+import { Select, InputField } from "@flanksource/clicky-ui/components";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Panel } from "@flanksource/clicky-ui/components";
@@ -21,7 +22,7 @@ export function JvmLogging({ agent }: { agent: string }) {
   ];
   return <Panel title="Java logging">
     <div className="space-y-3 min-w-0"><p className="text-sm text-muted-foreground">java.util.logging loggers. Inherit uses the parent’s level.</p>
-      <div className="flex flex-wrap gap-3"><label className="text-sm">Filter loggers<input className={fieldClass} value={filter} onChange={event => { setFilter(event.target.value); persistFilter("loggerFilter", event.target.value); }} /></label><Button variant="outline" disabled={loggers.isFetching} onClick={() => void loggers.refetch()}>Refresh loggers</Button></div>
+      <div className="flex flex-wrap gap-3"><label className="text-sm">Filter loggers<InputField value={filter} onChange={value => { setFilter(value); persistFilter("loggerFilter", value); }} /></label><Button variant="outline" disabled={loggers.isFetching} onClick={() => void loggers.refetch()}>Refresh loggers</Button></div>
       {loggers.error && <p role="alert">{loggers.error.message}</p>}
       <div className="flex h-80 min-h-0 min-w-0 flex-col"><DataTable data={(loggers.data ?? []).filter(row => row.name.toLowerCase().includes(filter.toLowerCase()))} columns={columns} loading={loggers.isPending} getRowId={row => row.name} emptyMessage="No matching loggers" /></div>
       {editing && <EditLogger key={editing.name} agent={agent} row={editing} close={() => setEditing(undefined)} />}
@@ -36,7 +37,7 @@ function EditLogger({ agent, row, close }: { agent: string; row: LoggerRow; clos
   const update = useMutation({ mutationFn: () => call(agent, "jvm.logging.set", { name: row.name, level: level === "inherit" ? null : level }, allowed), onSuccess: () => { void client.invalidateQueries({ queryKey: ["jvm-loggers", agent] }); close(); } });
   return <form className="space-y-3 rounded border border-border p-3" onSubmit={event => { event.preventDefault(); update.mutate(); }}>
     <h3 className="break-all font-mono text-sm">Set level for {row.name || "<root>"}</h3>
-    <label className="block text-sm">New level<select className={fieldClass} value={level} onChange={event => setLevel(event.target.value)}><option value="inherit">(inherit)</option>{[...new Set([...levels, ...(row.level ? [row.level] : [])])].map(value => <option key={value}>{value}</option>)}</select></label>
+    <label className="block text-sm">New level<Select className={fieldClass} value={level} onChange={event => setLevel(event.target.value)}><option value="inherit">(inherit)</option>{[...new Set([...levels, ...(row.level ? [row.level] : [])])].map(value => <option key={value}>{value}</option>)}</Select></label>
     <MutationChoice label="Allow logging changes" checked={allowed} onChange={setAllowed} />
     <div className="flex gap-2"><Button type="submit" disabled={!allowed || update.isPending}>Apply level</Button><Button variant="outline" type="button" onClick={close}>Cancel</Button></div>
     {update.error && <p role="alert">{update.error.message}</p>}
@@ -59,8 +60,8 @@ export function JvmThreads({ agent }: { agent: string }) {
     <Panel title="Threads"><div className="space-y-3 min-w-0">
       {threads.data && <p className="text-sm">{threads.data.threads.length} threads · CPU sampled over {threads.data.sampledMs} ms{!threads.data.cpuTimeEnabled && " · CPU time is disabled in this JVM"}</p>}
       {threads.data && threads.data.deadlocked.length > 0 && <div role="alert" className="rounded border border-destructive p-3 text-sm">Deadlock detected: {threads.data.deadlocked.map(id => <Button key={id} variant="outline" onClick={() => select(id)}>Thread {id}</Button>)}</div>}
-      <div className="flex flex-wrap items-end gap-3"><label className="text-sm">Filter threads<input className={fieldClass} value={filter} onChange={event => { setFilter(event.target.value); persistFilter("threadFilter", event.target.value); }} /></label>
-        <label className="text-sm">Thread state<select className={fieldClass} value={state} onChange={event => { setState(event.target.value); persistFilter("threadState", event.target.value); }}><option value="">All states</option>{[...new Set(threads.data?.threads.map(row => row.state))].sort().map(value => <option key={value}>{value}</option>)}</select></label>
+      <div className="flex flex-wrap items-end gap-3"><label className="text-sm">Filter threads<InputField value={filter} onChange={value => { setFilter(value); persistFilter("threadFilter", value); }} /></label>
+        <label className="text-sm">Thread state<Select className={fieldClass} value={state} onChange={event => { setState(event.target.value); persistFilter("threadState", event.target.value); }}><option value="">All states</option>{[...new Set(threads.data?.threads.map(row => row.state))].sort().map(value => <option key={value}>{value}</option>)}</Select></label>
         <Button variant="outline" onClick={() => setPaused(!paused)}>{paused ? "Resume polling" : "Pause polling"}</Button><Button variant="outline" disabled={threads.isFetching} onClick={() => void threads.refetch()}>Refresh threads</Button>
       </div>
       {threads.error && <p role="alert">{threads.error.message}</p>}
@@ -100,7 +101,7 @@ export function JvmPatches({ agent }: { agent: string }) {
   ];
   return <Panel title="Bytecode patch register"><div className="space-y-3 min-w-0">
     <p className="text-sm">{patches.data?.filter(row => row.patched).length ?? 0} patched classes. Classes without a lease keep running modified bytes until restored.</p>
-    <label className="block text-sm">Filter patches<input className={fieldClass} value={filter} onChange={event => { setFilter(event.target.value); persistFilter("patchFilter", event.target.value); }} /></label>
+    <label className="block text-sm">Filter patches<InputField value={filter} onChange={value => { setFilter(value); persistFilter("patchFilter", value); }} /></label>
     <MutationChoice label="Allow restoring and renewing JVM patches" checked={allowed} onChange={setAllowed} />
     {(patches.error || probes.error || change.error) && <p role="alert">{(patches.error ?? probes.error ?? change.error)?.message}</p>}
     <div className="flex h-96 min-h-0 min-w-0 flex-col"><DataTable data={(patches.data ?? []).filter(row => `${row.class} ${row.loader}`.toLowerCase().includes(filter.toLowerCase()))} columns={columns} getRowId={row => `${row.loader}:${row.class}`} loading={patches.isPending} emptyMessage="This JVM is running its original bytes" /></div>

@@ -285,9 +285,9 @@ export async function fetchTraceRecords(mount: string, ref: TraceRef, signal?: A
 }
 
 /** The highest seq ref's stream has committed; 0 when it has none. */
-export async function fetchLatestSeq(mount: string, ref: TraceRef): Promise<number> {
+export async function fetchLatestSeq(mount: string, ref: TraceRef, signal?: AbortSignal): Promise<number> {
   const query = new URLSearchParams({ stream: ref.stream });
-  const res = await fetch(`${mount}/api/v1/traces/${encodeURIComponent(ref.kind)}/seq?${query}`, { headers: { Accept: "application/json" } });
+  const res = await fetch(`${mount}/api/v1/traces/${encodeURIComponent(ref.kind)}/seq?${query}`, { headers: { Accept: "application/json" }, ...(signal ? { signal } : {}) });
   if (!res.ok) throw await failure(res, `read ${ref.kind} stream`);
   const body = await res.json() as { seq: number };
   return body.seq;

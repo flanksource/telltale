@@ -43,7 +43,7 @@ export function createViteConfig(options: ViteOptions): UserConfig {
     }],
     resolve: {
       alias: options.localUI ? clickyAliases(options.uiDirectory) : [],
-      dedupe: ["react", "react-dom", "@tanstack/react-query"],
+      dedupe: ["react", "react-dom", "@tanstack/react-query", "monaco-editor", "@monaco-editor/react"],
     },
     optimizeDeps: options.localUI ? { exclude: ["@flanksource/clicky-ui"] } : {},
     server: {
