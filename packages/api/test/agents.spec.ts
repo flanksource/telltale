@@ -58,6 +58,14 @@ describe("agents API", () => {
         await new Promise(resolve => setTimeout(resolve, 100));
       }
       expect(id, output).toBeDefined();
+      const snapshot = await fetch(`${apiURL}/api/v1/jvm/snapshot`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ agent: id, jfr: "1s", heapHistogram: true }) });
+      expect(snapshot.status).toBe(200);
+      expect(snapshot.headers.get("content-type")).toBe("application/zip");
+      expect(snapshot.headers.get("x-telltale-snapshot-status")).toBe("complete");
+      const bundle = Buffer.from(await snapshot.arrayBuffer());
+      expect(bundle.subarray(0, 2).toString()).toBe("PK");
+      expect(bundle.includes(Buffer.from("manifest.json"))).toBe(true);
+      expect(bundle.includes(Buffer.from("recording.jfr"))).toBe(true);
       const base = `${apiURL}/api/agents/${encodeURIComponent(id!)}`;
       const catalog = await (await fetch(`${base}/catalog`)).json() as Array<{ name: string; paramsSchema: unknown }>;
       expect(catalog).toContainEqual(expect.objectContaining({ name: "jvm.groovy.eval", paramsSchema: expect.objectContaining({ required: ["source"] }) }));
@@ -83,6 +91,11 @@ describe("agents API", () => {
     }
   }, 30_000);
   it("rejects malformed diagnostic calls before selecting a JVM", async () => {
+    for (const body of ['{}', 'null', '{"agent":"missing","output":"/some/path"}', '{"agent":"missing","jfr":"-1s"}']) {
+      const response = await fetch(`${apiURL}/api/v1/jvm/snapshot`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+      expect(response.status).toBe(400);
+      expect(response.headers.get("content-type")).not.toBe("application/zip");
+    }
     for (const body of ['{}', 'null', '{"params":{}}', '{"operation":"jvm.catalog"} {}', '{"operation":"jvm.catalog","unexpected":true}']) {
       const response = await fetch(`${apiURL}/api/agents/missing/call`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body,
@@ -111,6 +124,8 @@ describe("agents API", () => {
       expect(unauthenticated.status).toBe(401);
       expect(await unauthenticated.json()).toEqual({ error: "unauthorized" });
       expect((await fetch(`${address}/api/traces`, { headers: { Authorization: `Bearer ${token}` } })).status).toBe(403);
+      expect((await fetch(`${address}/api/v1/jvm/snapshot`, { method: "POST", headers: { "Content-Type": "application/json" }, body: '{"agent":"missing"}' })).status).toBe(401);
+      expect((await fetch(`${address}/api/v1/jvm/snapshot`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: '{"agent":"missing"}' })).status).toBe(403);
       expect((await fetch(`${address}/api/traces`, { headers: { Authorization: `Bearer ${apiToken}` } })).status).toBe(200);
     } finally {
       if (publicServer.exitCode === null) {
