@@ -78,7 +78,7 @@ var _ = Describe("kind argument OpenAPI", func() {
 		}
 		served := 0
 		for path, item := range spec.Paths {
-			if strings.HasPrefix(path, "/api/v1/jvm/") && !slices.Contains([]string{"/api/v1/jvm/call", "/api/v1/jvm/deploy", "/api/v1/jvm/deployers"}, path) {
+			if strings.HasPrefix(path, "/api/v1/jvm/") && !slices.Contains([]string{"/api/v1/jvm/call", "/api/v1/jvm/deploy", "/api/v1/jvm/deployers", "/api/v1/jvm/snapshot"}, path) {
 				served += len(item)
 			}
 		}
