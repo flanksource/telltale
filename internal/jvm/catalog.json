@@ -293,6 +293,57 @@
     "scope": "jvm:read"
   },
   {
+    "name": "jvm.settings",
+    "title": "jvm.settings",
+    "description": "Read OS/JVM properties, environment and resource settings",
+    "command": "jvm settings",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.resources",
+    "title": "jvm.resources",
+    "description": "Read filesystem capacity and Linux process and cgroup resources",
+    "command": "jvm resources",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.flags",
+    "title": "jvm.flags",
+    "description": "Read effective HotSpot VM flags",
+    "command": "jvm flags",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "string"
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
     "name": "jvm.threads",
     "title": "jvm.threads",
     "description": "Sample thread states and CPU over a short interval",

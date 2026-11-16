@@ -25,7 +25,11 @@ Dedicated pages at `/jvm/{agent}/instrument`, `/jvm/{agent}/traces` and `/jvm/{a
 
 Traces keeps an agent-specific catalog beside runtime probe inspection. Notifications keeps the recording form, durable history, event stream and subscriber queue/drop counts together. The Records tab reuses the existing query browser, including the method call tree for JVM traces. Run responses and saved manifests carry each capture's target. Selector-based captures and older recordings without a target remain available through All runs instead of being attributed to a JVM by guesswork.
 
-Operation families include `jvm.jmx.*`, `jvm.metrics`, `jvm.threads*`, `jvm.logging.*`, `jvm.classes*`, `jvm.loaders`, `jvm.probes.*`, `jvm.ognl.eval`, `jvm.groovy.eval`, `jvm.heap.histogram` and `jvm.extensions.*`. `jvm.heap.histogram` (`telltale jvm heap histogram`) returns the heap's classes by retained bytes from `GC.class_histogram`: `top` rows (default 100), `classPattern` as a glob over class names, and `live` to count only reachable objects, which forces a full GC first.
+In Records / call tree, run a query and choose a call to load its parent invocation and nested calls independently of the query's filters and pagination. The viewer reads a fixed committed sequence for the selected thread and probe, with a 10,000-event limit per thread snapshot. Arguments, return values, exceptions, thread identity and measured counters remain available in the shared Clicky UI execution tree and object browser. Missing entries or closing events are marked incomplete; truncated and opaque values retain their explanations. Refresh invocation takes a new snapshot of a running capture.
+
+Groovy and replacement Java source use Clicky UI's Monaco editor. Compile preview shows compiler messages with line/column markers; editing the source invalidates approval to apply the previous compilation. Direct patches offer explicit 2-, 5- or 15-minute restore leases. Runtime-disabled mutations remain unavailable while drafts can still be edited. Instrument offers optional overload lookup alongside manual JVM selectors and retains recent methods; OGNL retains recent successful expressions in this browser, scoped to the agent.
+
+Operation families include `jvm.jmx.*`, `jvm.metrics`, `jvm.settings`, `jvm.resources`, `jvm.flags`, `jvm.threads*`, `jvm.logging.*`, `jvm.classes*`, `jvm.loaders`, `jvm.probes.*`, `jvm.ognl.eval`, `jvm.groovy.eval`, `jvm.heap.histogram` and `jvm.extensions.*`. `jvm.heap.histogram` (`telltale jvm heap histogram`) returns the heap's classes by retained bytes from `GC.class_histogram`: `top` rows (default 100), `classPattern` as a glob over class names, and `live` to count only reachable objects, which forces a full GC first. `jvm snapshot` collects several of these into one redacted support bundle; see [JVM support snapshot](jvm-snapshot.md).
 
 Every built-in operation is a typed command, grouped by task:
 
@@ -37,7 +41,7 @@ Every built-in operation is a typed command, grouped by task:
 | `jvm trace` | a `jvm_trace` capture with nested calls and timings |
 | `jvm trace instrument` / `probes` / `read` / `freeze` | `jvm.classes.instrument`, `jvm.probes.list` / `read` / `freeze` |
 | `jvm profiler` | a `jvm_jfr` capture on the agent seam |
-| `jvm classes`, `jvm loaders`, `jvm jmx …`, `jvm threads …`, `jvm heap histogram`, `jvm metrics`, `jvm logging …`, `jvm ognl eval`, `jvm groovy eval`, `jvm extensions …`, `jvm notifications list`, `jvm status`, `jvm catalog` | the operation of the same name |
+| `jvm classes`, `jvm loaders`, `jvm jmx …`, `jvm threads …`, `jvm heap histogram`, `jvm metrics`, `jvm settings`, `jvm resources`, `jvm flags`, `jvm logging …`, `jvm ognl eval`, `jvm groovy eval`, `jvm extensions …`, `jvm notifications list`, `jvm status`, `jvm catalog` | the operation of the same name |
 
 ```bash
 telltale jvm decompile --agent 1234 --class example.Worker
