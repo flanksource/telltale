@@ -43,7 +43,7 @@ func LocalNetwork(address string) (string, error) {
 }
 
 // ReadEndpoint validates the discovery file against its authenticated local agent.
-func ReadEndpoint(ctx context.Context, path string) (Endpoint, error) {
+func ReadEndpoint(ctx context.Context, path string) (result Endpoint, err error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Endpoint{}, err
@@ -68,7 +68,7 @@ func ReadEndpoint(ctx context.Context, path string) (Endpoint, error) {
 	if err != nil {
 		return Endpoint{}, fmt.Errorf("%w: %v", ErrStaleEndpoint, err)
 	}
-	defer client.Close()
+	defer func() { err = errors.Join(err, client.Close()) }()
 	if client.Hello.AgentID != strconv.Itoa(endpoint.PID) || !client.Hello.Started.Equal(endpoint.Started) {
 		return Endpoint{}, fmt.Errorf("%w: identity mismatch", ErrStaleEndpoint)
 	}

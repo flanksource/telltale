@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+
 	"github.com/flanksource/telltale/sdk/protocol"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -101,9 +102,9 @@ var _ = Describe("protocol dispatch", func() {
 	It("tags checkpoint records before the terminal frame", func() {
 		RegisterProbe(checkpointRecordProbe{})
 		a := Loopback()
-		defer a.Close()
+		defer func() { Expect(a.Close()).To(Succeed()) }()
 		stream, conn := openAgent(a)
-		defer stream.Close()
+		defer func() { Expect(stream.Close()).To(Succeed()) }()
 		Expect(conn.Send("arm", protocol.Arm{Session: "record-session", Probe: "checkpoint-record", Params: json.RawMessage(`{}`)})).To(Succeed())
 		_, _, err := conn.Read()
 		Expect(err).NotTo(HaveOccurred())
@@ -122,9 +123,9 @@ var _ = Describe("protocol dispatch", func() {
 	})
 	It("tags checkpoint blobs and terminates the matching checkpoint", func() {
 		a := Loopback()
-		defer a.Close()
+		defer func() { Expect(a.Close()).To(Succeed()) }()
 		stream, conn := openAgent(a)
-		defer stream.Close()
+		defer func() { Expect(stream.Close()).To(Succeed()) }()
 		Expect(conn.Send("arm", protocol.Arm{Session: "stacks-checkpoint", Probe: "stacks", Params: json.RawMessage(`{}`)})).To(Succeed())
 		_, _, err := conn.Read()
 		Expect(err).NotTo(HaveOccurred())
@@ -146,9 +147,9 @@ var _ = Describe("protocol dispatch", func() {
 	It("executes an operation and returns its result", func() {
 		RegisterOp(echoOp{})
 		a := Loopback()
-		defer a.Close()
+		defer func() { Expect(a.Close()).To(Succeed()) }()
 		stream, conn := openAgent(a)
-		defer stream.Close()
+		defer func() { Expect(stream.Close()).To(Succeed()) }()
 		Expect(conn.Send("call", protocol.Call{CallID: "echo", Op: "echo-op", Params: json.RawMessage(`{"name":"example"}`)})).To(Succeed())
 		frame, _, err := conn.Read()
 		Expect(err).NotTo(HaveOccurred())
@@ -161,9 +162,9 @@ var _ = Describe("protocol dispatch", func() {
 	It("uses a probe's mutation hook for each set of parameters", func() {
 		RegisterProbe(selectiveProbe{})
 		a := Loopback()
-		defer a.Close()
+		defer func() { Expect(a.Close()).To(Succeed()) }()
 		stream, conn := openAgent(a)
-		defer stream.Close()
+		defer func() { Expect(stream.Close()).To(Succeed()) }()
 		for _, request := range []protocol.Arm{
 			{Session: "read", Probe: "selective-probe", Params: json.RawMessage(`{"mutate":false}`)},
 			{Session: "mutate", Probe: "selective-probe", Params: json.RawMessage(`{"mutate":true}`)},
@@ -187,9 +188,9 @@ var _ = Describe("protocol dispatch", func() {
 	It("turns a checkpoint panic into an ended frame", func() {
 		RegisterProbe(panicCheckpointProbe{})
 		a := Loopback()
-		defer a.Close()
+		defer func() { Expect(a.Close()).To(Succeed()) }()
 		stream, conn := openAgent(a)
-		defer stream.Close()
+		defer func() { Expect(stream.Close()).To(Succeed()) }()
 		Expect(conn.Send("arm", protocol.Arm{Session: "panic-checkpoint", Probe: "panic-checkpoint", Params: json.RawMessage(`{}`)})).To(Succeed())
 		_, _, err := conn.Read()
 		Expect(err).NotTo(HaveOccurred())
@@ -204,9 +205,9 @@ var _ = Describe("protocol dispatch", func() {
 	})
 	It("returns named errors for unknown messages and operations without disconnecting", func() {
 		a := Loopback()
-		defer a.Close()
+		defer func() { Expect(a.Close()).To(Succeed()) }()
 		stream, conn := openAgent(a)
-		defer stream.Close()
+		defer func() { Expect(stream.Close()).To(Succeed()) }()
 		Expect(conn.Send("unexpected", struct{}{})).To(Succeed())
 		frame, _, err := conn.Read()
 		Expect(err).NotTo(HaveOccurred())
@@ -227,9 +228,9 @@ var _ = Describe("protocol dispatch", func() {
 	It("turns an arm panic into a named ended frame", func() {
 		RegisterProbe(panicProbe{})
 		a := Loopback()
-		defer a.Close()
+		defer func() { Expect(a.Close()).To(Succeed()) }()
 		stream, conn := openAgent(a)
-		defer stream.Close()
+		defer func() { Expect(stream.Close()).To(Succeed()) }()
 		Expect(conn.Send("arm", protocol.Arm{Session: "panic", Probe: "panic-probe", Params: json.RawMessage(`{}`)})).To(Succeed())
 		frame, _, err := conn.Read()
 		Expect(err).NotTo(HaveOccurred())
@@ -242,9 +243,9 @@ var _ = Describe("protocol dispatch", func() {
 	It("retains both the probe failure and the revert failure", func() {
 		RegisterProbe(failingProbe{})
 		a := Loopback()
-		defer a.Close()
+		defer func() { Expect(a.Close()).To(Succeed()) }()
 		stream, conn := openAgent(a)
-		defer stream.Close()
+		defer func() { Expect(stream.Close()).To(Succeed()) }()
 		Expect(conn.Send("arm", protocol.Arm{Session: "failures", Probe: "failing-probe", Params: json.RawMessage(`{}`)})).To(Succeed())
 		_, _, err := conn.Read()
 		Expect(err).NotTo(HaveOccurred())
@@ -263,9 +264,9 @@ var _ = Describe("protocol dispatch", func() {
 	It("reports an unsupported checkpoint and keeps the connection usable", func() {
 		RegisterProbe(noCheckpointProbe{})
 		a := Loopback()
-		defer a.Close()
+		defer func() { Expect(a.Close()).To(Succeed()) }()
 		stream, conn := openAgent(a)
-		defer stream.Close()
+		defer func() { Expect(stream.Close()).To(Succeed()) }()
 		Expect(conn.Send("arm", protocol.Arm{Session: "no-checkpoint", Probe: "no-checkpoint", Params: json.RawMessage(`{}`)})).To(Succeed())
 		_, _, err := conn.Read()
 		Expect(err).NotTo(HaveOccurred())

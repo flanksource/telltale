@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/flanksource/telltale/sdk/protocol"
@@ -17,41 +18,46 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-type temporaryAcceptError struct{}
-
-func (temporaryAcceptError) Error() string   { return "temporary accept" }
-func (temporaryAcceptError) Timeout() bool   { return false }
-func (temporaryAcceptError) Temporary() bool { return true }
-
 type temporaryListener struct {
 	net.Listener
 	failed atomic.Bool
+	err    error
 }
 
 func (l *temporaryListener) Accept() (net.Conn, error) {
 	if l.failed.CompareAndSwap(false, true) {
-		return nil, temporaryAcceptError{}
+		return nil, &net.OpError{Op: "accept", Net: "tcp", Err: l.err}
 	}
 	return l.Listener.Accept()
 }
 
 var _ = Describe("loopback agent", func() {
-	It("retries a temporary listener failure", func() {
+	DescribeTable("retries a transient listener failure", func(acceptErr error) {
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
 		Expect(err).NotTo(HaveOccurred())
-		wrapped := &temporaryListener{Listener: listener}
+		wrapped := &temporaryListener{Listener: listener, err: acceptErr}
 		agent := newAgent(Options{})
 		agent.listener = wrapped
 		go agent.accept()
-		defer agent.Close()
+		defer func() { Expect(agent.Close()).To(Succeed()) }()
 		stream, err := net.Dial("tcp", listener.Addr().String())
 		Expect(err).NotTo(HaveOccurred())
-		defer stream.Close()
+		defer func() { Expect(stream.Close()).To(Succeed()) }()
 		Expect(stream.SetDeadline(time.Now().Add(time.Second))).To(Succeed())
 		_, _, err = protocol.Authenticate(stream, "")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(wrapped.failed.Load()).To(BeTrue())
-	})
+	},
+		Entry("process file limit", syscall.EMFILE),
+		Entry("system file limit", syscall.ENFILE),
+		Entry("interrupted call", syscall.EINTR),
+		Entry("unavailable resource", syscall.EAGAIN),
+		Entry("exhausted socket buffers", syscall.ENOBUFS),
+		Entry("exhausted memory", syscall.ENOMEM),
+		Entry("aborted connection", syscall.ECONNABORTED),
+		Entry("reset connection", syscall.ECONNRESET),
+		Entry("timeout", os.ErrDeadlineExceeded),
+	)
 	It("removes its discovery file when its listener fails permanently", func() {
 		GinkgoT().Setenv("HOME", GinkgoT().TempDir())
 		a, err := Start(Options{Listen: "tcp"})
@@ -78,9 +84,9 @@ var _ = Describe("loopback agent", func() {
 	It("closes an idle pre-authentication connection", func() {
 		agent := newAgent(Options{})
 		agent.authTimeout = 50 * time.Millisecond
-		defer agent.Close()
+		defer func() { Expect(agent.Close()).To(Succeed()) }()
 		stream := agent.Connect()
-		defer stream.Close()
+		defer func() { Expect(stream.Close()).To(Succeed()) }()
 		Expect(stream.SetReadDeadline(time.Now().Add(time.Second))).To(Succeed())
 		_, _, err := protocol.NewConn(stream).Read()
 		Expect(err).To(HaveOccurred())
@@ -88,9 +94,9 @@ var _ = Describe("loopback agent", func() {
 	})
 	It("closes a connection that declares an oversized pre-authentication frame", func() {
 		a := Loopback()
-		defer a.Close()
+		defer func() { Expect(a.Close()).To(Succeed()) }()
 		stream := a.Connect()
-		defer stream.Close()
+		defer func() { Expect(stream.Close()).To(Succeed()) }()
 		Expect(stream.SetDeadline(time.Now().Add(time.Second))).To(Succeed())
 		Expect(binary.Write(stream, binary.BigEndian, uint32(4097))).To(Succeed())
 		_, _, err := protocol.NewConn(stream).Read()
@@ -112,9 +118,9 @@ var _ = Describe("loopback agent", func() {
 	})
 	It("advertises and arms only probes allowed by options", func() {
 		agent := newAgent(Options{Probes: []string{"stacks"}})
-		defer agent.Close()
+		defer func() { Expect(agent.Close()).To(Succeed()) }()
 		stream := agent.Connect()
-		defer stream.Close()
+		defer func() { Expect(stream.Close()).To(Succeed()) }()
 		conn, hello, err := protocol.Authenticate(stream, "")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(hello.Probes).To(HaveLen(1))
@@ -128,9 +134,9 @@ var _ = Describe("loopback agent", func() {
 	})
 	It("does not reveal hello before authentication", func() {
 		agent := newAgent(Options{Token: "secret"})
-		defer agent.Close()
+		defer func() { Expect(agent.Close()).To(Succeed()) }()
 		stream := agent.Connect()
-		defer stream.Close()
+		defer func() { Expect(stream.Close()).To(Succeed()) }()
 		Expect(stream.SetReadDeadline(time.Now().Add(50 * time.Millisecond))).To(Succeed())
 		_, _, err := protocol.NewConn(stream).Read()
 		Expect(err).To(HaveOccurred())
@@ -157,18 +163,18 @@ var _ = Describe("loopback agent", func() {
 	})
 	It("rejects an invalid authentication token with a named error", func() {
 		agent := newAgent(Options{Token: "correct"})
-		defer agent.Close()
+		defer func() { Expect(agent.Close()).To(Succeed()) }()
 		stream := agent.Connect()
-		defer stream.Close()
+		defer func() { Expect(stream.Close()).To(Succeed()) }()
 		Expect(stream.SetDeadline(time.Now().Add(5 * time.Second))).To(Succeed())
 		_, _, err := protocol.Authenticate(stream, "wrong")
 		Expect(errors.Is(err, protocol.ErrAuthRejected)).To(BeTrue())
 	})
 	It("connects using the shared protocol client", func() {
 		agent := Loopback()
-		defer agent.Close()
+		defer func() { Expect(agent.Close()).To(Succeed()) }()
 		stream := agent.Connect()
-		defer stream.Close()
+		defer func() { Expect(stream.Close()).To(Succeed()) }()
 		Expect(stream.SetDeadline(time.Now().Add(5 * time.Second))).To(Succeed())
 		conn, hello, err := protocol.Authenticate(stream, "")
 		Expect(err).NotTo(HaveOccurred())
@@ -180,9 +186,9 @@ var _ = Describe("loopback agent", func() {
 	})
 	It("ends a session when its record limit is reached", func() {
 		agent := Loopback()
-		defer agent.Close()
+		defer func() { Expect(agent.Close()).To(Succeed()) }()
 		stream := agent.Connect()
-		defer stream.Close()
+		defer func() { Expect(stream.Close()).To(Succeed()) }()
 		Expect(stream.SetDeadline(time.Now().Add(5 * time.Second))).To(Succeed())
 		conn, _, err := protocol.Authenticate(stream, "")
 		Expect(err).NotTo(HaveOccurred())
@@ -207,9 +213,9 @@ var _ = Describe("loopback agent", func() {
 	})
 	It("drops excess records without ending a rate-limited session", func() {
 		agent := Loopback()
-		defer agent.Close()
+		defer func() { Expect(agent.Close()).To(Succeed()) }()
 		stream := agent.Connect()
-		defer stream.Close()
+		defer func() { Expect(stream.Close()).To(Succeed()) }()
 		Expect(stream.SetDeadline(time.Now().Add(5 * time.Second))).To(Succeed())
 		conn, _, err := protocol.Authenticate(stream, "")
 		Expect(err).NotTo(HaveOccurred())
@@ -229,9 +235,9 @@ var _ = Describe("loopback agent", func() {
 	})
 	It("ends a session when a checkpoint fails", func() {
 		agent := Loopback()
-		defer agent.Close()
+		defer func() { Expect(agent.Close()).To(Succeed()) }()
 		stream := agent.Connect()
-		defer stream.Close()
+		defer func() { Expect(stream.Close()).To(Succeed()) }()
 		Expect(stream.SetDeadline(time.Now().Add(5 * time.Second))).To(Succeed())
 		conn, _, err := protocol.Authenticate(stream, "")
 		Expect(err).NotTo(HaveOccurred())
@@ -253,9 +259,9 @@ var _ = Describe("loopback agent", func() {
 	})
 	It("authenticates, arms a stacks probe, and returns a checkpoint blob", func() {
 		agent := Loopback()
-		defer agent.Close()
+		defer func() { Expect(agent.Close()).To(Succeed()) }()
 		stream := agent.Connect()
-		defer stream.Close()
+		defer func() { Expect(stream.Close()).To(Succeed()) }()
 		Expect(stream.SetDeadline(time.Now().Add(5 * time.Second))).To(Succeed())
 		conn, _, err := protocol.Authenticate(stream, "")
 		Expect(err).NotTo(HaveOccurred())
