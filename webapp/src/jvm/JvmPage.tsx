@@ -12,6 +12,7 @@ import { JvmHeapHistogram } from "./JvmHeapHistogram";
 import { JvmInstrument } from "./JvmInstrument";
 import { JvmTraces } from "./JvmTraces";
 import { JvmNotifications } from "./JvmNotifications";
+import { JvmSnapshot } from "./JvmSnapshot";
 import { surfaceHref } from "./captures";
 import { JvmRuntime } from "./runtime";
 import { SourceEditor } from "./SourceEditor";
@@ -21,7 +22,7 @@ import type { Compilation } from "./diagnostics";
 const surfaces = [
   ["JMX", "jvm.jmx.search"], ["Classes", "jvm.classes"], ["OGNL", "jvm.ognl.eval"], ["Groovy", "jvm.groovy.eval"],
   ["Threads", "jvm.threads"], ["Heap", "jvm.heap.histogram"], ["Metrics", "jvm.metrics"], ["Logging", "jvm.logging.list"], ["Patches", "jvm.classes.patches"], ["Extensions", "jvm.extensions.list"],
-  ["Instrument", "instrument"], ["Traces", "traces"], ["Notifications", "notifications"],
+  ["Instrument", "instrument"], ["Traces", "traces"], ["Notifications", "notifications"], ["Snapshot", "snapshot"],
 ];
 
 function OperationForm({ agent, operation }: { agent: string; operation: Operation }) {
@@ -90,7 +91,7 @@ export default function JvmPage({ agent, operation = "jvm.jmx.search" }: { agent
   }, retry: false, refetchInterval: 10000 });
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("opFilter") ?? "");
   const selected = operations.data?.find(item => item.name === operation);
-  const dedicated = operation === "instrument" ? <JvmInstrument agent={agent} /> : operation === "traces" ? <JvmTraces agent={agent} /> : operation === "notifications" ? <JvmNotifications agent={agent} /> : undefined;
+  const dedicated = operation === "snapshot" ? <JvmSnapshot key={agent} agent={agent} /> : operation === "instrument" ? <JvmInstrument agent={agent} /> : operation === "traces" ? <JvmTraces agent={agent} /> : operation === "notifications" ? <JvmNotifications agent={agent} /> : undefined;
   const effects = <p className="rounded border border-border p-3 text-sm">Diagnostics operate across the entire JVM. Patches, logging changes and scripts can affect every application sharing it. {renderLink({ to: `/jvm/${encodeURIComponent(agent)}/jvm.classes.patches`, children: "Inspect active patches", className: "underline" })}</p>;
   const captureLinks = <div className="flex flex-wrap gap-3 text-sm">{[["JFR / profiler", "jvm_jfr"], ["Watch / trace methods", "jvm_trace"], ["Redefine", "jvm_redefine"], ["Notifications / GC", "jvm_notifications"], ["Periodic OGNL", "jvm_ognl"]].map(([title, kind]) => <span key={kind}>{renderLink({ to: `/arm/${encodeURIComponent(agent)}/${kind}${window.location.search}`, children: title, className: "underline" })}</span>)}</div>;
   return <JvmRuntime.Provider value={status.data?.allowMutation}><div className="flex h-full min-h-0 min-w-0 flex-col gap-3 overflow-auto">
