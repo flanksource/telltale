@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { RouterProvider, useMemoryRouter } from "@flanksource/clicky-ui/rpc";
+import { START_FORM } from "./arm/fixture";
 import { AppRoutes, matchRoute } from "./routes";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -40,10 +41,10 @@ describe("workspace routes", () => {
         resource: { "service.name": "worker" }, labels: {},
         probes: [{ name: "http", title: "HTTP traffic" }], warnings: [],
       }]));
-      if (url === "/api/traces/start") return Promise.resolve(json({
-        schema: { type: "object", properties: { duration: { type: "string", title: "Duration" }, traces: { type: "object", properties: { http: { type: "object" } } } } },
-        defaults: { command: "", traces: {} },
-      }));
+      if (url === "/api/traces/start") return Promise.resolve(json(START_FORM));
+      if (url === "/api/traces/connections") return Promise.resolve(json({ connections: [] }));
+      if (url === "/api/traces/definitions") return Promise.resolve(json([]));
+      if (url.startsWith("/api/v1/jvm/deployers")) return Promise.resolve(json({ success: true, output: "[]" }));
       if (url === "/api/traces" && init?.method === "POST") return Promise.resolve(json({ runId: "armed-run", status: "running" }));
       return Promise.resolve(new Response("unknown route", { status: 404 }));
     });
@@ -52,9 +53,11 @@ describe("workspace routes", () => {
     expect(await screen.findByText("worker-1")).toBeInTheDocument();
     expect(screen.getByText("HTTP traffic")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Arm capture" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Start run" }));
+    // The deep link opens on Captures with the probe armed on that agent; the rest needs nothing.
+    for (let step = 0; step < 3; step++) fireEvent.click(await screen.findByRole("button", { name: /Next/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /Start run/ }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/traces", expect.objectContaining({
-      method: "POST", body: JSON.stringify({ command: "", traces: { http: { enabled: true, target: { seam: "agent", agent: "worker-1" } } } }),
+      method: "POST", body: JSON.stringify({ traces: { http: { enabled: true, mode: "connect", target: { seam: "agent", agent: "worker-1" } } } }),
     })));
   });
 

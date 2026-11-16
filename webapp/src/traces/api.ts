@@ -112,11 +112,19 @@ export interface RunExecution {
   command?: string;
 }
 
+/** One capture of a kind in a start request: whether it is armed, where, and the kind's params. */
+export interface TraceEntry {
+  enabled?: boolean;
+  target?: TraceTarget;
+  [param: string]: unknown;
+}
+
 export interface StartRequest extends RunExecution, Record<string, unknown> {
   /** A saved trace definition to run, in place of inline traces. */
   definition?: string;
   tree?: TreeOptions;
-  traces?: Record<string, { enabled?: boolean; target?: TraceTarget; [param: string]: unknown }>;
+  /** Per kind, one capture, or a list when the kind is armed more than once. */
+  traces?: Record<string, TraceEntry | TraceEntry[]>;
 }
 
 export interface TracesStatus {

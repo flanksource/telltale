@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { agentRecordings, defaultProbeOptions, filterError, methodCaptureRequest, readMethodTargets, writeMethodTargets, surfaceHref } from "./captures";
-import type { RunTraces } from "../traces/api";
+import type { RunTraces, TraceEntry } from "../traces/api";
 
 it("round trips multiple concrete method selections while preserving unrelated URL filters", () => {
   const targets = [{ class: "example.Worker", method: "compute(J)D", loader: "12ab" }, { class: "example.Service", method: "run*", loader: "" }];
@@ -52,7 +52,8 @@ it.each([
 
 it("omits an unresolved optional loader so inline definition validation preserves the native target shape", () => {
   const request = methodCaptureRequest({ agent: "demo", targets: [{ class: "example.Worker", method: "compute", loader: "" }], options: defaultProbeOptions, duration: "5m", allowed: true });
-  expect(request.traces?.jvm_trace?.targets).toEqual([{ class: "example.Worker", method: "compute" }]);
+  const entry = request.traces?.jvm_trace as TraceEntry | undefined;
+  expect(entry?.targets).toEqual([{ class: "example.Worker", method: "compute" }]);
 });
 
 it("keeps recordings scoped to the selected JVM using persisted capture targets", () => {

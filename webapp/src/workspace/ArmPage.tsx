@@ -1,19 +1,42 @@
-import { Panel } from "@flanksource/clicky-ui/components";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "@flanksource/clicky-ui/rpc";
-import { StartRunForm } from "../traces/StartRunForm";
+import { useAgents, useDeployedTargets } from "../agents/api";
+import { ArmWizard } from "../arm/ArmWizard";
+import type { ArmCatalog } from "../arm/catalog";
+import { EMPTY_DRAFT, agentProbeDraft, readKinds } from "../arm/model";
+import { useConnections, useDefinitions } from "../definitions/api";
 import { captureParameters, selectedParameters } from "../jvm/api";
+import { fetchStartForm } from "../traces/api";
 
+/** /arm, and /arm/<agent>/<probe> opened from an agent's probe with that capture armed. */
 export default function ArmPage({ agent, probe }: { agent?: string; probe?: string }) {
-  const { navigate, renderLink } = useRouter();
-  const selection = selectedParameters(window.location.search);
-  const initialParams = captureParameters(probe, selection);
-  return <div className="space-y-4">
-    <h1 className="text-2xl font-semibold">Arm captures</h1>
-    <p className="text-sm text-muted-foreground">Configure captures against an agent, connection, host, or command. Set a duration to stop automatically, or stop the run from the overview.</p>
-    {agent && <p>Agent <code>{agent}</code> · Probe <code>{probe}</code></p>}
-    {renderLink({ to: "/agents", children: "Choose an agent", className: "text-sm underline underline-offset-4" })}
-    <Panel title="Capture configuration">
-      <StartRunForm key={`${agent}:${probe}`} agent={agent} probe={probe} initialParams={initialParams} onStarted={run => navigate(`/?run=${encodeURIComponent(run.runId)}`)} />
-    </Panel>
-  </div>;
+  const { navigate } = useRouter();
+  const form = useQuery({ queryKey: ["trace-start-form"], queryFn: fetchStartForm, retry: false, staleTime: Infinity });
+  const connections = useConnections();
+  const definitions = useDefinitions();
+  const agents = useAgents();
+  const deployed = useDeployedTargets();
+  const kinds = useMemo(() => (form.data ? readKinds(form.data) : undefined), [form.data]);
+  const loading = [form, connections, definitions, agents, deployed].find(query => query.isPending);
+  const failed = [form, connections, definitions, agents, deployed].find(query => query.isError);
+  const header = (
+    <>
+      <h1 className="text-2xl font-semibold">Arm captures</h1>
+      <p className="text-sm text-muted-foreground">Choose what to record and where each capture runs: a connected agent, a saved connection, a local proxy or process. Deploy an agent from any agent picker when none is connected.</p>
+    </>
+  );
+  if (failed?.error) return <div className="space-y-4">{header}<p role="alert">{failed.error.message}</p></div>;
+  if (loading || !kinds) return <div className="space-y-4">{header}<p role="status">Loading the arming form…</p></div>;
+  const catalog: ArmCatalog = { kinds, connections: connections.data ?? [], definitions: definitions.data ?? [], agents: agents.data ?? [], deployed: deployed.data ?? [] };
+  if (probe && !kinds.some(kind => kind.name === probe && kind.seams.includes("agent"))) {
+    return <div className="space-y-4">{header}<p role="alert">Probe {probe} has no trace kind this server arms on an agent.</p></div>;
+  }
+  const initial = agent && probe ? agentProbeDraft(kinds, agent, probe, captureParameters(probe, selectedParameters(window.location.search))) : EMPTY_DRAFT;
+  return (
+    <div className="space-y-4">
+      {header}
+      <ArmWizard key={`${agent}:${probe}`} catalog={catalog} initial={initial} {...(agent && probe ? { initialStep: "captures" as const } : {})} onStarted={run => navigate(`/?run=${encodeURIComponent(run.runId)}`)} />
+    </div>
+  );
 }
