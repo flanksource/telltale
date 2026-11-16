@@ -51,7 +51,22 @@ telltale jvm profiler --agent 1234 --engine async-profiler --duration 30s
 telltale jvm heap histogram --agent 1234 --top 20 --class-pattern 'com.example.*'
 ```
 
-`watch`, `trace` and `profiler` are the `jvm_trace` and `jvm_jfr` kinds with preset defaults. They record under the base kind, so the existing views read them. They take every flag of `telltale run jvm_trace|jvm_jfr`, which remain the generic forms, and their flags override the presets (`jvm trace --calls=false`). OpenAPI documents their typed inputs. Over HTTP, start the same capture with `POST /api/traces`, which records into the server's own data dir. Each capture goes under `traces` by kind, with `"enabled": true`; on the agent seam no `pid` or command is needed. For example: `{"duration":"10s","traces":{"jvm_trace":{"enabled":true,"target":{"seam":"agent","agent":"1234","allowMutation":true},"targets":[{"class":"example.Worker","method":"compute"}],"calls":true}}}`.
+Every operation's result has a typed model in `pkg/tracing/jvm` and its subpackages (`jvmruntime`, `classes`, `jmx`, `agentops`). In a terminal, a status or an acknowledgement prints on one line, such as `mutations allowed · instrumentation on · 0 patches` or `✓ logger global → FINE`. Lists print as a table under a one-line heading. Decompiled source is syntax-highlighted, and thread dumps and stacks print one frame per line. `--format json` (or yaml, csv and the others) prints the same model as structured data. An operation without a model, such as an extension's through `jvm call`, prints its JSON indented. A result that reports a failure, such as a compile with errors, a patch that was not applied or an instrument that armed no method, prints its diagnostics and the command exits non-zero. A test fails when a built-in operation in the catalog has no model.
+
+`watch`, `trace` and `profiler` are the `jvm_trace` and `jvm_jfr` kinds with preset defaults. They record under the base kind, so the existing views read them. They take every flag of `telltale run jvm_trace|jvm_jfr`, which remain the generic forms, and their flags override the presets (`jvm trace --calls=false`). OpenAPI documents their typed inputs.
+
+With `--follow`, the method events are folded into calls and printed one line per call when it exits: the time, the thread, the call with its arguments, the return value or exception, and the duration. `jvm trace` prints the calls nested inside each call as a tree under its line. When the run ends, a line per stream totals the calls, how many threw, the slowest, and any events the agent dropped. The run summary follows, with one line per capture and the `telltale records` command that reads it back. `telltale trace replay <run-id>` prints a recorded run the same way, and `--format ndjson` keeps the raw events.
+
+```text
+02:16:16.761 main Idle.work(103328) → 464967 1.4ms
+02:16:16.761 main ├─ Idle.step 1.2ms
+02:16:16.762 main └─ Idle.step 138µs
+jvm_trace · 5 calls · slowest Idle.work 1.4ms
+Run host20261116T001616Z · 1.1s
+  jvm_trace · agent 88158 · 35 records · telltale records jvm_trace --run host20261116T001616Z
+```
+
+Over HTTP, start the same capture with `POST /api/traces`, which records into the server's own data dir. Each capture goes under `traces` by kind, with `"enabled": true` (or an array of such objects to arm a kind more than once, each element its own capture); on the agent seam no `pid` or command is needed. For example: `{"duration":"10s","traces":{"jvm_trace":{"enabled":true,"target":{"seam":"agent","agent":"1234","allowMutation":true},"targets":[{"class":"example.Worker","method":"compute"}],"calls":true}}}`.
 
 Each parameter is a flag (`objectName` is `--object-name`). Open-ended values such as `jvm.jmx.write`'s `--value` or `jvm.jmx.invoke`'s `--args` take JSON. An empty `--level` for `jvm.logging.set` sends `null`, which inherits the parent's level. Source parameters also accept `--source-file`, and `jvm.extensions.install`/`replace` take `--jar-file`. These file flags read the local filesystem, so a request that arrives over HTTP must send the content inline. Mutating operations add `--allow-mutation`. The same commands appear in `/api/openapi.json` under `/api/v1/jvm/…` with typed inputs. `jvm call --operation <name> --params '{…}'` remains for operations only the live catalog knows, such as extension operations.
 
@@ -141,8 +156,9 @@ The first adapter creates the JVM-wide `com.flanksource.telltale:type=Diagnostic
 
 A `Deployer` (`crds/telltale.flanksource.com_deployers.yaml`, Go package `pkg/deploy`) puts the agent into the JVMs a selector picks and owns their auth. Executions never install anything. They reach a deployed target with a short-lived token the deployer's issuer minted. `examples/deployers/orders.yaml` shows both kinds.
 
-- **`spec.selector`** has `kind`, `namespace`, `labels` and `container`.
+- **`spec.selector`** has `kind`, `namespace`, `name` or `labels`, and `container`.
   - `kind` is `Deployment`, `StatefulSet` or `Pod`. `labels` match the workloads of that kind, and the targets are the running pods the workloads' own pod selectors match.
+  - `name` selects the one workload (or pod) of that kind instead, which is what the web wizard's workload picker sends. A Helm-managed Deployment often carries only release labels, so naming it is the way to reach exactly its pods. A selector with both `name` and `labels` is refused.
   - `container` is the JVM container. A selector that matches no running pods, or names a container a pod lacks, is an error.
   - Each target is named `deployer/<deployer>/<namespace>/<pod>`. That name is the audience of its tokens.
 - **`spec.javaContainer`** is keyed by `kind`, and each kind is a registry entry (`deploy.RegisterJavaContainer`) that validates its own fields.
@@ -172,9 +188,21 @@ Arm, checkpoint, renew, disarm and calls run through the same `agentclient.Agent
 
 ### From the CLI
 
-`telltale jvm deploy -f <deployer.yaml>` deploys with your kubeconfig (`--kubeconfig` to choose files) and the connections telltale reads, which must define the `spec.auth.issuer` connection and its `signingKey`. It prints each target's state and keeps the deployer with that status in the global config dir (`deployers/<name>.yaml`), even when some targets fail, so the deployed ones stay reachable. Run it again after pods are replaced; it is idempotent. `telltale jvm deployers` lists the kept targets. `deploy` is CLI-only: it reads a local file with the operator's credentials, so it is not served over the API.
+`telltale jvm deploy -f <deployer.yaml>` deploys with your kubeconfig (`--kubeconfig` to choose files) and the connections telltale reads, which must define the `spec.auth.issuer` connection and its `signingKey`. It prints each target's state and keeps the deployer with that status in the global config dir (`deployers/<name>.yaml`), even when some targets fail, so the deployed ones stay reachable. Run it again after pods are replaced; it is idempotent. `telltale jvm deployers` lists the kept targets (`--format json` prints them as JSON records). `--deployer '<yaml or json>'` passes the document itself instead of `-f`; exactly one of the two is required. `--dry-run` resolves the selector and prints each pod it picks with state `selected`, without an issuer, without installing anything and without keeping the deployer.
 
-Every `jvm` command and capture then names a target by its id:
+Over the API, `telltale serve` exposes the same command as `POST /api/v1/jvm/deploy`, executed on the server with its kubeconfig and connections. Send the document as `deployer`; `file` is refused over HTTP because it would read the server's filesystem. For example, `{"deployer":"apiVersion: telltale.flanksource.com/v1alpha1\nkind: Deployer\n...","dry-run":true}` answers the selected targets as `[{"target":"deployer/orders/shop/orders-0","namespace":"shop","pod":"orders-0","container":"app","state":"selected"}]`. Without `dry-run` it deploys and keeps the deployer as the CLI does, and `/api/v1/jvm/deployers` lists the kept targets as the same records.
+
+Every `jvm` command and capture then names a target by its id, or by a short name. `--agent` takes the agent's id, its service, the last part of its id, its pid, a deployed target's deployer or pod, or a unique prefix of any of these. An exact name wins over prefixes. Leave `--agent` out when only one agent can serve the command: the one connected Java agent, the one connected agent offering the capture's probe, or the one deployed target. A name that matches several agents, or an omitted one with several to choose from, is refused with the candidates listed. The web wizard likewise arms a new agent capture on the only agent that can run it.
+
+```bash
+telltale jvm metrics --agent checkout        # the deployer's one target
+telltale jvm metrics --agent checkout-7d     # a pod-name prefix
+telltale jvm metrics                         # the only Java agent there is
+```
+
+A deploy confirms each target's health for up to 30 seconds and resolves the target's URL again on every attempt. A port-forward opened before the attached listener came up is torn down by its first refused connection, and resolving opens a new one, so a first deploy reports `deployed` once the agent answers.
+
+By id:
 
 ```bash
 telltale jvm deploy -f examples/deployers/orders.yaml
