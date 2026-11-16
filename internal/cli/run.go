@@ -160,6 +160,12 @@ func newRunKindCommand(registration traces.Registration, plugin tracing.TracePlu
 				return err
 			}
 		}
+		// A run attached to a pid aims its agent captures at that process.
+		if options.PID == 0 {
+			if raw, err = withAgentTarget(cmd.Context(), registration, raw); err != nil {
+				return err
+			}
+		}
 		if options.PID == 0 {
 			if err := plugin.ValidateParams(raw); err != nil {
 				return fmt.Errorf("trace %s %w", registration.Name, err)
@@ -277,20 +283,20 @@ func runTraced(cmd *cobra.Command, options telltale.StartOptions, start func(con
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Recording the host into %s; Ctrl+C stops\n", started.Dir())
 	}
 	var result *telltale.Result
+	printer := newFeedPrinter(cmd.OutOrStdout())
 	if tui {
 		result, err = showTraceTUI(cmd.Context(), started, sort)
 	} else {
-		result, err = read.Wait(cmd.Context(), started, follow, func(record read.Record) error { return printTraceRecord(cmd, record) })
+		result, err = read.Wait(cmd.Context(), started, follow, printer.print)
 	}
 	if err != nil {
 		return err
 	}
 	if follow {
-		output, err := clicky.Format(result, clicky.FormatOptions{Format: "pretty"})
-		if err != nil {
+		if err := printer.stats(cmd.ErrOrStderr()); err != nil {
 			return err
 		}
-		if _, err := fmt.Fprintln(cmd.ErrOrStderr(), output); err != nil {
+		if err := writeLine(cmd.ErrOrStderr(), result.Pretty()); err != nil {
 			return err
 		}
 	} else {

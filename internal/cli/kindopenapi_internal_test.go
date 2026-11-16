@@ -78,7 +78,7 @@ var _ = Describe("kind argument OpenAPI", func() {
 		}
 		served := 0
 		for path, item := range spec.Paths {
-			if strings.HasPrefix(path, "/api/v1/jvm/") && path != "/api/v1/jvm/call" && path != "/api/v1/jvm/deployers" {
+			if strings.HasPrefix(path, "/api/v1/jvm/") && !slices.Contains([]string{"/api/v1/jvm/call", "/api/v1/jvm/deploy", "/api/v1/jvm/deployers"}, path) {
 				served += len(item)
 			}
 		}
@@ -97,7 +97,8 @@ var _ = Describe("kind argument OpenAPI", func() {
 		Expect(search).To(HaveKeyWithValue("pattern", "string"))
 		stack, required := inputs("/api/v1/jvm/threads/{id}/stack")
 		Expect(stack).To(HaveKeyWithValue("id", "integer"))
-		Expect(required).To(ContainElements("agent", "id"))
+		Expect(required).To(ContainElement("id"))
+		Expect(required).NotTo(ContainElement("agent"), "an omitted agent is the only one there is")
 		install, _ := inputs("/api/v1/jvm/extensions/install")
 		Expect(install).To(HaveKeyWithValue("jar", "string"))
 	})

@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 
@@ -68,10 +67,16 @@ func newTraceReplayCommand() *cobra.Command {
 				}
 				return err
 			}
+			printer := newFeedPrinter(cmd.OutOrStdout())
 			if follow {
-				return read.Feed(cmd.Context(), selected.Refs, read.Query{}, func(record read.Record) error { return printTraceRecord(cmd, record) })
+				err = read.Feed(cmd.Context(), selected.Refs, read.Query{}, printer.print)
+			} else {
+				err = replayRecords(cmd, selected.Refs, order, printer)
 			}
-			return replayRecords(cmd, selected.Refs, order)
+			if err != nil {
+				return err
+			}
+			return printer.stats(cmd.ErrOrStderr())
 		},
 	}
 	bindDataDir(cmd.Flags(), &dataDir)
@@ -82,7 +87,7 @@ func newTraceReplayCommand() *cobra.Command {
 	return cmd
 }
 
-func replayRecords(cmd *cobra.Command, refs []read.Ref, order string) error {
+func replayRecords(cmd *cobra.Command, refs []read.Ref, order string, printer *feedPrinter) error {
 	query := read.FeedQuery{Sort: order}
 	for {
 		page, err := read.FeedPage(cmd.Context(), refs, query)
@@ -90,7 +95,7 @@ func replayRecords(cmd *cobra.Command, refs []read.Ref, order string) error {
 			return err
 		}
 		for _, record := range page.Rows {
-			if err := printTraceRecord(cmd, record); err != nil {
+			if err := printer.print(record); err != nil {
 				return err
 			}
 		}
@@ -99,16 +104,4 @@ func replayRecords(cmd *cobra.Command, refs []read.Ref, order string) error {
 		}
 		query.Cursor = page.NextCursor
 	}
-}
-
-func printTraceRecord(cmd *cobra.Command, record read.Record) error {
-	if clicky.Flags.ResolveFormat() == "ndjson" {
-		return json.NewEncoder(cmd.OutOrStdout()).Encode(record)
-	}
-	output, err := clicky.Format(record.Pretty(), clicky.FormatOptions{Format: "pretty"})
-	if err != nil {
-		return err
-	}
-	_, err = fmt.Fprintln(cmd.OutOrStdout(), output)
-	return err
 }

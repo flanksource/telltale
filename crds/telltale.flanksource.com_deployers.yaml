@@ -32,6 +32,28 @@ spec:
                       (RSA PEM)
                     title: Issuer
                     type: string
+                  jwks:
+                    description: A Secret or ConfigMap the agents' keys are read from
+                      or published to
+                    nullable: true
+                    properties:
+                      key:
+                        description: Data key holding the JWKS (default jwks.json)
+                        title: Key
+                        type: string
+                      kind:
+                        description: ConfigMap or Secret
+                        title: Kind
+                        type: string
+                      mode:
+                        description: read or publish
+                        title: Mode
+                        type: string
+                      name:
+                        title: Name
+                        type: string
+                    title: JWKS
+                    type: object
                   jwksUrl:
                     description: Where the issuer runtime serves its JWKS
                     title: JWKS URL
@@ -64,9 +86,13 @@ spec:
                   labels:
                     additionalProperties:
                       type: string
-                    description: Labels of the workload (or pod) to select
+                    description: Labels of the workloads (or pods) to select
                     title: Labels
                     type: object
+                  name:
+                    description: The one workload (or pod) to select instead of labels
+                    title: Name
+                    type: string
                   namespace:
                     title: Namespace
                     type: string

@@ -12,6 +12,7 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing/target"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/types"
 )
 
 var _ = Describe("the start form", func() {
@@ -49,6 +50,40 @@ var _ = Describe("the start form", func() {
 		Expect(captureDefaults[httpproxy.Kind]).NotTo(HaveKey("features"))
 		Expect(captureDefaults[pgproxy.Kind]).To(And(HaveKeyWithValue("enabled", false), HaveKeyWithValue("target", map[string]any{"seam": target.Proxy})))
 	})
+
+	DescribeTable("publishes each armable kind's summary, seams and default seam on its capture object",
+		func(kind string, seams types.GomegaMatcher) {
+			registration, err := traces.Registered(kind)
+			Expect(err).ToNot(HaveOccurred())
+			schema, _, err := telltale.StartSchema()
+			Expect(err).ToNot(HaveOccurred())
+			data, err := json.Marshal(schema.Properties["traces"].Properties[kind])
+			Expect(err).ToNot(HaveOccurred())
+			var capture map[string]any
+			Expect(json.Unmarshal(data, &capture)).To(Succeed())
+			Expect(capture).To(And(
+				HaveKeyWithValue("description", registration.Summary),
+				HaveKeyWithValue("x-telltale-seams", seams),
+				HaveKeyWithValue("x-telltale-default-seam", string(registration.DefaultSeam)),
+			))
+		},
+		Entry("sql_top, aimed only at a connection", "sql_top", Equal([]any{string(target.Connection)})),
+		Entry("http, through a proxy or an agent", httpproxy.Kind, ContainElements(string(target.Proxy), string(target.Agent))),
+	)
+
+	DescribeTable("looks a SQL Server kind's connection up among sql_server connections",
+		func(kind string) {
+			kinds, err := traces.Kinds()
+			Expect(err).ToNot(HaveOccurred())
+			plugin, err := traces.Lookup(kinds, kind)
+			Expect(err).ToNot(HaveOccurred())
+			params, err := plugin.Params()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(params.Properties["connection"].Extensions).To(HaveKeyWithValue("x-clicky-lookup", HaveKeyWithValue("url", "/api/v1/connection?types=sql_server")))
+		},
+		Entry("sql_deadlock", "sql_deadlock"),
+		Entry("sql_xevent", "sql_xevent"),
+	)
 })
 
 var _ = Describe("a start request", func() {
@@ -92,6 +127,31 @@ var _ = Describe("a start request", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(options.Command).To(BeEmpty())
 		Expect(options.Traces).To(HaveExactElements(HaveField("Labels", HaveKeyWithValue(definition.LabelEntry, "adhoc-collect-prometheus-scrape"))))
+	})
+
+	It("arms each element of a kind's array as its own entry of the inline definition", func() {
+		endpoints := []string{"http://127.0.0.1:9100/metrics", "http://127.0.0.1:9200/metrics"}
+		options, err := telltale.StartRequest{Traces: map[string]json.RawMessage{
+			"prometheus": json.RawMessage(`[{"enabled":true,"endpoints":["` + endpoints[0] + `"]},{"enabled":true,"endpoints":["` + endpoints[1] + `"]}]`),
+		}}.Options(base, definitions)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(options.Traces).To(HaveExactElements(
+			And(HaveField("Params", ContainSubstring(endpoints[0])), HaveField("Labels", HaveKeyWithValue(definition.LabelEntry, "adhoc-collect-prometheus-scrape-1"))),
+			And(HaveField("Params", ContainSubstring(endpoints[1])), HaveField("Labels", HaveKeyWithValue(definition.LabelEntry, "adhoc-collect-prometheus-scrape-2"))),
+		))
+	})
+
+	It("names a refused element of a kind's array by its index", func() {
+		_, err := telltale.StartRequest{Traces: map[string]json.RawMessage{
+			"sql_deadlock": json.RawMessage(`[{"enabled":false},{"enabled":true}]`),
+			"prometheus":   json.RawMessage(`[{"enabled":true,"endpoints":["http://127.0.0.1:9100/metrics"]},3]`),
+		}}.Options(base, definitions)
+		var invalid *telltale.ValidationError
+		Expect(err).To(BeAssignableToTypeOf(invalid))
+		Expect(err.(*telltale.ValidationError).Fields).To(ConsistOf(
+			HaveField("InstancePath", "/traces/sql_deadlock/1/connection"),
+			And(HaveField("InstancePath", "/traces/prometheus/1"), HaveField("Message", ContainSubstring("want an object"))),
+		))
 	})
 
 	It("asks an ad-hoc capture that names no connection for one in its own params", func() {

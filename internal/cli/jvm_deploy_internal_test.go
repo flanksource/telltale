@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/flanksource/clicky/rpc"
 	"github.com/golang-jwt/jwt/v5"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -48,9 +49,11 @@ func deployedListener(key *rsa.PublicKey, subjects *[]string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /hello", admit(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"apiVersion": agentclient.AgentAPIVersion, "protocol": 1, "started": "2026-01-02T03:04:05Z", "runtime": map[string]string{"lang": "java"},
-			"ops": []map[string]any{{"name": "jvm.metrics", "mutates": false, "scope": "jvm:read"}}})
+			"ops": []map[string]any{{"name": "jvm.status", "mutates": false, "scope": "jvm:read"}}})
 	}))
-	mux.HandleFunc("POST /call", admit(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, `{"heapUsed":42}`) }))
+	mux.HandleFunc("POST /call", admit(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"allowMutation":false,"instrumentation":true,"patches":[]}`)
+	}))
 	return mux
 }
 
@@ -92,11 +95,11 @@ spec:
 
 		root := NewRoot("test")
 		var out bytes.Buffer
-		root.SetArgs([]string{"jvm", "metrics", "--agent", deployedTarget})
+		root.SetArgs([]string{"jvm", "status", "--agent", deployedTarget})
 		root.SetOut(&out)
 		root.SetErr(&bytes.Buffer{})
 		Expect(root.ExecuteContext(context.Background())).To(Succeed())
-		Expect(out.String()).To(MatchJSON(`{"heapUsed":42}`))
+		Expect(out.String()).To(Equal("mutations denied · instrumentation on · 0 patches\n"))
 		subject, err := operator()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(subjects).To(Equal([]string{subject, subject}))
@@ -106,7 +109,9 @@ spec:
 		root.SetArgs([]string{"jvm", "deployers", "--format", "json"})
 		root.SetOut(&out)
 		Expect(root.ExecuteContext(context.Background())).To(Succeed())
-		Expect(out.String()).To(ContainSubstring(deployedTarget))
+		var listed []deploy.TargetStatus
+		Expect(json.Unmarshal(out.Bytes(), &listed)).To(Succeed(), out.String())
+		Expect(listed).To(Equal(deployer.Status.Targets))
 	})
 
 	It("refuses a target no deployer deployed, naming the deploy command", func() {
@@ -116,8 +121,22 @@ spec:
 		Expect(executeJVM(context.Background(), "metrics", "--agent", "deployer/missing/shop/orders-0")).To(MatchError(ContainSubstring("telltale jvm deploy -f")))
 	})
 
-	It("keeps deploy off RPC, as it reads a local file with the operator's kubeconfig", func() {
+	It("serves deploy over RPC with the deployer document and a dry run as its inputs", func() {
 		spec := kindOpenAPI(NewRoot("test"))
-		Expect(spec.Paths).NotTo(HaveKey("/api/v1/jvm/deploy"))
+		Expect(spec.Paths).To(HaveKey("/api/v1/jvm/deploy"))
+		body := spec.Paths["/api/v1/jvm/deploy"]["post"].RequestBody.Content["application/json"].Schema.Properties
+		Expect(body).To(And(HaveKeyWithValue("deployer", HaveField("Type", "string")), HaveKeyWithValue("dry-run", HaveField("Type", "boolean"))))
+	})
+
+	It("refuses to read a deployer file for a request that arrived over HTTP", func() {
+		file := filepath.Join(GinkgoT().TempDir(), "deployer.yaml")
+		Expect(os.WriteFile(file, []byte("kind: Deployer"), 0o600)).To(Succeed())
+		remote := rpc.ContextWithRequest(context.Background(), httptest.NewRequest(http.MethodPost, "/api/v1/jvm/deploy", nil))
+		Expect(executeJVM(remote, "deploy", "--dry-run", "-f", file)).To(MatchError(ContainSubstring("send deployer in the request instead")))
+	})
+
+	It("takes exactly one of a deployer file and a deployer document", func() {
+		Expect(executeJVM(context.Background(), "deploy", "--dry-run")).To(MatchError(ContainSubstring("[file deployer]")))
+		Expect(executeJVM(context.Background(), "deploy", "-f", "x.yaml", "--deployer", "kind: Deployer")).To(MatchError(ContainSubstring("none of the others")))
 	})
 })

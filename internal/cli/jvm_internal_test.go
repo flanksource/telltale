@@ -51,10 +51,16 @@ func sentJVMRequest(ctx context.Context, args ...string) (jvm.Request, error) {
 	DeferCleanup(func(previous func(context.Context, jvm.Request) (json.RawMessage, error)) { callJVM = previous }, callJVM)
 	callJVM = func(_ context.Context, request jvm.Request) (json.RawMessage, error) {
 		sent = request
-		return json.RawMessage(`{}`), nil
+		return nil, errNotCalled
 	}
-	return sent, executeJVM(ctx, args...)
+	if err := executeJVM(ctx, args...); !errors.Is(err, errNotCalled) {
+		return sent, err
+	}
+	return sent, nil
 }
+
+// errNotCalled stops a command at the agent call, once its request is assembled.
+var errNotCalled = errors.New("agent not called by the test")
 
 var errNotStarted = errors.New("run not started by the test")
 
@@ -64,6 +70,8 @@ func startedTrace(ctx context.Context, args ...string) (telltale.TraceSpec, time
 	registry := agentclient.NewRegistry()
 	Expect(registry.Add(&agentclient.Agent{Hello: protocol.Hello{AgentID: "a", Runtime: protocol.Runtime{Lang: "java"},
 		Probes: []protocol.ProbeSpec{{Name: "jvm_trace"}, {Name: "jvm_jfr"}}}})).To(Succeed())
+	// Only the agent added here: no local agents of this machine are discovered.
+	registry.Dir = GinkgoT().TempDir()
 	DeferCleanup(func(previous *agentclient.Registry) { agentclient.Default = previous }, agentclient.Default)
 	agentclient.Default = registry
 	var started telltale.StartOptions
@@ -149,6 +157,24 @@ var _ = Describe("JVM command tree", func() {
 		}
 	})
 
+	It("names the agent a capture runs on by its id, from a short name or from the only agent offering the kind", func() {
+		GinkgoT().Setenv("XDG_CONFIG_HOME", GinkgoT().TempDir())
+		cases := []struct {
+			args     []string
+			expected string
+		}{
+			{[]string{"watch", "--targets", `[{"class":"Idle","method":"main"}]`, "--duration", "3s"}, `{"args":true,"return":true,"exception":true,"calls":false,"targets":[{"class":"Idle","method":"main"}],"target":{"agent":"a"}}`},
+			{[]string{"profiler", "--duration", "3s"}, `{"target":{"seam":"agent","agent":"a"}}`},
+		}
+		for _, c := range cases {
+			spec, _, err := startedTrace(context.Background(), c.args...)
+			Expect(err).To(MatchError(errNotStarted), strings.Join(c.args, " "))
+			Expect(spec.Params).To(MatchJSON(c.expected), strings.Join(c.args, " "))
+		}
+		_, _, err := startedTrace(context.Background(), "watch", "--agent", "billing", "--targets", `[{"class":"Idle","method":"main"}]`, "--duration", "3s")
+		Expect(err).To(MatchError(`no agent offering jvm_trace matches "billing"; agents: a ()`))
+	})
+
 	It("sends a preset capture requested over HTTP to the server's run API", func() {
 		remote := rpc.ContextWithRequest(context.Background(), httptest.NewRequest("POST", "/api/v1/jvm/watch", nil))
 		_, _, err := startedTrace(remote, "watch", "--agent", "a", "--targets", `[{"class":"Idle","method":"main"}]`, "--duration", "3s")
@@ -209,12 +235,17 @@ var _ = Describe("typed JVM operation commands", func() {
 		Expect(request.Params).To(MatchJSON(`{"name":"","level":null}`))
 	})
 
+	It("leaves an omitted --agent to the call, which picks the only Java agent", func() {
+		request, err := sentJVMRequest(context.Background(), "jmx", "search", "--pattern", "java.lang:*")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(request.Agent).To(BeEmpty())
+	})
+
 	DescribeTable("refuses invalid input before calling the agent", func(message string, args ...string) {
 		_, err := sentJVMRequest(context.Background(), args...)
 		Expect(err).To(MatchError(ContainSubstring(message)))
 	},
 		Entry("a missing required param", "object-name", "jmx", "info", "--agent", "a"),
-		Entry("a missing agent", "agent", "jmx", "search"),
 		Entry("a non-array list", "expected a JSON array", "jmx", "invoke", "--agent", "a", "--object-name", "o", "--operation", "op", "--args", `{}`),
 		Entry("a file and an inline value together", "none of the others", "groovy", "eval", "--agent", "a", "--source", "1", "--source-file", "x.groovy"),
 		Entry("neither a value nor its file", "at least one of the flags", "extensions", "install", "--agent", "a"),
@@ -231,6 +262,20 @@ var _ = Describe("typed JVM operation commands", func() {
 		request, err = sentJVMRequest(context.Background(), "extensions", "install", "--agent", "a", "--allow-mutation", "--jar-file", jar)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(request.Params).To(MatchJSON(`{"jar":"` + base64.StdEncoding.EncodeToString([]byte{0x50, 0x4b, 0x03, 0x04}) + `"}`))
+	})
+
+	It("prints a failed compile's diagnostics and exits non-zero", func() {
+		DeferCleanup(func(previous func(context.Context, jvm.Request) (json.RawMessage, error)) { callJVM = previous }, callJVM)
+		callJVM = func(context.Context, jvm.Request) (json.RawMessage, error) {
+			return json.RawMessage(`{"success":false,"classes":[],"diagnostics":[{"kind":"ERROR","line":3,"column":57,"code":"compiler.err.expected","message":"';' expected"}],"classpathEntries":2}`), nil
+		}
+		root := NewRoot("test")
+		var out bytes.Buffer
+		root.SetArgs([]string{"jvm", "patch", "compile", "--agent", "a", "--class", "Idle", "--source", "static void check(long l) {}"})
+		root.SetOut(&out)
+		root.SetErr(&bytes.Buffer{})
+		Expect(root.ExecuteContext(context.Background())).To(MatchError("compile failed with 1 error"))
+		Expect(out.String()).To(Equal("✗ compile failed · 1 error · 2 classpath entries\nERROR 3:57 ';' expected (compiler.err.expected)\n"))
 	})
 
 	It("executes typed operations over HTTP and refuses to read server files for them", func() {

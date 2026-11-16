@@ -60,10 +60,7 @@ func bindJVMOperation(cmd *cobra.Command, operation jvm.Operation) {
 	request := jvm.Request{Operation: operation.Name}
 	cmd.Short = operation.Description
 	cmd.Long = operation.Description + "\n\nRuns the " + operation.Name + " operation."
-	cmd.Flags().StringVar(&request.Agent, "agent", "", "Connected Java agent ID")
-	if err := cmd.MarkFlagRequired("agent"); err != nil {
-		panic(err)
-	}
+	cmd.Flags().StringVar(&request.Agent, "agent", "", agentFlagUsage)
 	if operation.Mutates {
 		cmd.Long += " It changes the runtime, so it needs --allow-mutation and an agent installed with mutations allowed."
 		cmd.Flags().BoolVar(&request.AllowMutation, "allow-mutation", false, "Allow this call to change the runtime")
@@ -87,26 +84,32 @@ func bindJVMOperation(cmd *cobra.Command, operation jvm.Operation) {
 		if err != nil {
 			return err
 		}
-		if decode, ok := jvmResults[operation.Name]; ok {
-			typed, err := decode(value)
-			if err != nil {
-				return err
-			}
-			return printRecords(cmd, typed)
-		}
-		return json.NewEncoder(cmd.OutOrStdout()).Encode(value)
+		return printJVMResult(cmd, request, value)
 	}
 }
+
+// printJVMResult prints an operation's result through its typed model in any
+// output format, or as the agent sent it when it has none.
+func printJVMResult(cmd *cobra.Command, request jvm.Request, value json.RawMessage) error {
+	result, err := jvmops.Result(request.Operation, request.Params, value)
+	if err != nil {
+		return err
+	}
+	if err := printRecords(cmd, result); err != nil {
+		return err
+	}
+	if failed, ok := result.(interface{ Failure() error }); ok {
+		return failed.Failure()
+	}
+	return nil
+}
+
+// agentFlagUsage describes --agent wherever a command names a Java agent.
+const agentFlagUsage = "Java agent: its id, or a short name (service, pod, deployer, pid, or a unique prefix); omit it when only one agent is connected or deployed"
 
 // callJVM sends a typed command's request to its agent; internal tests
 // replace it to read the request a command assembles.
 var callJVM = jvm.Call
-
-// jvmResults decode the results that have a typed Go model, so they print as
-// records in any output format instead of raw JSON.
-var jvmResults = map[string]func(json.RawMessage) (any, error){
-	jvmops.HeapHistogramOp: func(raw json.RawMessage) (any, error) { return jvmops.DecodeHeapHistogram(raw) },
-}
 
 // paramFile is a --<param>-file flag that fills a source or binary string
 // param from a local file: text for a textarea, base64 for a byte string.
@@ -165,9 +168,9 @@ func newJVMCallCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return json.NewEncoder(cmd.OutOrStdout()).Encode(value)
+		return printJVMResult(cmd, request, value)
 	}
-	command.Flags().StringVar(&request.Agent, "agent", "", "Connected Java agent ID")
+	command.Flags().StringVar(&request.Agent, "agent", "", agentFlagUsage)
 	command.Flags().StringVar(&request.Operation, "operation", "", "Operation from the live catalog")
 	command.Flags().StringVar(&params, "params", "{}", "JSON operation parameters")
 	command.Flags().StringVar(&paramsFile, "params-file", "", "Read JSON operation parameters from a file")
