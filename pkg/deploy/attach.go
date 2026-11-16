@@ -111,7 +111,9 @@ func (a *attach) Deploy(ctx dbcontext.Context, target Target, provision Provisio
 	if err := a.install(ctx, target, config, provision); err != nil {
 		return failed(endpoint, err)
 	}
-	return confirm(ctx, client, target, endpoint, resolved, config["configDigest"])
+	return confirm(ctx, client, target, endpoint, func() (string, error) {
+		return ctx.ResolveConnectionURL(endpoint, models.ConnectionTypeHTTP, target.Pod.Namespace)
+	}, config["configDigest"])
 }
 
 func (a *attach) install(ctx dbcontext.Context, target Target, config map[string]string, provision Provision) error {

@@ -1,6 +1,7 @@
 package agentinstall
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"crypto/rand"
@@ -12,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	posixpath "path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -259,8 +261,11 @@ func write(ctx context.Context, t Transport, path string, data []byte) error {
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return err
 	}
-	staged := path + ".stage-" + hex.EncodeToString(nonce[:])
-	if _, err := t.Run(ctx, []string{"install", "-m", "600", "/dev/null", staged}, nil); err != nil {
+	dir, name := posixpath.Split(path)
+	stagedName := name + ".stage-" + hex.EncodeToString(nonce[:])
+	staged := dir + stagedName
+	archive, err := tarFile(stagedName, data)
+	if err != nil {
 		return err
 	}
 	defer func() {
@@ -268,11 +273,29 @@ func write(ctx context.Context, t Transport, path string, data []byte) error {
 		defer cancel()
 		_, _ = t.Run(cleanup, []string{"rm", "-f", staged}, nil)
 	}()
-	if _, err := t.Run(ctx, []string{"dd", "of=" + staged}, bytes.NewReader(data)); err != nil {
+	// A tar stream, as kubectl cp sends one: in a pod, a bare `dd of=` can read
+	// end of input before the exec attaches its stdin, staging an empty file.
+	if _, err := t.Run(ctx, []string{"tar", "-x", "-m", "--no-same-owner", "-f", "-", "-C", dir}, bytes.NewReader(archive)); err != nil {
 		return err
 	}
-	_, err := t.Run(ctx, []string{"mv", "-f", staged, path}, nil)
+	_, err = t.Run(ctx, []string{"mv", "-f", staged, path}, nil)
 	return err
+}
+
+// tarFile is an archive of one private file.
+func tarFile(name string, data []byte) ([]byte, error) {
+	var archive bytes.Buffer
+	writer := tar.NewWriter(&archive)
+	if err := writer.WriteHeader(&tar.Header{Name: name, Mode: 0o600, Size: int64(len(data)), ModTime: time.Now()}); err != nil {
+		return nil, err
+	}
+	if _, err := writer.Write(data); err != nil {
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	return archive.Bytes(), nil
 }
 
 func await(ctx context.Context, o Options, result Result, installationID string) (Result, error) {

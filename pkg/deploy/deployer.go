@@ -46,11 +46,14 @@ const (
 	WorkloadPod         WorkloadKind = "Pod"
 )
 
-// Selector picks the running pods of the workloads its labels match.
+// Selector picks the running pods of the one workload it names, or of the
+// workloads its labels match.
 type Selector struct {
-	Kind      WorkloadKind      `json:"kind" clicky:"title=Kind,desc=Deployment StatefulSet or Pod"`
-	Namespace string            `json:"namespace" clicky:"title=Namespace"`
-	Labels    map[string]string `json:"labels" clicky:"title=Labels,desc=Labels of the workload (or pod) to select"`
+	Kind      WorkloadKind `json:"kind" clicky:"title=Kind,desc=Deployment StatefulSet or Pod"`
+	Namespace string       `json:"namespace" clicky:"title=Namespace"`
+	// Name selects one workload (or pod) of Kind, in place of Labels.
+	Name      string            `json:"name,omitempty" clicky:"title=Name,desc=The one workload (or pod) to select instead of labels"`
+	Labels    map[string]string `json:"labels,omitempty" clicky:"title=Labels,desc=Labels of the workloads (or pods) to select"`
 	Container string            `json:"container" clicky:"title=Container,desc=The container running the JVM"`
 }
 
@@ -61,12 +64,39 @@ type AuthSpec struct {
 	// JWKSURL is where the issuer runtime serves its JWKS. Agents refresh
 	// from it on an unknown key id, so a rotation needs no redeploy.
 	JWKSURL string `json:"jwksUrl,omitempty" clicky:"title=JWKS URL,desc=Where the issuer runtime serves its JWKS"`
+	// JWKS is where the keys agents verify tokens with come from; unset, they
+	// are the issuer's own, provisioned inline.
+	JWKS *JWKSSource `json:"jwks,omitempty" clicky:"title=JWKS,desc=A Secret or ConfigMap the agents' keys are read from or published to"`
+}
+
+// JWKSMode is how a deploy uses its JWKS object.
+type JWKSMode string
+
+const (
+	// JWKSRead provisions the JWKS the object already holds, such as one a
+	// shared issuer publishes; the issuer's signing key must be among them.
+	JWKSRead JWKSMode = "read"
+	// JWKSPublish writes the issuer's JWKS to the object on every deploy, then
+	// provisions it.
+	JWKSPublish JWKSMode = "publish"
+)
+
+// JWKSSource is a Secret or ConfigMap key in the selector's namespace holding
+// a JWKS document.
+type JWKSSource struct {
+	Mode JWKSMode `json:"mode" clicky:"title=Mode,desc=read or publish"`
+	Kind string   `json:"kind" clicky:"title=Kind,desc=ConfigMap or Secret"`
+	Name string   `json:"name" clicky:"title=Name"`
+	// Key is the data key; jwks.json when unset.
+	Key string `json:"key,omitempty" clicky:"title=Key,desc=Data key holding the JWKS (default jwks.json)"`
 }
 
 // State is where one target's deployment stands.
 type State string
 
 const (
+	// StateSelected is a target a dry run selected and did not deploy to.
+	StateSelected State = "selected"
 	StateDeployed State = "deployed"
 	StateOutdated State = "outdated"
 	StateFailed   State = "failed"

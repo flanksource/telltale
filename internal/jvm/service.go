@@ -16,8 +16,8 @@ type Request struct {
 }
 
 func Call(ctx context.Context, request Request) (json.RawMessage, error) {
-	if request.Agent == "" || request.Operation == "" {
-		return nil, fmt.Errorf("agent and operation are required")
+	if request.Operation == "" {
+		return nil, fmt.Errorf("an operation is required")
 	}
 	if len(request.Params) == 0 {
 		request.Params = json.RawMessage(`{}`)
@@ -29,24 +29,13 @@ func Call(ctx context.Context, request Request) (json.RawMessage, error) {
 	if params == nil {
 		return nil, fmt.Errorf("operation parameters must be an object")
 	}
-	agent := agentclient.Default.ByID(request.Agent)
-	if agent == nil {
-		claimed, err := agentclient.Default.Resolve(ctx, request.Agent)
-		if err != nil {
-			return nil, err
-		}
-		if !claimed {
-			if err := agentclient.Default.Discover(ctx, ""); err != nil {
-				return nil, err
-			}
-		}
-		agent = agentclient.Default.ByID(request.Agent)
-	}
-	if agent == nil {
-		return nil, fmt.Errorf("agent %q is not connected", request.Agent)
+	// The agent may be named by a short name, or not at all when only one Java agent is there.
+	agent, err := agentclient.Default.Lookup(ctx, request.Agent, agentclient.Want{Runtime: "java"})
+	if err != nil {
+		return nil, err
 	}
 	if agent.Hello.Runtime.Lang != "java" {
-		return nil, fmt.Errorf("agent %q is not a Java runtime", request.Agent)
+		return nil, fmt.Errorf("agent %q is not a Java runtime", agent.Hello.AgentID)
 	}
 	return agent.Call(ctx, agentclient.CallRequest{Op: request.Operation, Params: request.Params, AllowMutation: request.AllowMutation})
 }

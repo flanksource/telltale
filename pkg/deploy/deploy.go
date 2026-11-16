@@ -36,6 +36,9 @@ type Options struct {
 	// Exec runs commands in a target's container; nil is kubectl exec with
 	// the current kubeconfig.
 	Exec ExecFunc
+	// DryRun only selects the targets, each StateSelected: it installs
+	// nothing and needs no Issuer.
+	DryRun bool
 }
 
 // KubectlExec runs commands in the target's container with kubectl exec.
@@ -46,14 +49,21 @@ func KubectlExec(target Target) agentinstall.Transport {
 // Deploy installs the agent into every target the deployer selects and
 // reports each one. It is idempotent: a target already running this agent API
 // with this provision is left alone. The error names every target that is
-// not deployed.
+// not deployed. A dry run reports the targets it would deploy to.
 func Deploy(ctx dbcontext.Context, deployer Deployer, options Options) (Status, error) {
+	if options.DryRun {
+		return selected(ctx, deployer, options.Kubernetes)
+	}
 	container, provision, err := prepare(deployer, options)
 	if err != nil {
 		return Status{}, err
 	}
 	targets, err := Resolve(ctx, options.Kubernetes, deployer.Name, deployer.Spec.Selector)
 	if err != nil {
+		return Status{}, fmt.Errorf("deployer %s: %w", deployer.Name, err)
+	}
+	// Published only once the selector picks pods to provision with it.
+	if provision.JWKS, err = AgentJWKS(ctx, options.Kubernetes, deployer, options.Issuer); err != nil {
 		return Status{}, fmt.Errorf("deployer %s: %w", deployer.Name, err)
 	}
 	var status Status
@@ -68,6 +78,31 @@ func Deploy(ctx dbcontext.Context, deployer Deployer, options Options) (Status, 
 	}
 	if len(failures) > 0 {
 		return status, fmt.Errorf("deployer %s: %w", deployer.Name, errors.Join(failures...))
+	}
+	return status, nil
+}
+
+// selected is every target the deployer selects, each StateSelected, once its
+// java container is known to be deployable.
+func selected(ctx dbcontext.Context, deployer Deployer, client kubernetes.Interface) (Status, error) {
+	if client == nil {
+		return Status{}, fmt.Errorf("deployer %s: a kubernetes client is required", deployer.Name)
+	}
+	if _, err := deployer.Spec.JavaContainer.Container(); err != nil {
+		return Status{}, fmt.Errorf("deployer %s: %w", deployer.Name, err)
+	}
+	if source := deployer.Spec.Auth.JWKS; source != nil {
+		if err := source.validate(); err != nil {
+			return Status{}, fmt.Errorf("deployer %s: %w", deployer.Name, err)
+		}
+	}
+	targets, err := Resolve(ctx, client, deployer.Name, deployer.Spec.Selector)
+	if err != nil {
+		return Status{}, fmt.Errorf("deployer %s: %w", deployer.Name, err)
+	}
+	var status Status
+	for _, target := range targets {
+		status.Targets = append(status.Targets, TargetStatus{Target: target.ID, Namespace: target.Pod.Namespace, Pod: target.Pod.Name, Container: target.Container.Name, State: StateSelected})
 	}
 	return status, nil
 }

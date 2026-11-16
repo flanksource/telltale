@@ -21,6 +21,8 @@ type Registry struct {
 	subscribers map[chan *Agent]struct{}
 	resolveMu   sync.Mutex
 	resolvers   map[string]Resolver
+	listMu      sync.Mutex
+	listers     map[string]Lister
 }
 
 // Resolver connects, and adds to registry, the agent id names when local

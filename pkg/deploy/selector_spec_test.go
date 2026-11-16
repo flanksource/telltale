@@ -63,6 +63,17 @@ var _ = Describe("Selector", func() {
 		Entry("pods by their own labels", deploy.WorkloadPod, map[string]string{"tier": "web"}, []string{"billing"}),
 	)
 
+	DescribeTable("resolves the running pods of the one workload it names",
+		func(kind deploy.WorkloadKind, name string, want []string) {
+			targets, err := deploy.Resolve(context.Background(), cluster(), "example", deploy.Selector{Kind: kind, Namespace: namespace, Name: name, Container: jvm})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(selected(targets)).To(Equal(want))
+		},
+		Entry("a Deployment by name, though its own labels match nothing of its pods", deploy.WorkloadDeployment, "orders-web", []string{"orders-web-a", "orders-web-b"}),
+		Entry("a StatefulSet by name", deploy.WorkloadStatefulSet, "orders-db", []string{"orders-db-0"}),
+		Entry("a pod by name", deploy.WorkloadPod, "billing", []string{"billing"}),
+	)
+
 	It("names each target by deployer, namespace and pod", func() {
 		targets, err := deploy.Resolve(context.Background(), cluster(), "example", deploy.Selector{Kind: deploy.WorkloadStatefulSet, Namespace: namespace, Labels: map[string]string{"tier": "web"}, Container: jvm})
 		Expect(err).ToNot(HaveOccurred())
@@ -77,7 +88,10 @@ var _ = Describe("Selector", func() {
 			Expect(err).To(MatchError(ContainSubstring(message)))
 		},
 		Entry("an unknown kind", deploy.Selector{Kind: "DaemonSet", Namespace: namespace, Labels: map[string]string{"tier": "web"}, Container: jvm}, `unsupported selector kind "DaemonSet"`),
-		Entry("no labels", deploy.Selector{Kind: deploy.WorkloadPod, Namespace: namespace, Container: jvm}, "labels"),
+		Entry("neither labels nor a name", deploy.Selector{Kind: deploy.WorkloadPod, Namespace: namespace, Container: jvm}, "selector labels or a workload name is required"),
+		Entry("both labels and a name", deploy.Selector{Kind: deploy.WorkloadDeployment, Namespace: namespace, Name: "orders-web", Labels: map[string]string{"tier": "web"}, Container: jvm}, "selector names a workload or matches labels, not both"),
+		Entry("a named workload that does not exist", deploy.Selector{Kind: deploy.WorkloadDeployment, Namespace: namespace, Name: "orders-api", Container: jvm}, `get Deployment orders/orders-api`),
+		Entry("a pending named pod", deploy.Selector{Kind: deploy.WorkloadPod, Namespace: namespace, Name: "orders-web-pending", Container: jvm}, "selector Pod orders-web-pending in orders matched no running pods"),
 		Entry("no namespace", deploy.Selector{Kind: deploy.WorkloadPod, Labels: map[string]string{"tier": "web"}, Container: jvm}, "namespace"),
 		Entry("no container", deploy.Selector{Kind: deploy.WorkloadPod, Namespace: namespace, Labels: map[string]string{"tier": "web"}}, "container"),
 		Entry("a container a pod lacks", deploy.Selector{Kind: deploy.WorkloadPod, Namespace: namespace, Labels: map[string]string{"tier": "web"}, Container: "jvm"}, `pod orders/billing has no container "jvm"`),

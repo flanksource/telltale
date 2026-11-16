@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"sigs.k8s.io/yaml"
+
+	"github.com/flanksource/telltale/pkg/agentclient"
 )
 
 // Store keeps applied deployers with the status their last deploy reported,
@@ -95,4 +97,23 @@ func (s Store) List() ([]Deployer, error) {
 	}
 	slices.SortFunc(deployers, func(a, b Deployer) int { return strings.Compare(a.Name, b.Name) })
 	return deployers, nil
+}
+
+// Known is every deployed target of the stored deployers, as agents a lookup
+// can find by deployer, pod or namespace/pod before they are connected.
+func (s Store) Known() ([]agentclient.Known, error) {
+	deployers, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+	var known []agentclient.Known
+	for _, deployer := range deployers {
+		for _, target := range deployer.Status.Targets {
+			if target.State != StateDeployed {
+				continue
+			}
+			known = append(known, agentclient.Known{ID: target.Target, Runtime: "java", Names: []string{deployer.Name, target.Pod, target.Namespace + "/" + target.Pod}})
+		}
+	}
+	return known, nil
 }

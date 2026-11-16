@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -32,8 +33,10 @@ func (s Selector) validate() error {
 	switch {
 	case s.Namespace == "":
 		return errors.New("selector namespace is required")
-	case len(s.Labels) == 0:
-		return errors.New("selector labels are required")
+	case len(s.Labels) == 0 && s.Name == "":
+		return errors.New("selector labels or a workload name is required")
+	case len(s.Labels) > 0 && s.Name != "":
+		return errors.New("selector names a workload or matches labels, not both")
 	case s.Container == "":
 		return errors.New("selector container is required")
 	}
@@ -44,6 +47,9 @@ func (s Selector) validate() error {
 func Resolve(ctx context.Context, client kubernetes.Interface, deployer string, selector Selector) ([]Target, error) {
 	if err := selector.validate(); err != nil {
 		return nil, err
+	}
+	if selector.Name != "" && selector.Kind == WorkloadPod {
+		return namedPod(ctx, client, deployer, selector)
 	}
 	podSelectors, err := podSelectors(ctx, client, selector)
 	if err != nil {
@@ -62,9 +68,29 @@ func Resolve(ctx context.Context, client kubernetes.Interface, deployer string, 
 		}
 	}
 	if len(pods) == 0 {
-		return nil, fmt.Errorf("selector %s %s in %s matched no running pods", selector.Kind, labels.SelectorFromSet(selector.Labels), selector.Namespace)
+		return nil, noRunningPods(selector)
 	}
 	return targets(deployer, selector.Container, pods)
+}
+
+func noRunningPods(selector Selector) error {
+	which := selector.Name
+	if which == "" {
+		which = labels.SelectorFromSet(selector.Labels).String()
+	}
+	return fmt.Errorf("selector %s %s in %s matched no running pods", selector.Kind, which, selector.Namespace)
+}
+
+// namedPod is the one pod a Pod selector names, when it runs.
+func namedPod(ctx context.Context, client kubernetes.Interface, deployer string, selector Selector) ([]Target, error) {
+	pod, err := client.CoreV1().Pods(selector.Namespace).Get(ctx, selector.Name, metav1.GetOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("get Pod %s/%s: %w", selector.Namespace, selector.Name, err)
+	}
+	if pod.Status.Phase != corev1.PodRunning {
+		return nil, noRunningPods(selector)
+	}
+	return targets(deployer, selector.Container, map[string]*corev1.Pod{pod.Name: pod})
 }
 
 func targets(deployer, container string, pods map[string]*corev1.Pod) ([]Target, error) {
@@ -83,6 +109,9 @@ func targets(deployer, container string, pods map[string]*corev1.Pod) ([]Target,
 // podSelectors are the label selectors of the pods the workloads own.
 func podSelectors(ctx context.Context, client kubernetes.Interface, selector Selector) ([]string, error) {
 	workloads := metav1.ListOptions{LabelSelector: labels.SelectorFromSet(selector.Labels).String()}
+	if selector.Name != "" {
+		return namedWorkloadSelector(ctx, client, selector)
+	}
 	switch selector.Kind {
 	case WorkloadPod:
 		return []string{workloads.LabelSelector}, nil
@@ -101,6 +130,31 @@ func podSelectors(ctx context.Context, client kubernetes.Interface, selector Sel
 	default:
 		return nil, fmt.Errorf("unsupported selector kind %q (supported: %s)", selector.Kind, strings.Join([]string{string(WorkloadDeployment), string(WorkloadStatefulSet), string(WorkloadPod)}, ", "))
 	}
+}
+
+// namedWorkloadSelector is the pod selector of the one Deployment or
+// StatefulSet a selector names.
+func namedWorkloadSelector(ctx context.Context, client kubernetes.Interface, selector Selector) ([]string, error) {
+	var podSelector *metav1.LabelSelector
+	var err error
+	switch selector.Kind {
+	case WorkloadDeployment:
+		var workload *appsv1.Deployment
+		if workload, err = client.AppsV1().Deployments(selector.Namespace).Get(ctx, selector.Name, metav1.GetOptions{}); err == nil {
+			podSelector = workload.Spec.Selector
+		}
+	case WorkloadStatefulSet:
+		var workload *appsv1.StatefulSet
+		if workload, err = client.AppsV1().StatefulSets(selector.Namespace).Get(ctx, selector.Name, metav1.GetOptions{}); err == nil {
+			podSelector = workload.Spec.Selector
+		}
+	default:
+		return nil, fmt.Errorf("unsupported selector kind %q (supported: %s)", selector.Kind, strings.Join([]string{string(WorkloadDeployment), string(WorkloadStatefulSet), string(WorkloadPod)}, ", "))
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get %s %s/%s: %w", selector.Kind, selector.Namespace, selector.Name, err)
+	}
+	return workloadSelectors(1, func(int) (string, *metav1.LabelSelector) { return selector.Name, podSelector })
 }
 
 func workloadSelectors(count int, item func(int) (string, *metav1.LabelSelector)) ([]string, error) {

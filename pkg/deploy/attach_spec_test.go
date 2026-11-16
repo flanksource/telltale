@@ -1,6 +1,7 @@
 package deploy_test
 
 import (
+	"archive/tar"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,8 +10,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"strconv"
-	"strings"
 	"sync"
 
 	dbcontext "github.com/flanksource/commons-db/context"
@@ -67,10 +68,24 @@ func (c *container) Run(_ context.Context, args []string, input io.Reader) ([]by
 		return []byte("Thu Jan  1 00:00:00 2026\n"), nil
 	case "uname":
 		return []byte("Linux\n"), nil
-	case "dd":
-		data, err := io.ReadAll(input)
-		c.files[strings.TrimPrefix(args[1], "of=")] = data
-		return nil, err
+	case "tar":
+		// tar -x … -f - -C <dir>: every file of the archive lands in dir.
+		dir := args[len(args)-1]
+		archive := tar.NewReader(input)
+		for {
+			header, err := archive.Next()
+			if err == io.EOF {
+				return nil, nil
+			}
+			if err != nil {
+				return nil, err
+			}
+			data, err := io.ReadAll(archive)
+			if err != nil {
+				return nil, err
+			}
+			c.files[path.Join(dir, header.Name)] = data
+		}
 	case "mv":
 		c.files[args[3]] = c.files[args[2]]
 		return nil, nil
@@ -126,6 +141,19 @@ var _ = Describe("attach java containers", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(again).To(Equal(status))
 		Expect(jvmContainer.commands).To(HaveLen(commands), "a current agent is not attached again")
+	})
+
+	It("selects the targets of a dry run without an issuer and without touching their containers", func() {
+		listener := &listenerStub{apiVersion: agentclient.AgentAPIVersion}
+		jvmContainer := &container{listener: listener, files: map[string][]byte{}}
+		status, err := deploy.Deploy(dbcontext.New(), attachDeployer(), deploy.Options{DryRun: true,
+			Kubernetes: fake.NewClientset(listenerPod("orders-1", listener), listenerPod("orders-0", listener)), Exec: func(deploy.Target) agentinstall.Transport { return jvmContainer }})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(status.Targets).To(Equal([]deploy.TargetStatus{
+			{Target: deploy.TargetID("example", namespace, "orders-0"), Namespace: namespace, Pod: "orders-0", Container: jvm, State: deploy.StateSelected},
+			{Target: deploy.TargetID("example", namespace, "orders-1"), Namespace: namespace, Pod: "orders-1", Container: jvm, State: deploy.StateSelected},
+		}))
+		Expect(jvmContainer.commands).To(BeEmpty())
 	})
 
 	It("reports outdated, without attaching, when the JVM runs another agent API", func() {

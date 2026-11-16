@@ -18,6 +18,7 @@ import (
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/models"
 
+	"github.com/flanksource/telltale/pkg/agentclient"
 	javaagent "github.com/flanksource/telltale/pkg/agentinstall/java"
 )
 
@@ -152,7 +153,7 @@ func (t *tomcat) Deploy(ctx dbcontext.Context, target Target, provision Provisio
 	if err := t.upload(ctx, target, base, config); err != nil {
 		return failed(endpoint, err)
 	}
-	return confirm(ctx, client, target, endpoint, health, config["configDigest"])
+	return confirm(ctx, client, target, endpoint, func() (string, error) { return resolvePath(ctx, base, t.spec.ContextPath, target) }, config["configDigest"])
 }
 
 func (t *tomcat) current(ctx context.Context, client *http.Client, target Target, health string, config map[string]string) (bool, int) {
@@ -245,10 +246,19 @@ func resolvePath(ctx dbcontext.Context, base, path string, target Target) (strin
 }
 
 // confirm reads the target's health after a deploy until its agent answers.
-func confirm(ctx context.Context, client *http.Client, target Target, endpoint, executions, digest string) TargetStatus {
+// Each attempt resolves the endpoint again: a port-forward opened before the
+// agent listened is torn down by its first refused connection, and resolving
+// opens a new one in its place.
+func confirm(ctx context.Context, client *http.Client, target Target, endpoint string, resolve func() (string, error), digest string) TargetStatus {
 	deadline := time.Now().Add(30 * time.Second)
 	for {
-		found, health, err := inspect(ctx, client, target, executions, digest)
+		found, health, err := absent, agentclient.Health{}, error(nil)
+		executions, resolveErr := resolve()
+		if resolveErr != nil {
+			err = resolveErr
+		} else {
+			found, health, err = inspect(ctx, client, target, executions, digest)
+		}
 		switch {
 		case found == current:
 			return TargetStatus{State: StateDeployed, AgentAPIVersion: health.APIVersion, Endpoint: endpoint}
