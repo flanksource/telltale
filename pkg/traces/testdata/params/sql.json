@@ -2,10 +2,15 @@
   "type": "object",
   "properties": {
     "connection": {
-      "type": "string",
-      "title": "Connection label",
+      "default": "proxy",
       "description": "Label the statements are recorded under",
-      "default": "proxy"
+      "title": "Connection label",
+      "type": "string",
+      "x-clicky-lookup": {
+        "filter": "connection",
+        "searchParam": "__lookup_q",
+        "url": "/api/v1/connection"
+      }
     },
     "connections": {
       "type": "array",

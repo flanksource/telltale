@@ -1,0 +1,33 @@
+# http_top
+
+import { KindReference } from '../_components/KindReference';
+
+Samples active incoming and outgoing HTTP exchanges in an attached JVM. Each snapshot records the operation identity, elapsed time, direction, method, route or URL, and available thread and trace correlation. HTTP bodies belong to the `http` capture; this view contains metadata only.
+
+```bash
+telltale run http_top --agent java/checkout --allow-mutation --direction both --poll 5s --top 50 --duration 1m
+```
+
+The agent observes subsequent operations on existing servlet deployments and HTTP client instances. Spring MVC and WebFlux retain their route and handler metadata when available. An asynchronous request or streamed response remains active until its body completes, closes, fails, or is cancelled; receiving response headers does not by itself finish it. Operations whose starts were not observed at attachment are outside the capture boundary.
+
+Profiles carry the snapshots using producer timestamps and sequence numbers. An empty complete snapshot clears the view; missing snapshots leave the previous reading stale. Elapsed values are ages at a point in time and must not be summed across snapshots. Top limits and dropped observations are reported separately.
+
+Definitions use the JVM instrumentation section:
+
+```yaml
+apiVersion: telltale.flanksource.com/v1alpha1
+kind: TraceDefinition
+metadata: {name: service-http}
+spec:
+  instrument:
+    jvm:
+      httpTop:
+        - agent: {selector: {service.name: checkout}, wait: true}
+          direction: both
+          poll: 5s
+          top: 50
+```
+
+Attaching and arming require mutation permission. This enables observation hooks without replacing application beans, tracing providers, or normal exporters. Inspect the connected JVM's capabilities for its supported libraries and versions.
+
+<KindReference kind="http_top" />

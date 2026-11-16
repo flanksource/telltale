@@ -3,6 +3,7 @@ package com.flanksource.telltale.diag.hotpatch;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.flanksource.telltale.diag.agent.DiagAgent;
 import com.flanksource.telltale.diag.fixture.Probes;
@@ -36,6 +37,11 @@ final class ClassOperationsRetransformTest {
   private static final String KEY = "RetransformFixture.send.retransform";
   private static final String DESTINATION = "Cycle.SubmitTask";
 
+  /** A second span whose arm cannot be built: the class declares no such method. */
+  private static final String FAILING_KEY = "RetransformFixture.missing.retransform";
+
+  private static final String MISSING_METHOD = "missing";
+
   /** What every injected probe call names, so its absence means the class is clean. */
   private static final String AGENT_INTERNAL_NAME = "com/flanksource/telltale/diag/agent/DiagAgent";
 
@@ -43,7 +49,9 @@ final class ClassOperationsRetransformTest {
 
   @AfterEach
   void putTheClassBack() throws Exception {
-    if (!DiagAgent.probeKeysOwnedBy(owner()).isEmpty() || DiagAgent.ORIGINAL_BYTES.containsKey(owner())) {
+    if (!DiagAgent.probeKeysOwnedBy(owner()).isEmpty()
+        || ProbeTransformations.contains(RetransformFixture.class)
+        || DiagAgent.ORIGINAL_BYTES.containsKey(owner())) {
       classes.restore(new JsonBody(target()));
     }
     DiagAgent.closeAllProbes();
@@ -66,6 +74,24 @@ final class ClassOperationsRetransformTest {
         Arrays.asList("enter", "exit", "enter", "exit"),
         Probes.kinds(KEY),
         "a retransformation of the class must not silently disarm the probe");
+  }
+
+  @Test
+  void aFailedArmLeavesEverySpanAlreadyOnTheClassRecording() throws Exception {
+    RetransformFixture fixture = new RetransformFixture();
+    transformedByAnotherAgent(instrumentation());
+    classes.instrument(new JsonBody(instrumentRequest()));
+
+    Map<String, Object> failing = instrumentRequest();
+    failing.put("method", MISSING_METHOD);
+    failing.put("probe", Collections.singletonMap("key", FAILING_KEY));
+    RuntimeException failure =
+        assertThrows(RuntimeException.class, () -> classes.instrument(new JsonBody(failing)));
+    assertEquals(0, failure.getSuppressed().length, "re-arming the surviving span must not fail");
+
+    fixture.send(DESTINATION);
+    assertEquals(Arrays.asList("enter", "exit"), Probes.kinds(KEY));
+    assertEquals(Collections.singletonList(KEY), DiagAgent.probeKeysOwnedBy(owner()));
   }
 
   @Test

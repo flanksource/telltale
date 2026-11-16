@@ -1,6 +1,6 @@
 package com.flanksource.telltale;
 
-interface Capture extends AutoCloseable {
+public interface Capture extends AutoCloseable {
   byte[] dump() throws Exception;
 
   String contentType();
@@ -10,6 +10,9 @@ interface Capture extends AutoCloseable {
   default boolean streaming() {
     return false;
   }
+
+  default long intervalMillis() { return 250; }
+  default long dropped() { return 0; }
 
   default boolean complete() {
     return false;

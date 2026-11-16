@@ -36,6 +36,12 @@ type InstrumentJVM struct {
 	Redefine       []JVMRedefine      `json:"redefine,omitempty" clicky:"title=Redefine Java code" telltale:"kind=jvm_redefine,seam=agent"`
 	FlightRecorder []FlightRecorder   `json:"flightRecorder,omitempty" clicky:"title=Flight Recorder,desc=Starts a JFR recording" telltale:"kind=jvm_jfr"`
 	AsyncProfiler  []AsyncProfiler    `json:"asyncProfiler,omitempty" clicky:"title=async-profiler,desc=Attaches async-profiler" telltale:"kind=jvm_jfr"`
+	HTTP           []HTTPProbe        `json:"http,omitempty" clicky:"title=HTTP exchanges" telltale:"kind=http,seam=agent"`
+	HTTPTop        []HTTPTopProbe     `json:"httpTop,omitempty" clicky:"title=Active HTTP exchanges" telltale:"kind=http_top,seam=agent"`
+	SQL            []JVMSQLProbe      `json:"sql,omitempty" clicky:"title=SQL executions" telltale:"kind=sql,seam=agent"`
+	SQLTop         []JVMTop           `json:"sqlTop,omitempty" clicky:"title=Active SQL executions" telltale:"kind=sql_top,seam=agent"`
+	JMS            []JMSProbe         `json:"jms,omitempty" clicky:"title=JMS operations" telltale:"kind=jms,seam=agent"`
+	Spans          []SpansProbe       `json:"spans,omitempty" clicky:"title=Existing OTel spans" telltale:"kind=spans,seam=agent"`
 }
 
 type InstrumentSQLServer struct {

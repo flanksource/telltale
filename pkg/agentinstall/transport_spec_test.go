@@ -33,7 +33,7 @@ var _ = Describe("installation target validation", func() {
 		Expect(string(out)).To(HavePrefix(hex.EncodeToString(sum[:]) + " "))
 	})
 	It("builds the Java 8 attach command from one JDK home", func() {
-		args := (agentinstall.Java{Home: "/opt/jdk8"}).Attach(agentinstall.Attachment{PID: 123, Artifact: "/opt/agent.jar", Config: "/opt/config.json"})
+		args := (agentinstall.Java{}).Attach(agentinstall.Attachment{PID: 123, Artifact: "/opt/agent.jar", Config: "/opt/config.json", JavaHome: "/opt/jdk8"})
 		Expect(args).To(Equal([]string{"/opt/jdk8/bin/java", "-cp", "/opt/agent.jar:/opt/jdk8/lib/tools.jar", "com.flanksource.telltale.Attach", "123", "/opt/agent.jar", "/opt/config.json"}))
 	})
 })

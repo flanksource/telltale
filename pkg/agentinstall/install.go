@@ -108,6 +108,7 @@ type Artifact struct {
 type Attachment struct {
 	PID              int
 	Artifact, Config string
+	JavaHome         string
 }
 type Runtime interface {
 	Artifact() (Artifact, error)
@@ -244,7 +245,7 @@ func (i Installer) Install(ctx context.Context, o Options) (Result, error) {
 	if !bytes.Equal(identity, current) {
 		return result, fmt.Errorf("target process identity changed before attachment")
 	}
-	_, err = transport.Run(ctx, i.Runtime.Attach(Attachment{PID: o.PID, Artifact: result.Jar, Config: configPath}), nil)
+	_, err = transport.Run(ctx, i.Runtime.Attach(Attachment{PID: o.PID, Artifact: result.Jar, Config: configPath, JavaHome: o.JavaHome}), nil)
 	if err != nil {
 		return result, fmt.Errorf("attach Java agent (requires compatible JDK Attach API and permission to attach): %w", err)
 	}

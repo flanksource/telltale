@@ -154,6 +154,8 @@ describe("trace runs", () => {
     serve({ runs: [receiver] });
     renderPage();
     expect(await screen.findByText("standing store")).toBeInTheDocument();
+    expect(screen.getAllByRole("status").some(status=>status.textContent==="running")).toBe(true);
+    expect(screen.queryByText(/exited with code/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
     expect(screen.getByRole("option", { name: "standing" })).toBeInTheDocument();
   });

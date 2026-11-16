@@ -18,7 +18,7 @@ var schemaGoldens = map[string][]string{
 	"exec": nil, "goprof": nil, "jvm_jfr": nil, "llm": nil,
 	"prometheus": nil, "spans": nil, "sql_deadlock": nil, "sql_plancache": nil,
 	"sql_xevent": nil, "sql_top": nil, "stacks": nil, "terminal": nil,
-	"http": {"listen", "export"},
+	"http": {"listen", "export", "direction"},
 	"sql":  {"listen", "export"},
 	"logs": {"target"},
 	// query's golden is commons-db's own query kind's schema: telltale's

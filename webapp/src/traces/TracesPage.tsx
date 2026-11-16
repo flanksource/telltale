@@ -77,7 +77,7 @@ function RunSummary({ run, readOnly = false }: { run: RunTraces; readOnly?: bool
   });
   // A host run traces the host, not a command or a pid, and is live while it is running (it has no live sessions).
   const hostRun = !run.standing && !run.pid && !run.command?.length;
-  const running = !!run.live || (hostRun && run.status === "running");
+  const running = !!run.standing || !!run.live || (hostRun && run.status === "running");
   const command = <code className="break-all whitespace-normal">{run.standing ? "standing store" : run.pid ? `pid ${run.pid}` : hostRun ? "host run" : run.command?.join(" ")}</code>;
   const errors = [...(run.error ? [run.error] : []), ...(run.checkpointErrors ?? [])];
   const failed = errors.length ? (
@@ -97,7 +97,7 @@ function RunSummary({ run, readOnly = false }: { run: RunTraces; readOnly?: bool
     <div className="flex flex-wrap items-center gap-3 text-sm">
       <span role="status" className="rounded bg-blue-100 px-2 py-0.5 text-blue-800 dark:bg-blue-900 dark:text-blue-100">running</span>
       {command}
-      {!readOnly && <Button type="button" size="sm" variant="outline" disabled={stop.isPending} onClick={() => stop.mutate()}>Stop</Button>}
+      {!readOnly && !run.standing && <Button type="button" size="sm" variant="outline" disabled={stop.isPending} onClick={() => stop.mutate()}>Stop</Button>}
       {stop.error && <span role="alert" className="text-red-700 dark:text-red-400">{stop.error.message}</span>}
     </div>
   );

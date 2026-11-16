@@ -90,13 +90,13 @@ func prettyRecordFields(columns []api.ColumnDef, row map[string]any) api.Text {
 			continue
 		}
 		if count > 0 {
-			text = text.Append(" · ", "muted")
+			text = text.Append(" · ", "text-muted")
 		}
 		value, ok := row[column.Name].(api.Textable)
 		if !ok {
 			value = clicky.Human(row[column.Name])
 		}
-		text = text.Append(column.DisplayLabel()+"=", "muted").Add(value)
+		text = text.Append(column.DisplayLabel()+"=", "text-muted").Add(value)
 		count++
 		if count == 4 {
 			break

@@ -17,6 +17,7 @@ import (
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
+	"github.com/flanksource/commons-db/recordstore/sampleframe"
 	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/seam"
@@ -214,26 +215,27 @@ func (p profiler) Handle(ctx dbcontext.Context, params Params, out tracing.Emitt
 func NewKind(addresses Addresses) *tracing.Handler[Params, Sample] {
 	agent := seam.AgentSeam[Params, Sample]{Probe: Kind, Registry: addresses.Registry, Target: func(p Params) target.Target { return p.Target }, Mutates: func(p Params) bool { return p.Target.AllowMutation }, ArmParams: func(p Params) (json.RawMessage, error) {
 		return json.Marshal(map[string]any{"profile": "heap", "mutex": p.Target.AllowMutation, "block": p.Target.AllowMutation})
-	}, DecodeBlob: func(blob agentclient.Blob, resource map[string]string) ([]Sample, error) {
+	}, DecodeBlob: func(blob agentclient.Blob, resource map[string]string) (seam.DecodedBlob[Sample], error) {
+		started := time.Now().UTC()
 		if blob.Info.ContentType != protocol.ContentTypePprof {
-			return nil, fmt.Errorf("unexpected profile content type %s", blob.Info.ContentType)
+			return seam.DecodedBlob[Sample]{}, fmt.Errorf("unexpected profile content type %s", blob.Info.ContentType)
 		}
 		pid, err := strconv.Atoi(resource["process.pid"])
 		if err != nil {
-			return nil, fmt.Errorf("agent process pid: %w", err)
+			return seam.DecodedBlob[Sample]{}, fmt.Errorf("agent process pid: %w", err)
 		}
 		parsed, err := profile.ParseData(blob.Data)
 		if err != nil {
-			return nil, fmt.Errorf("parse agent profile: %w", err)
+			return seam.DecodedBlob[Sample]{}, fmt.Errorf("parse agent profile: %w", err)
 		}
 		var request CheckpointParams
 		if len(blob.CheckpointParams) > 0 {
 			if err := json.Unmarshal(blob.CheckpointParams, &request); err != nil {
-				return nil, fmt.Errorf("profile checkpoint params: %w", err)
+				return seam.DecodedBlob[Sample]{}, fmt.Errorf("profile checkpoint params: %w", err)
 			}
 		}
-		return Aggregate(Sample{CheckpointID: uuid.NewString(), TakenAt: time.Now().UTC(), Reason: request.Reason, Source: "agent", PID: pid, Profile: blob.Info.Name}, parsed), nil
+		rows := Aggregate(Sample{CheckpointID: uuid.NewString(), TakenAt: time.Now().UTC(), Reason: request.Reason, Source: "agent", PID: pid, Profile: blob.Info.Name}, parsed)
+		return seam.DecodedBlob[Sample]{Rows: rows, Frame: &sampleframe.Frame{Source: resource["telltale.agent.id"] + "/" + resource["process.pid"] + "/" + blob.Info.Name, StartedAt: started, CompletedAt: time.Now().UTC(), Observed: len(rows)}}, nil
 	}}
-	agent.SampledBlobs = true
 	return tracing.NewHandler[Params, Sample](profiler{addresses: addresses, agent: agent}, tracing.Capabilities{Live: true}, target.Process, target.Agent, target.Self).WithTop(topSpec())
 }

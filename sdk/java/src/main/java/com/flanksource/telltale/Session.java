@@ -93,9 +93,8 @@ final class Session implements AutoCloseable {
     try {
       if (kind.equals("arm")) {
         String probe = body.get("probe").getAsString();
-        if (!java.util.Arrays.asList(
-                "jvm_jfr", "jvm_trace", "jvm_redefine", "jvm_notifications", "jvm_ognl")
-            .contains(probe)) throw new IllegalArgumentException("Unsupported probe");
+        if (RuntimeService.probes().stream().noneMatch(known -> probe.equals(known.get("name"))))
+          throw new IllegalArgumentException("Unsupported probe");
         if (recordings.containsKey(id)) throw new IllegalArgumentException("Duplicate session");
         long delay = 0;
         if (body.has("stopAt")) {
@@ -152,8 +151,8 @@ final class Session implements AutoCloseable {
                       }
                     }
                   },
-                  250,
-                  250,
+                  capture.intervalMillis(),
+                  capture.intervalMillis(),
                   java.util.concurrent.TimeUnit.MILLISECONDS));
         if (body.has("limits") && body.getAsJsonObject("limits").has("maxBytes"))
           byteLimits.put(id, body.getAsJsonObject("limits").get("maxBytes").getAsLong());
@@ -200,9 +199,7 @@ final class Session implements AutoCloseable {
         }
       }
     } catch (Exception error) {
-      while (error instanceof java.lang.reflect.InvocationTargetException
-          && error.getCause() instanceof Exception) error = (Exception) error.getCause();
-      response.addProperty("error", error.toString());
+      response.addProperty("error", failureMessage(error));
       if (kind.equals("checkpoint") && body.has("id")) response.add("id", body.get("id"));
     }
     wire.send(reply, response, null);
@@ -233,6 +230,7 @@ final class Session implements AutoCloseable {
     blob.addProperty("len", data.length);
     wire.send("blob", blob, data);
     sendReport(id, capture);
+    sendDropped(id, sequence, capture);
   }
 
   /** Sends the capture's report after the blob it describes, when it changed since the last. */
@@ -244,6 +242,19 @@ final class Session implements AutoCloseable {
     report.addProperty("session", id);
     report.add("summary", Agent.JSON.toJsonTree(summary));
     wire.send("report", report, null);
+  }
+
+  /** Tells the reader how many records the capture dropped, as an empty records frame. */
+  private void sendDropped(String id, long sequence, Capture capture) throws Exception {
+    long dropped = capture.dropped();
+    if (dropped <= 0) return;
+    JsonObject report = new JsonObject();
+    report.addProperty("session", id);
+    report.addProperty("seq", sequence + 1);
+    report.addProperty("dropped", dropped);
+    report.add("items", new com.google.gson.JsonArray());
+    sequences.put(id, sequence + 1);
+    wire.send("records", report, null);
   }
 
   private void finishCapture(String id) throws Exception {
@@ -315,13 +326,19 @@ final class Session implements AutoCloseable {
               body.has("allowMutation") && body.get("allowMutation").getAsBoolean());
       result.add("value", Agent.JSON.toJsonTree(value));
     } catch (Exception error) {
-      result.addProperty("error", error.toString());
+      result.addProperty("error", failureMessage(error));
     }
     try {
       wire.send("result", result, null);
     } catch (Exception error) {
       System.err.println("telltale operation response failed: " + error);
     }
+  }
+
+  static String failureMessage(Throwable error) {
+    while (error instanceof java.lang.reflect.InvocationTargetException
+        && error.getCause() != null) error = error.getCause();
+    return error.toString();
   }
 
   @SuppressWarnings("unchecked")

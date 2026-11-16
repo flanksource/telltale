@@ -42,10 +42,10 @@ public final class InstrumentationService {
   public static final String AGENT_CLASS = "com.flanksource.telltale.diag.agent.DiagAgent";
 
   /**
-   * Agent jar bundled into the runtime by the {@code diagnosticAgentJar} Gradle task, under a
-   * non-jar name so the shadow plugin keeps it whole.
+   * The {@code diagnosticAgentJar} build, nested whole into telltale-agent.jar by the {@code
+   * agentJar} Gradle task (a plain Jar, so it is not unpacked the way the shadow plugin would).
    */
-  public static final String AGENT_RESOURCE = "/telltale-diag-agent.bin";
+  public static final String AGENT_RESOURCE = "/telltale-diag-agent.jar";
 
   /** Main class of {@link #AGENT_RESOURCE}, run by the attaching JDK process. */
   private static final String ATTACH_MAIN = "com.flanksource.telltale.diag.agent.AttachMain";

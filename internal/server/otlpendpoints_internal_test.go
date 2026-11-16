@@ -13,9 +13,10 @@ var _ = Describe("OTLP startup endpoints", func() {
 			GRPC: &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 4317},
 			API:  &net.TCPAddr{IP: net.ParseIP("127.0.0.1"), Port: 8080},
 		}
-		Expect(endpoints.String()).To(Equal(`Telltale OTLP traces receivers:
+		Expect(endpoints.String()).To(Equal(`Telltale OTLP traces and Profiles receivers:
   gRPC  127.0.0.1:4317
   HTTP  http://127.0.0.1:8080/v1/traces (application/x-protobuf or application/json)
+  Profiles  http://127.0.0.1:8080/v1/profiles (OTLP-Profiles-Development-Version: 1)
 Export over gRPC:
   export OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=grpc
   export OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:4317
@@ -32,9 +33,10 @@ Export over HTTP:
 			Host:     "build-01",
 			HTTPAuth: true,
 		}
-		Expect(endpoints.String()).To(Equal(`Telltale OTLP traces receivers:
+		Expect(endpoints.String()).To(Equal(`Telltale OTLP traces and Profiles receivers:
   gRPC  127.0.0.1:4317
   HTTP  http://build-01:8080/v1/traces (application/x-protobuf or application/json; API token required)
+  Profiles  http://build-01:8080/v1/profiles (OTLP-Profiles-Development-Version: 1; API token required)
 Create an API token with: telltale agents token create <name> --scope api
 Export over gRPC:
   export OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=grpc

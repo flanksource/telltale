@@ -9,6 +9,7 @@ import (
 	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
 	"github.com/flanksource/commons-db/recordstore/sampleframe"
+	"github.com/flanksource/telltale/pkg/otlp/profilepublication"
 )
 
 type TopMetric struct {
@@ -109,13 +110,32 @@ func (e *emitter[R]) EmitFrame(ctx context.Context, frame sampleframe.Frame, rec
 		})
 		frame.Summary["metrics"] = metrics
 	}
-	if _, err := e.frames.Append(ctx, frame, rows); err != nil {
-		return err
+	if profilepublication.IsProfile(frame) {
+		published, err := e.publishProfile(ctx, frame, rows)
+		if err != nil || !published {
+			return err
+		}
+	} else {
+		if _, err := e.frames.Append(ctx, frame, rows); err != nil {
+			return err
+		}
 	}
 	e.source.mu.Lock()
 	e.source.summary.Emitted += int64(len(rows))
 	e.source.mu.Unlock()
 	return nil
+}
+
+func (e *emitter[R]) publishProfile(ctx context.Context, frame sampleframe.Frame, rows []recordstore.Row) (bool, error) {
+	backend, ok := e.frames.Backend.(profilepublication.Backend)
+	if !ok {
+		return false, fmt.Errorf("profile capture requires durable identity reads and atomic publication")
+	}
+	frames, err := sampleframe.Schema(e.frames.Schema.Kind + "_frames")
+	if err != nil {
+		return false, err
+	}
+	return profilepublication.Append(ctx, backend, profilepublication.Publication{Kind: e.frames.Schema.Kind, Stream: e.frames.Stream, FrameStream: e.frames.Stream + "-frames", Schema: e.frames.Schema, FrameSchema: frames, Frame: frame, Rows: rows})
 }
 
 func (s TopSpec) validate(schema recordstore.KindSchema) error {

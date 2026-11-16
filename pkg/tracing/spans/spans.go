@@ -123,7 +123,7 @@ func (n normalizing) TryEmit(span telltale.Span) bool {
 }
 
 func NewKind(registry *agentclient.Registry) *tracing.Handler[Params, telltale.Span] {
-	agent := seam.AgentSeam[Params, telltale.Span]{Probe: Kind, Registry: registry, Target: func(p Params) target.Target { return p.Target }, ArmParams: func(p Params) (json.RawMessage, error) { return json.Marshal(p) }}
+	agent := seam.AgentSeam[Params, telltale.Span]{Probe: Kind, Registry: registry, Target: func(p Params) target.Target { return p.Target }, ArmParams: func(p Params) (json.RawMessage, error) { return json.Marshal(p) }, DecodeBlob: decodeBlob}
 	return tracing.NewHandler[Params, telltale.Span](capture{agent}, tracing.Capabilities{Live: true, Historical: true, Follow: true}, target.Self, target.Agent, target.Host).
 		WithSecretMasking("key")
 }

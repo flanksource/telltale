@@ -17,6 +17,7 @@ import (
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
+	"github.com/flanksource/commons-db/recordstore/sampleframe"
 	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/seam"
@@ -166,23 +167,24 @@ func NewKind(registry *agentclient.Registry, dumpers *Dumpers) *tracing.Handler[
 	if dumpers == nil {
 		panic("stacks: NewKind needs the host's Dumpers")
 	}
-	agent := seam.AgentSeam[Params, Stack]{Probe: Kind, Registry: registry, Target: func(p Params) target.Target { return p.Target }, DecodeBlob: func(blob agentclient.Blob, resource map[string]string) ([]Stack, error) {
+	agent := seam.AgentSeam[Params, Stack]{Probe: Kind, Registry: registry, Target: func(p Params) target.Target { return p.Target }, DecodeBlob: func(blob agentclient.Blob, resource map[string]string) (seam.DecodedBlob[Stack], error) {
+		started := time.Now().UTC()
 		if blob.Info.Name != "stacks" || blob.Info.ContentType != "text/plain" {
-			return nil, fmt.Errorf("unexpected stacks blob %s (%s)", blob.Info.Name, blob.Info.ContentType)
+			return seam.DecodedBlob[Stack]{}, fmt.Errorf("unexpected stacks blob %s (%s)", blob.Info.Name, blob.Info.ContentType)
 		}
 		pid, err := strconv.Atoi(resource["process.pid"])
 		if err != nil {
-			return nil, fmt.Errorf("agent process pid: %w", err)
+			return seam.DecodedBlob[Stack]{}, fmt.Errorf("agent process pid: %w", err)
 		}
 		var request CheckpointParams
 		if len(blob.CheckpointParams) > 0 {
 			if err := json.Unmarshal(blob.CheckpointParams, &request); err != nil {
-				return nil, fmt.Errorf("stacks checkpoint params: %w", err)
+				return seam.DecodedBlob[Stack]{}, fmt.Errorf("stacks checkpoint params: %w", err)
 			}
 		}
-		return Records(Stack{CheckpointID: newCheckpointID(), Reason: request.Reason, PID: pid, Transport: "agent"}, Dump{Format: FormatGo, Text: string(blob.Data), CollectedAt: time.Now().UTC()}), nil
+		rows := Records(Stack{CheckpointID: newCheckpointID(), Reason: request.Reason, PID: pid, Transport: "agent"}, Dump{Format: FormatGo, Text: string(blob.Data), CollectedAt: time.Now().UTC()})
+		return seam.DecodedBlob[Stack]{Rows: rows, Frame: &sampleframe.Frame{Source: resource["telltale.agent.id"] + "/" + resource["process.pid"] + "/" + blob.Info.Name, StartedAt: started, CompletedAt: time.Now().UTC(), Observed: len(rows)}}, nil
 	}}
-	agent.SampledBlobs = true
 	return tracing.NewHandler[Params, Stack](stacks{dumpers: dumpers, agent: agent}, tracing.Capabilities{Live: true}, target.Process, target.Agent, target.Self).
 		WithTruncation(maxRawBytes).WithTop(topSpec())
 }

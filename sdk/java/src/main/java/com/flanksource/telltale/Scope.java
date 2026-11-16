@@ -28,6 +28,12 @@ public enum Scope {
       case "jvm_jfr":
       case "jvm_trace":
       case "jvm_notifications":
+      case "http":
+      case "http_top":
+      case "sql":
+      case "sql_top":
+      case "jms":
+      case "spans":
         return TRACE;
       case "jvm_redefine":
         return INSTRUMENT;

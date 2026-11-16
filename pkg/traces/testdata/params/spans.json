@@ -45,10 +45,7 @@
           "properties": {
             "aggregations": {
               "type": "object",
-              "additionalProperties": {
-                "type": "string",
-                "format": "byte"
-              }
+              "additionalProperties": {}
             },
             "fields": {
               "type": "array",

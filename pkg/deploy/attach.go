@@ -119,8 +119,8 @@ func (a *attach) Deploy(ctx dbcontext.Context, target Target, provision Provisio
 func (a *attach) install(ctx dbcontext.Context, target Target, config map[string]string, provision Provision) error {
 	listener := agentinstall.HTTPListener{Bind: a.spec.Bind, Port: a.spec.Port, Issuer: config["issuer"], Audience: config["audience"], JWKS: json.RawMessage(config["jwks"]), JWKSURL: config["jwksUrl"], ConfigDigest: config["configDigest"]}
 	destination := agentinstall.Destination{Kind: "kubernetes", Namespace: target.Pod.Namespace, Pod: target.Pod.Name, Container: target.Container.Name}
-	installer := agentinstall.Installer{Runtime: agentinstall.Java{Home: a.spec.JavaHome}, Transport: provision.Exec(target)}
-	_, err := installer.Install(ctx, agentinstall.Options{Destination: destination, PID: a.spec.PID, Directory: a.spec.Directory, Service: a.spec.Service, AllowMutation: a.spec.AllowMutation, ExtensionsDir: a.spec.ExtensionsDir, HTTP: &listener})
+	installer := agentinstall.Installer{Runtime: agentinstall.Java{}, Transport: provision.Exec(target)}
+	_, err := installer.Install(ctx, agentinstall.Options{Destination: destination, PID: a.spec.PID, Directory: a.spec.Directory, Service: a.spec.Service, AllowMutation: a.spec.AllowMutation, ExtensionsDir: a.spec.ExtensionsDir, JavaHome: a.spec.JavaHome, HTTP: &listener})
 	if err != nil {
 		return fmt.Errorf("attach agent to pid %d in %s: %w", a.spec.PID, target.ID, err)
 	}

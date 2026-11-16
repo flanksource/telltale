@@ -92,6 +92,7 @@ final class RuntimeHttp {
     body.put("params", params(body));
     body.put("id", UUID.randomUUID().toString());
     body.put("owner", owner);
+    body.put("resource", runtime.resource);
     return json(200, runtime.openCapture(body));
   }
 

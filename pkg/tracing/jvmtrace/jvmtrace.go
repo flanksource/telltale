@@ -223,6 +223,9 @@ func (h handler) Checkpoint(ctx dbcontext.Context, _ Params, out tracing.Emitter
 }
 
 func NewKind(registry *agentclient.Registry) *tracing.Handler[Params, Event] {
-	agent := seam.AgentSeam[Params, Event]{Probe: Kind, Registry: registry, Target: func(p Params) target.Target { return p.Target }, Mutates: func(Params) bool { return true }, ArmParams: func(p Params) (json.RawMessage, error) { return json.Marshal(p.Options) }, Compatible: func(p Params, spec protocol.ProbeSpec) error { return p.CompatibleWith(spec) }, DecodeBlob: Decode}
+	agent := seam.AgentSeam[Params, Event]{Probe: Kind, Registry: registry, Target: func(p Params) target.Target { return p.Target }, Mutates: func(Params) bool { return true }, ArmParams: func(p Params) (json.RawMessage, error) { return json.Marshal(p.Options) }, Compatible: func(p Params, spec protocol.ProbeSpec) error { return p.CompatibleWith(spec) }, DecodeBlob: func(blob agentclient.Blob, resource map[string]string) (seam.DecodedBlob[Event], error) {
+		rows, err := Decode(blob, resource)
+		return seam.DecodedBlob[Event]{Rows: rows}, err
+	}}
 	return tracing.NewHandler[Params, Event](handler{agent: agent}, tracing.Capabilities{Live: true}, target.Agent)
 }

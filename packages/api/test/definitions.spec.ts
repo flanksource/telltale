@@ -58,6 +58,45 @@ function put(resourceVersion: string, definition: object): Promise<Response> {
 }
 
 describe("trace definitions", () => {
+  it("publishes JVM protocol entries and validates agent SQL top without a database connection", async () => {
+    const protocols = {
+      http: [{ agent: { id: "java/checkout" }, features: ["http"] }],
+      httpTop: [{ agent: { id: "java/checkout" }, direction: "both" }],
+      sql: [{ agent: { id: "java/checkout" } }],
+      sqlTop: [{ agent: { id: "java/checkout" }, poll: "5s" }],
+      jms: [{ agent: { id: "java/checkout" }, direction: "incoming" }],
+      spans: [{ agent: { id: "java/checkout" } }],
+    };
+    const response = await fetch(`${apiURL}/api/traces/definitions/validate`, {
+      method: "POST", headers: json,
+      body: JSON.stringify({ definition: { ...probe, spec: { instrument: { jvm: protocols } } } }),
+    });
+    expect(response.status).toBe(200);
+    const validation = await response.json() as { errors: unknown[]; entries: Entry[] };
+    expect(validation.errors).toEqual([]);
+    expect(validation.entries.map(entry => ({ path: entry.path, kind: entry.kind }))).toEqual([
+      { path: "instrument.jvm.http", kind: "http" },
+      { path: "instrument.jvm.httpTop", kind: "http_top" },
+      { path: "instrument.jvm.sql", kind: "sql" },
+      { path: "instrument.jvm.sqlTop", kind: "sql_top" },
+      { path: "instrument.jvm.jms", kind: "jms" },
+      { path: "instrument.jvm.spans", kind: "spans" },
+    ]);
+    const form = await (await fetch(`${apiURL}/api/traces/start`)).json() as { schema: { properties: { traces: { properties: Record<string, unknown> } } } };
+    expect(form.schema.properties.traces.properties).toHaveProperty("http_top");
+    expect(form.schema.properties.traces.properties).toHaveProperty("jms");
+  });
+
+  it("rejects the Go-only SQL self selector at the JVM definition entry", async () => {
+    const response = await fetch(`${apiURL}/api/traces/definitions/validate`, {
+      method: "POST", headers: json,
+      body: JSON.stringify({ definition: { ...probe, spec: { instrument: { jvm: { sql: [{ agent: { id: "java/checkout" }, connections: ["self"] }] } } } } }),
+    });
+    expect(response.status).toBe(200);
+    const validation = await response.json() as { errors: { instancePath: string }[] };
+    expect(validation.errors).toEqual([expect.objectContaining({ instancePath: "/spec/instrument/jvm/sql/0" })]);
+  });
+
   it("creates, lists and starts a definition, refusing a stale write, and records it on the run", async () => {
     const created = await put("", probe);
     expect(created.status).toBe(200);

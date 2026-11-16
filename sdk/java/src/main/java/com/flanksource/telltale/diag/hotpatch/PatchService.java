@@ -2,7 +2,6 @@ package com.flanksource.telltale.diag.hotpatch;
 
 import java.lang.instrument.ClassDefinition;
 import java.lang.instrument.Instrumentation;
-import java.lang.instrument.UnmodifiableClassException;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -10,14 +9,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import com.flanksource.telltale.observer.ObserverRuntime;
 
 /**
- * Applies and reverses hot patches: redefines a live class with freshly compiled bytes, and puts
- * the original bytes back on request.
+ * Applies and reverses authored method edits through the JVM transformation chain.
  *
- * <p>The pre-patch bytes are stashed on the system class path (see {@code
- * DiagAgent.ORIGINAL_BYTES}) rather than in this WAR, so a WAR redeploy — which patched classes
- * obviously survive — cannot strand the JVM with modified code and no way back.
+ * <p>The source edit coordinator and original-byte registry live on the system class path, so a
+ * diagnostics WAR redeploy can still inspect and restore edits installed by its previous instance.
  *
  * <p>What the JVM permits is narrow, and deliberately not papered over: HotSpot redefinition may
  * change method bodies only. Adding or removing a method or field, changing a signature, or
@@ -25,6 +23,12 @@ import java.util.NoSuchElementException;
  * limitation it is rather than as a mystery.
  */
 public final class PatchService {
+  enum RestoreScope { ALL, SOURCE, PROBES }
+  static final class RestoreRequest {
+    final ClassIndex.Entry entry;
+    final RestoreScope scope;
+    RestoreRequest(ClassIndex.Entry entry, RestoreScope scope) { this.entry = entry; this.scope = scope; }
+  }
 
   private static final String ORIGINALS_FIELD = "ORIGINAL_BYTES";
 
@@ -52,39 +56,27 @@ public final class PatchService {
    */
   private byte[] preservedOriginal(ClassIndex.Entry entry, String className, Class<?> type) {
     byte[] stashed = originals().get(key(entry.getLoaderHash(), className));
-    return stashed != null ? stashed : bytecode.bytecodeOf(type);
+    return stashed != null ? stashed : sourceBytes(instrumentation, type);
+  }
+
+  static byte[] sourceBytes(Instrumentation instrumentation, Class<?> type) {
+    if (!TransformOwner.owns(SourceTransformations.class)) return (byte[]) TransformOwner.invoke(
+        SourceTransformations.class, "source", new Object[] {instrumentation, type});
+    if (!ObserverRuntime.installed()) return ProbeTransformations.contains(type)
+        ? ProbeTransformations.sourceBytes(type) : new BytecodeSource(instrumentation).bytecodeOf(type);
+    try { return ObserverRuntime.sourceBytes(type); }
+    catch (Exception error) { throw new IllegalStateException("read source bytecode for " + type.getName(), error); }
   }
 
   /**
-   * What {@code entry}'s class ran before anything patched it: the stash when it is already
-   * patched, the live bytes otherwise. Read BEFORE a probe is opened on the class, while the live
-   * read cannot yet include its weave.
-   */
-  public byte[] preservedOriginal(ClassIndex.Entry entry) {
-    return preservedOriginal(entry, entry.getName(), liveClass(entry));
-  }
-
-  /**
-   * Records a class {@link ProbeWeaver} just armed, the way {@link #apply} records a redefinition:
-   * the pre-patch bytes are stashed the first time, so {@link #restore} and the lease reaper can put
-   * them back, and the report is built from the bytes the weave installed rather than a read-back.
-   */
-  public Map<String, Object> woven(ClassIndex.Entry entry, byte[] original, byte[] woven) {
-    Map<String, byte[]> registry = originals();
-    String key = key(entry.getLoaderHash(), entry.getName());
-    registry.putIfAbsent(key, original);
-    return appliedStatus(entry, registry.get(key), woven);
-  }
-
-  /**
-   * Redefines {@code entry}'s class with {@code compiled}, remembering the pre-patch bytes the
-   * first time so {@link #restore} can undo it.
+   * Installs the changed methods from {@code compiled}, remembering pre-patch bytes for reporting.
    *
    * @param compiled every class javac produced — the top-level class plus its nested and anonymous
    *     classes, which must be redefined in the same call to stay consistent with each other.
    */
   public Map<String, Object> apply(
       ClassIndex index, ClassIndex.Entry entry, Map<String, byte[]> compiled) {
+    SourceTransformations.install(instrumentation);
     // Resolve the stash before anything is redefined. It is the only route
     // back, and a JVM still running an older agent jar does not have one —
     // reaching it afterwards would leave the class patched with no undo.
@@ -127,7 +119,7 @@ public final class PatchService {
       definitions.add(new ClassDefinition(nestedType, produced.getValue()));
     }
 
-    redefine(definitions, entry.getName());
+    SourceTransformations.apply(instrumentation, definitions);
 
     for (Map.Entry<String, byte[]> original : originals.entrySet()) {
       // putIfAbsent: the first patch holds the true original. Re-patching a
@@ -182,11 +174,22 @@ public final class PatchService {
     return out;
   }
 
-  /** Puts the pre-patch bytes back and forgets the patch. */
-  public Map<String, Object> restore(ClassIndex index, ClassIndex.Entry entry) {
+  /** Removes authored edits and rebuilds through the current foreign transformer chain. */
+  public Map<String, Object> restore(ClassIndex index, RestoreRequest request) {
+    ClassIndex.Entry entry = request.entry;
     Map<String, byte[]> registry = originals();
+    if (request.scope != RestoreScope.SOURCE && ProbeTransformations.contains(liveClass(entry))) {
+      ProbeTransformations.restore(liveClass(entry));
+      if (request.scope == RestoreScope.PROBES || !registry.containsKey(key(entry.getLoaderHash(), entry.getName()))) {
+        Map<String, Object> result = new LinkedHashMap<>(heldStatus(entry));
+        result.put("class", entry.getName()); result.put("loader", entry.getLoaderHash());
+        result.put("restored", java.util.Collections.singletonList(entry.getName()));
+        return result;
+      }
+    }
+    if (request.scope == RestoreScope.PROBES) throw new NoSuchElementException("no method probes are armed on " + entry.getName());
     String prefix = key(entry.getLoaderHash(), entry.getName());
-    List<ClassDefinition> definitions = new ArrayList<>();
+    List<Class<?>> restoredTypes = new ArrayList<>();
     List<String> restored = new ArrayList<>();
     for (Map.Entry<String, byte[]> stored : registry.entrySet()) {
       String storedKey = stored.getKey();
@@ -198,10 +201,10 @@ public final class PatchService {
       if (loaded == null) {
         continue;
       }
-      definitions.add(new ClassDefinition(liveClass(loaded), stored.getValue()));
+      restoredTypes.add(liveClass(loaded));
       restored.add(className);
     }
-    if (definitions.isEmpty()) {
+    if (restoredTypes.isEmpty()) {
       throw new NoSuchElementException(
           entry.getName()
               + " is not patched"
@@ -209,16 +212,18 @@ public final class PatchService {
               + entry.getLoaderHash()
               + "), so there is nothing to restore");
     }
-    redefine(definitions, entry.getName());
+    String handedDigest = BytecodeSource.digest(registry.get(prefix));
+    SourceTransformations.restore(restoredTypes);
     for (String className : restored) {
       registry.remove(key(entry.getLoaderHash(), className));
     }
     Map<String, Object> out = new LinkedHashMap<>();
     out.put("class", entry.getName());
     out.put("loader", entry.getLoaderHash());
-    out.put("patched", false);
+    out.put("patched", ProbeTransformations.contains(liveClass(entry)));
     out.put("restored", restored);
-    out.put("digest", BytecodeSource.digest(bytecode.bytecodeOf(liveClass(entry))));
+    out.put("digest", handedDigest);
+    out.put("handedDigest", handedDigest);
     return out;
   }
 
@@ -230,6 +235,11 @@ public final class PatchService {
    */
   public List<Map<String, Object>> patches(ClassIndex index) {
     List<Map<String, Object>> out = new ArrayList<>();
+    for (Class<?> type : ProbeTransformations.types()) {
+      ClassIndex.Entry entry = ClassIndex.Entry.of(type);
+      if (!originals().containsKey(key(entry.getLoaderHash(), entry.getName())))
+        out.add(status(index, entry.getLoaderHash(), entry.getName()));
+    }
     for (Map.Entry<String, byte[]> stored : originals().entrySet()) {
       int split = stored.getKey().indexOf('|');
       if (split < 0) {
@@ -273,7 +283,8 @@ public final class PatchService {
     out.put("loader", entry.getLoaderHash());
     out.put("digest", currentDigest);
     out.put("originalDigest", original == null ? "" : BytecodeSource.digest(original));
-    out.put("patched", original != null && !BytecodeSource.digest(original).equals(currentDigest));
+    out.put("patched", ProbeTransformations.contains(liveClass(entry))
+        || original != null && !BytecodeSource.digest(original).equals(currentDigest));
     out.put("leaseExpiresAt", AgentBridge.leaseExpiresAt(entry.getLoaderHash(), className));
     return out;
   }
@@ -289,11 +300,13 @@ public final class PatchService {
    * what clears it.
    */
   public Map<String, Object> heldStatus(ClassIndex.Entry entry) {
-    return heldStatus(
+    Map<String, Object> result = heldStatus(
         entry.getLoaderHash(),
         entry.getName(),
         originals(),
         AgentBridge.leaseExpiresAt(entry.getLoaderHash(), entry.getName()));
+    if (ProbeTransformations.contains(liveClass(entry))) result.put("patched", true);
+    return result;
   }
 
   static Map<String, Object> heldStatus(
@@ -304,39 +317,6 @@ public final class PatchService {
     out.put("patched", stash.containsKey(key(loaderHash, className)));
     out.put("leaseExpiresAt", leaseExpiresAt);
     return out;
-  }
-
-  private void redefine(List<ClassDefinition> definitions, String className) {
-    if (!instrumentation.isRedefineClassesSupported()) {
-      throw new IllegalStateException(
-          "this JVM does not support class redefinition,"
-              + " so "
-              + className
-              + " cannot be patched");
-    }
-    try {
-      instrumentation.redefineClasses(definitions.toArray(new ClassDefinition[0]));
-    } catch (UnsupportedOperationException e) {
-      throw new IllegalStateException(
-          "the JVM refused to redefine "
-              + className
-              + ": a redefinition may change method bodies only. Adding or removing a method or"
-              + " field, changing a signature or modifier, or changing the class hierarchy is not"
-              + " supported by HotSpot. ("
-              + e
-              + ")",
-          e);
-    } catch (UnmodifiableClassException e) {
-      throw new IllegalStateException(className + " is not a modifiable class: " + e, e);
-    } catch (ClassNotFoundException e) {
-      throw new IllegalStateException(
-          "the JVM could not find " + className + " while redefining it: " + e, e);
-    } catch (LinkageError e) {
-      // ClassFormatError, UnsupportedClassVersionError, NoClassDefFoundError,
-      // VerifyError — every way the JVM can reject the bytes themselves.
-      throw new IllegalStateException(
-          "the compiled bytes for " + className + " were rejected by the JVM: " + e, e);
-    }
   }
 
   private static Class<?> liveClass(ClassIndex.Entry entry) {

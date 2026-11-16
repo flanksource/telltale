@@ -14,11 +14,19 @@ public final class RuntimeService implements DynamicMBean {
 
   private static final String[] ACTIONS = {
     "configure", "describe", "catalog", "call", "http", "registerAdapter", "closeOwner",
-    "captureOpen", "captureDump", "captureComplete", "captureFinish", "captureRenew", "captureClose"
+    "captureOpen", "captureDump", "captureComplete", "captureDropped", "captureReport",
+    "captureFinish", "captureRenew", "captureClose"
   };
+
+  /** The protocol captures served by the observer runtime rather than by a probe or recording. */
+  static final List<String> OBSERVATIONS =
+      Collections.unmodifiableList(
+          Arrays.asList("http", "http_top", "sql", "sql_top", "jms", "spans"));
 
   final Diagnostics diagnostics;
   final String started = Instant.now().toString();
+  /** The configured agent resource; every capture opened over HTTP is attributed to it. */
+  final Map<String, Object> resource;
   private final Map<String, Object> configuration;
   private final Map<String, Capture> captures = new HashMap<>();
   private final Map<String, String> owners = new HashMap<>();
@@ -28,6 +36,7 @@ public final class RuntimeService implements DynamicMBean {
 
   private RuntimeService(Map<String, Object> config) throws Exception {
     configuration = configuration(config);
+    resource = AgentResource.from(config);
     diagnostics = new Diagnostics(config);
   }
 
@@ -71,6 +80,16 @@ public final class RuntimeService implements DynamicMBean {
       if (name.equals("jvm_trace"))
         probe.put("version", com.flanksource.telltale.diag.agent.DiagAgent.PROBE_API_VERSION);
       probes.add(probe);
+    }
+    for (String name : OBSERVATIONS) {
+      Map<String, Object> observation = new LinkedHashMap<>();
+      observation.put("name", name);
+      observation.put("title", name);
+      observation.put("checkpoints", true);
+      observation.put("mutates", false);
+      observation.put("reverts", true);
+      observation.put("scope", Scope.forCapture(name).wire());
+      probes.add(observation);
     }
     return probes;
   }
@@ -174,10 +193,14 @@ public final class RuntimeService implements DynamicMBean {
     synchronized (captures) {
       if (captures.containsKey(key)) throw new IllegalArgumentException("duplicate capture " + key);
       Map<String, Object> params = (Map<String, Object>) request.get("params");
+      Map<String, Object> attributed =
+          request.containsKey("resource")
+              ? (Map<String, Object>) request.get("resource")
+              : resource;
       Capture capture =
           kind.equals("jvm_jfr")
               ? new Recording(Agent.JSON.toJsonTree(params).getAsJsonObject())
-              : diagnostics.capture(kind, params, key, allow);
+              : diagnostics.capture(kind, params, key, allow, attributed);
       captures.put(key, capture);
       captureScopes.put(key, scope);
       if (request.containsKey("owner")) owners.put(key, (String) request.get("owner"));
@@ -186,6 +209,7 @@ public final class RuntimeService implements DynamicMBean {
       result.put("streaming", capture.streaming());
       result.put("contentType", capture.contentType());
       result.put("fileName", capture.fileName());
+      result.put("intervalMillis", capture.intervalMillis());
       return result;
     }
   }
@@ -219,6 +243,8 @@ public final class RuntimeService implements DynamicMBean {
           return capture.dump();
         case "captureComplete":
           return capture.complete();
+        case "captureDropped":
+          return capture.dropped();
         case "captureReport":
           return capture.report();
         case "captureFinish":

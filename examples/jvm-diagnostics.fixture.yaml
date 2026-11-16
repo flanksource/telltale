@@ -1,11 +1,19 @@
 kind: Fixture
-name: Interactive JVM diagnostics
+name: Interactive JVM diagnostics and protocol captures
+params:
+  type: object
+  properties:
+    interactive:
+      type: boolean
+      title: Keep the demo open after verification
+      default: true
 defaults:
   timeout: 2m
 steps:
   - id: prepare
     kind: exec
     cwd: &root ..
+    timeout: 5m
     script: |
       set -eu
       test -x .bin/telltale
@@ -13,14 +21,24 @@ steps:
       command -v javac >/dev/null
       command -v jcmd >/dev/null
       command -v curl >/dev/null
+      ./sdk/java/gradlew -p sdk/java jvmDemo >&2
       mkdir -p .tmp/jvm-demo
       demo_dir=$(mktemp -d "$PWD/.tmp/jvm-demo/run.XXXXXX")
-      mkdir -p "$demo_dir/classes"
-      javac -d "$demo_dir/classes" pkg/agentinstall/testdata/Workload.java
       printf '::notice::Demo artifacts: %s\n' "$demo_dir"
       printf '%s' "$demo_dir"
     export:
       DEMO_DIR: '{{.outputs.stdout}}'
+
+  - id: server
+    kind: services
+    services:
+      web:
+        cwd: *root
+        exec: exec .bin/telltale serve --host 127.0.0.1 --port {{.port}} --otlp --otlp-grpc-listen 127.0.0.1:0 --data-dir "$DEMO_DIR/data" > "$DEMO_DIR/server.log" 2>&1
+        ready:
+          http: http://127.0.0.1:{{.port}}/health
+        wait:
+          timeout: 30s
 
   - id: runtime
     kind: services
@@ -29,15 +47,22 @@ steps:
         cwd: *root
         exec: |
           set -eu
+          IFS= read -r demo_classpath < sdk/java/build/jvm-demo/classpath.txt
           printf '%s\n' "$$" > "$DEMO_DIR/jvm.pid"
-          exec java -cp "$DEMO_DIR/classes" Workload 86400
+          exec java -javaagent:sdk/java/build/jvm-demo/opentelemetry-javaagent.jar -cp "$demo_classpath" Workload {{.port}} "$DEMO_DIR" > "$DEMO_DIR/workload.log" 2>&1
+        env:
+          OTEL_SERVICE_NAME: jvm-demo
+          OTEL_TRACES_EXPORTER: otlp
+          OTEL_METRICS_EXPORTER: none
+          OTEL_LOGS_EXPORTER: none
+          OTEL_EXPORTER_OTLP_TRACES_PROTOCOL: http/protobuf
+          OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: '$WEB_URL/v1/traces'
+          OTEL_BSP_SCHEDULE_DELAY: '100'
+          OTEL_TRACES_SAMPLER: always_on
         ready:
-          exec: |
-            set -eu
-            read -r demo_pid < "$DEMO_DIR/jvm.pid"
-            jcmd "${demo_pid:?missing JVM pid}" VM.version
+          http: http://127.0.0.1:{{.port}}/health
         wait:
-          timeout: 30s
+          timeout: 1m
         export:
           JVM_PID: '{{.outputs.pid}}'
 
@@ -49,17 +74,6 @@ steps:
     cel: exitCode == 0 && json.agent != ""
     export:
       DEMO_AGENT: '{{.outputs.json.agent}}'
-
-  - id: server
-    kind: services
-    services:
-      web:
-        cwd: *root
-        exec: exec .bin/telltale serve --host 127.0.0.1 --port {{.port}} --data-dir "$DEMO_DIR/data"
-        ready:
-          http: http://127.0.0.1:{{.port}}/health
-        wait:
-          timeout: 30s
 
   - id: groovy
     kind: telltale
@@ -139,12 +153,169 @@ steps:
       expression: '@Workload@compute(1L)'
     cel: json.value > 1.414 && json.value < 1.415
 
+  - id: httpCapture
+    kind: telltale
+    server: '$WEB_URL'
+    agent: '{{.env.DEMO_AGENT}}'
+    capture: http
+    duration: 1h
+    allowMutation: true
+    params:
+      features: [http]
+      direction: both
+      paths: [/demo/*]
+      bodies: 4KiB
+    wait: &armed
+      until: status == "running"
+      failWhen: status == "failed"
+      interval: 200ms
+      timeout: 15s
+
+  - id: sqlCapture
+    kind: telltale
+    server: '$WEB_URL'
+    agent: '{{.env.DEMO_AGENT}}'
+    capture: sql
+    duration: 1h
+    allowMutation: true
+    params:
+      connections: ['*']
+    wait: *armed
+
+  - id: jmsCapture
+    kind: telltale
+    server: '$WEB_URL'
+    agent: '{{.env.DEMO_AGENT}}'
+    capture: jms
+    duration: 1h
+    allowMutation: true
+    params:
+      direction: both
+      destinations: [demo.orders]
+      body: true
+      maxBodyBytes: 4096
+    wait: *armed
+
+  - id: spansCapture
+    kind: telltale
+    server: '$WEB_URL'
+    agent: '{{.env.DEMO_AGENT}}'
+    capture: spans
+    duration: 1h
+    allowMutation: true
+    wait: *armed
+
+  - id: httpTop
+    kind: telltale
+    server: '$WEB_URL'
+    agent: '{{.env.DEMO_AGENT}}'
+    capture: http_top
+    duration: 1h
+    allowMutation: true
+    params:
+      direction: both
+      paths: [/demo/*]
+      poll: 1s
+      top: 50
+    wait: *armed
+
+  - id: sqlTop
+    kind: telltale
+    server: '$WEB_URL'
+    agent: '{{.env.DEMO_AGENT}}'
+    capture: sql_top
+    duration: 1h
+    allowMutation: true
+    params:
+      text: [DEMO_HOLD]
+      poll: 1s
+      top: 50
+    wait: *armed
+
+  - id: holdOperations
+    kind: exec
+    exec: curl
+    args: [-fsS, --max-time, '30', -X, POST, '$WORKLOAD_URL/control/hold']
+    cel: json.holding && json.httpEntered == 2 && json.jdbcEntered && json.r2dbcEntered && json.jmsEntered
+
+  - id: activeSnapshots
+    kind: exec
+    cwd: *root
+    exec: go
+    args: &checkArgs
+      - run
+      - ./hack/jvm-demo
+      - --server
+      - '$WEB_URL'
+      - --workload
+      - '$WORKLOAD_URL'
+      - --agent
+      - '{{.env.DEMO_AGENT}}'
+      - --http-top
+      - '{{.httpTop.runId}}'
+      - --sql-top
+      - '{{.sqlTop.runId}}'
+      - --http
+      - '{{.httpCapture.runId}}'
+      - --sql
+      - '{{.sqlCapture.runId}}'
+      - --jms
+      - '{{.jmsCapture.runId}}'
+      - --spans
+      - '{{.spansCapture.runId}}'
+      - --artifacts
+      - '$DEMO_DIR/evidence'
+      - --phase
+      - '$CHECK_PHASE'
+    env: {CHECK_PHASE: active}
+    cel: exitCode == 0 && json.phase == "active"
+
+  - id: updatedSnapshots
+    kind: exec
+    cwd: *root
+    exec: go
+    args: *checkArgs
+    env: {CHECK_PHASE: updated}
+    cel: exitCode == 0 && json.phase == "updated"
+
+  - id: releaseOperations
+    kind: exec
+    exec: curl
+    args: [-fsS, --max-time, '30', -X, POST, '$WORKLOAD_URL/control/release']
+    cel: '!json.holding && json.completedCycles > holdOperations.json.completedCycles'
+
+  - id: clearedSnapshots
+    kind: exec
+    cwd: *root
+    exec: go
+    args: *checkArgs
+    env: {CHECK_PHASE: cleared}
+    cel: exitCode == 0 && json.phase == "cleared"
+
+  - id: completedProtocols
+    kind: exec
+    cwd: *root
+    exec: go
+    args: *checkArgs
+    env: {CHECK_PHASE: completed}
+    cel: exitCode == 0 && json.phase == "completed"
+
+  - id: interactiveTraffic
+    kind: exec
+    if: params.interactive
+    exec: curl
+    args: [-fsS, --max-time, '10', -X, POST, '$WORKLOAD_URL/control/traffic?enabled=true']
+    cel: json.trafficEnabled
+
   - id: exitDemo
     kind: form
-    timeout: 1h
+    if: params.interactive
+    timeout: 55m
     title: Exit JVM diagnostics demo
     description: |
-      Groovy, tracing, compilation, redefinition and restoration checks passed.
+      Diagnostics and protocol checks passed, including HTTP/JMS directions,
+      JDBC/R2DBC, existing OpenTelemetry exporter mirroring and Profiles Top
+      active/update/clear snapshots. Local Spring traffic is running.
       Keep this form open while exploring:
       {{.env.WEB_URL}}/jvm/{{.env.DEMO_AGENT}}
 
@@ -152,6 +323,17 @@ steps:
       {{.env.WEB_URL}}/jvm/{{.env.DEMO_AGENT}}/instrument?class=Workload&method=compute
       {{.env.WEB_URL}}/jvm/{{.env.DEMO_AGENT}}/traces
       {{.env.WEB_URL}}/jvm/{{.env.DEMO_AGENT}}/notifications
+
+      Live protocol captures and Top snapshots:
+      HTTP Top: {{.env.WEB_URL}}/?viewer=1&run={{.httpTop.runId}}
+      SQL Top: {{.env.WEB_URL}}/?viewer=1&run={{.sqlTop.runId}}
+      HTTP: {{.env.WEB_URL}}/?viewer=1&run={{.httpCapture.runId}}
+      SQL: {{.env.WEB_URL}}/?viewer=1&run={{.sqlCapture.runId}}
+      JMS: {{.env.WEB_URL}}/?viewer=1&run={{.jmsCapture.runId}}
+      Mirrored spans: {{.env.WEB_URL}}/?viewer=1&run={{.spansCapture.runId}}
+      Received traces: {{.env.WEB_URL}}/otel
+
+      Workload state: {{.env.WORKLOAD_URL}}/control/state
 
       Try JMX Memory attributes and gc(), Workload class/method source,
       compile-preview and short redefinition captures, Threads and Metrics.

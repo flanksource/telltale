@@ -35,6 +35,7 @@ public final class Diagnostics {
           Map<String, Object> status = new LinkedHashMap<>();
           status.put("allowMutation", allowMutation);
           status.put("instrumentation", InstrumentationService.installed());
+          status.put("observers", com.flanksource.telltale.observer.ObserverRuntime.capabilities());
           if (InstrumentationService.installed())
             status.put(
                 "patches",
@@ -197,8 +198,11 @@ public final class Diagnostics {
     return ClassIndex.from(InstrumentationService.instrumentation());
   }
 
-  Capture capture(String kind, Map<String, Object> params, String key, boolean callerMutation)
+  Capture capture(String kind, Map<String, Object> params, String key, boolean callerMutation,
+      Map<String, Object> resource)
       throws Exception {
+    if (RuntimeService.OBSERVATIONS.contains(kind))
+      return new ObserverCapture(kind, params, key, resource);
     if (kind.equals("jvm_notifications")) return new NotificationCapture(notifications, params);
     if (!allowMutation || !callerMutation)
       throw new IllegalStateException("mutation disabled for " + kind);

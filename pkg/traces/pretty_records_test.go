@@ -43,6 +43,13 @@ var _ = Describe("styled trace records", func() {
 		{"goprof", query.Row{"pid": 123, "profile": "heap", "value": 4096, "unit": "bytes", "frames": []map[string]any{{"func": "checkout.allocate"}}}, []string{"123", "heap", "checkout.allocate"}},
 		{"stacks", query.Row{"pid": 123, "goroutineId": 7, "state": "IO wait", "frames": []map[string]any{{"func": "checkout.read"}}}, []string{"123", "7", "IO wait", "checkout.read"}},
 		{"jvm_jfr", query.Row{"event": "alloc", "thread": "worker", "frame": "Checkout.allocate", "value": 4096, "unit": "bytes"}, []string{"alloc", "worker", "Checkout.allocate"}},
+		{"http_top", query.Row{"direction": "outgoing", "method": "GET", "url": "https://example.test/orders/7", "elapsedMs": 125.0}, []string{"outgoing", "GET", "https://example.test/orders/7", "125"}},
+		{"jms", query.Row{"operation": "send", "direction": "outgoing", "outcome": "success", "destination": "orders"}, []string{"send", "outgoing", "success", "orders"}},
+		{"jvm_notifications", query.Row{"type": "java.management.memory.threshold.exceeded", "sequenceNumber": 12, "message": "heap threshold exceeded", "source": "java.lang:type=Memory"}, []string{"java.management.memory.threshold.exceeded", "heap threshold exceeded", "java.lang:type=Memory", "12"}},
+		{"jvm_ognl", query.Row{"expression": "@java.lang.Runtime@getRuntime().freeMemory()", "result": 4096}, []string{"@java.lang.Runtime@getRuntime().freeMemory()"}},
+		{"jvm_redefine", query.Row{"class": "example.Checkout", "loader": "app-loader", "applied": true, "digest": "patched-digest"}, []string{"example.Checkout", "app-loader", "patched-digest"}},
+		{"jvm_trace", query.Row{"kind": "return", "class": "example.Checkout", "method": "submit", "descriptor": "(J)Z", "value": true}, []string{"return", "example.Checkout", "submit", "(J)Z"}},
+		{"sql_top_active", query.Row{"operationId": "sql/7", "api": "jdbc", "elapsedMs": 125.0, "sql": "SELECT id FROM orders"}, []string{"sql/7", "jdbc", "125", "SELECT id FROM orders"}},
 		{"prometheus", query.Row{"endpoint": "http://localhost/metrics", "health": "up", "samples": 42, "durationMs": 12.0}, []string{"http://localhost/metrics", "up", "42"}},
 		{"query", query.Row{"profile": "request-rate", "provider": "prometheus", "row": map[string]any{"value": 7}}, []string{"request-rate", "prometheus", "7"}},
 		{"process", query.Row{"pid": 123, "name": "checkout", "command": "checkout serve"}, []string{"123", "checkout", "serve"}},
@@ -50,7 +57,7 @@ var _ = Describe("styled trace records", func() {
 		{"process_facets", query.Row{"process": "123@started", "facet": "files", "operation": "open", "entity": "/orders.db"}, []string{"123@started", "files", "open", "/orders.db"}},
 	}
 
-	for _, kind := range []string{"goprof", "jvm_jfr", "process", "prometheus", "query", "sql_plancache", "sql_top", "stacks"} {
+	for _, kind := range []string{"goprof", "http_top", "jvm_jfr", "process", "prometheus", "query", "sql_plancache", "sql_top", "stacks"} {
 		examples = append(examples, example{kind: kind + "_frames", row: query.Row{"source": "worker", "completedAt": "2026-11-11T10:00:00Z", "retained": 1, "observed": 2}, contains: []string{"worker", "1/2 rows"}})
 	}
 	DescribeTableSubtree("presents native fields with a typed formatter", func(e example) {

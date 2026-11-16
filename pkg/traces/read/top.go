@@ -87,12 +87,7 @@ func Top(ctx context.Context, ref Ref, q TopQuery) (TopResult, error) {
 		return f.ID == requested[0] && (q.Source == "" || f.Source == q.Source)
 	})
 	if q.Frame == "" {
-		for i := len(frames) - 1; i >= 0; i-- {
-			if q.Source == "" || frames[i].Source == q.Source {
-				index = i
-				break
-			}
-		}
+		index = latestFrameIndex(frames, q.Source)
 	}
 	if index < 0 {
 		return TopResult{}, fmt.Errorf("sample %q for source %q not found", q.Frame, q.Source)
@@ -129,7 +124,9 @@ func Top(ctx context.Context, ref Ref, q TopQuery) (TopResult, error) {
 		seen := map[string]bool{}
 		for i := len(frames) - 1; i >= 0; i-- {
 			if !seen[frames[i].Source] {
-				selectedFrames = append(selectedFrames, frames[i])
+				if latest := latestFrameIndex(frames, frames[i].Source); latest >= 0 {
+					selectedFrames = append(selectedFrames, frames[latest])
+				}
 				seen[frames[i].Source] = true
 			}
 		}

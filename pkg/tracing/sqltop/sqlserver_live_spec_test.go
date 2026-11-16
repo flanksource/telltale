@@ -59,7 +59,7 @@ var _ = Describe("sql top on a live SQL Server", func() {
 		}).WithTimeout(10 * time.Second).Should(Equal(2))
 
 		out := &recorder{}
-		_, stop, err := handler{}.Prepare(ctx, Params{Options: Options{Connection: "connection://live"}}, out)
+		_, stop, err := prepareLiveCapture(ctx, Params{Options: Options{Connection: "connection://live"}}, out)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(stop)
 

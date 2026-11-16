@@ -1,6 +1,7 @@
 package otelreceiver
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/commons-db/recordstore/owner"
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/pkg/tracing"
@@ -59,10 +61,36 @@ func standingInfo(dataDir string) (telltale.RunInfo, bool, error) {
 	if running {
 		status = telltale.StatusRunning
 	}
+	captures, err := standingCaptures(dataDir)
+	if err != nil {
+		return telltale.RunInfo{}, false, err
+	}
 	return telltale.RunInfo{
 		Dir: filepath.Dir(lockPath(dataDir)), Status: status,
-		Captures: []telltale.CaptureResult{{Kind: spans.Kind, Ref: tracing.TraceRef{Kind: spans.Kind, Stream: stream}}},
+		Captures: captures,
 	}, true, nil
+}
+
+func standingCaptures(dataDir string) ([]telltale.CaptureResult, error) {
+	runtime, closeStore, err := openStanding(dataDir)
+	if err != nil {
+		return nil, err
+	}
+	captures := []telltale.CaptureResult{{Kind: spans.Kind, Ref: tracing.TraceRef{Kind: spans.Kind, Stream: stream}}}
+	for _, kind := range []string{"http_top", "sql_top"} {
+		meta, err := runtime.Results.Backend.Meta(context.Background(), profileStream(kind)+"-frames")
+		if errors.Is(err, recordstore.ErrNotFound) {
+			continue
+		}
+		if err != nil {
+			return nil, errors.Join(err, closeStore())
+		}
+		if meta.HighSeq > 0 {
+			storageKind := profileStorageKind(kind)
+			captures = append(captures, telltale.CaptureResult{Kind: storageKind, Ref: tracing.TraceRef{Kind: storageKind, Stream: profileStream(kind)}})
+		}
+	}
+	return captures, closeStore()
 }
 
 // receiving reports a receiver holding dataDir's store: this process, or a

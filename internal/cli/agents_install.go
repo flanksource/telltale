@@ -10,7 +10,7 @@ func newAgentInstallCommand() *cobra.Command {
 	install := &cobra.Command{Use: "install", Short: "Install a runtime agent"}
 	var o agentinstall.Options
 	java := &cobra.Command{Use: "java", Short: "Attach the Java agent to a local, Kubernetes or SSH JVM", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
-		result, err := (agentinstall.Installer{Runtime: agentinstall.Java{Home: o.JavaHome}}).Install(cmd.Context(), o)
+		result, err := (agentinstall.Installer{Runtime: agentinstall.Java{}}).Install(cmd.Context(), o)
 		if err != nil {
 			return err
 		}

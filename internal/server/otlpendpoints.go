@@ -5,13 +5,15 @@ import (
 	"net"
 	"strconv"
 	"strings"
+
+	"github.com/flanksource/telltale/pkg/otlp/profiles"
 )
 
 // otlpEndpoints is what serve prints at startup so an OpenTelemetry SDK can be
 // pointed at the receiver: both transports and the exporter variables for each.
 type otlpEndpoints struct {
 	GRPC net.Addr
-	// API is the HTTP listener; it serves OTLP/HTTP at /v1/traces.
+	// API is the HTTP listener for traces and Profiles.
 	API net.Addr
 	// Host replaces a wildcard bind address, which no exporter can dial.
 	Host string
@@ -31,7 +33,8 @@ func (e otlpEndpoints) dialable(addr net.Addr) string {
 
 func (e otlpEndpoints) String() string {
 	grpc := e.dialable(e.GRPC)
-	httpURL := "http://" + e.dialable(e.API) + "/v1/traces"
+	httpBase := "http://" + e.dialable(e.API)
+	httpURL := httpBase + "/v1/traces"
 	grpcNote, httpNote := "", ""
 	if e.GRPCAuth {
 		grpcNote = " (API token required)"
@@ -40,9 +43,10 @@ func (e otlpEndpoints) String() string {
 		httpNote = "; API token required"
 	}
 	var b strings.Builder
-	b.WriteString("Telltale OTLP traces receivers:\n")
+	b.WriteString("Telltale OTLP traces and Profiles receivers:\n")
 	fmt.Fprintf(&b, "  gRPC  %s%s\n", grpc, grpcNote)
 	fmt.Fprintf(&b, "  HTTP  %s (application/x-protobuf or application/json%s)\n", httpURL, httpNote)
+	fmt.Fprintf(&b, "  Profiles  %s/v1/profiles (OTLP-Profiles-Development-Version: %s%s)\n", httpBase, profiles.DevelopmentVersion, httpNote)
 	if e.GRPCAuth || e.HTTPAuth {
 		b.WriteString("Create an API token with: telltale agents token create <name> --scope api\n")
 	}

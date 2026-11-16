@@ -71,7 +71,7 @@ public final class ClassOperations {
     return methodPatches.compile(
         className,
         target,
-        liveBytecode(target),
+        PatchService.sourceBytes(InstrumentationService.instrumentation(), target),
         MethodSelector.parse(body.required("method")),
         body.required("source"),
         body.string("classpath"));
@@ -97,10 +97,6 @@ public final class ClassOperations {
     String probeKey = probe.required("key");
     String selector = body.required("method");
     MethodSelector.parse(selector);
-    // Read before this span's probe is opened: with it open, a live read would come back already
-    // carrying its weave, and that is not what a restore may put back.
-    byte[] original = patchService().preservedOriginal(entry);
-    ProbeWeaver weaver = ProbeWeaver.install(InstrumentationService.instrumentation());
     registerLease(body, entry, className);
     Map<String, Object> options = new LinkedHashMap<>(probe.fields());
     options.put("method", selector);
@@ -110,20 +106,20 @@ public final class ClassOperations {
       throw new IllegalStateException("cannot record " + className + ": " + opened.get("error"));
     }
 
-    // Armed by retransformation through the weaver, not by redefinition: a redefined class loses
-    // its probes to the next retransformation of it, whoever makes it (see ProbeWeaver). The weave
-    // rebuilds the class with EVERY span still recording on it — a class is rewritten whole.
+    // Armed by retransformation through ProbeTransformations, not by redefinition: a redefined
+    // class loses its probes to the next retransformation of it, whoever makes it. The rebuild
+    // weaves EVERY span still recording on the class — a class is rewritten whole.
     Map<String, Object> out;
-    ProbeWeaver.Woven woven;
+    InstrumentService.Result rewritten;
     try {
-      woven = weaver.weave(target, probeKey);
-      out = new LinkedHashMap<>(patchService().woven(entry, original, woven.getBytecode()));
+      rewritten = ProbeTransformations.arm(InstrumentationService.instrumentation(), entry, probeKey);
+      out = new LinkedHashMap<>(patchService().heldStatus(entry));
     } catch (RuntimeException e) {
       AgentBridge.releaseProbe(probeKey, entry.getLoaderHash(), className);
-      rearmSurvivors(weaver, entry, target, e);
+      rearmSurvivors(entry, target, e);
       throw e;
     }
-    out.put("methods", methodRows(woven.arming(probeKey)));
+    out.put("methods", methodRows(rewritten));
     out.put("probeKey", probeKey);
     out.put("generation", opened.get("generation"));
     out.put("capacity", opened.get("capacity"));
@@ -160,18 +156,25 @@ public final class ClassOperations {
   }
 
   /**
-   * Re-weaves the spans an earlier arm put on the class, after this arm failed. A failed weave
-   * leaves the JVM's starting bytes in place, which carry no probes at all — so one span's failure
-   * would otherwise silently disarm every other span already recording on the class.
+   * Rebuilds the class with the spans still recording on it, after this arm failed and its own
+   * probe was released. A failed rebuild leaves the JVM's starting bytes in place, which carry no
+   * probes at all — so one span's failure would otherwise silently disarm every other span already
+   * recording on the class. A rebuild that fails too travels with the arm failure, never instead of
+   * it.
    */
   private static void rearmSurvivors(
-      ProbeWeaver weaver, ClassIndex.Entry entry, Class<?> target, RuntimeException failure) {
-    if (AgentBridge.probeKeysOwnedBy(entry.getLoaderHash(), entry.getName()).isEmpty()) {
-      return;
-    }
+      ClassIndex.Entry entry, Class<?> target, RuntimeException failure) {
     try {
-      weaver.weave(target, null);
-    } catch (RuntimeException rearm) {
+      if (!ProbeTransformations.contains(target)) {
+        return;
+      }
+      List<String> remaining = AgentBridge.probeKeysOwnedBy(entry.getLoaderHash(), entry.getName());
+      if (remaining.isEmpty()) {
+        ProbeTransformations.restore(target);
+      } else {
+        ProbeTransformations.arm(InstrumentationService.instrumentation(), entry, remaining.get(0));
+      }
+    } catch (RuntimeException | LinkageError rearm) {
       failure.addSuppressed(rearm);
     }
   }
@@ -202,6 +205,7 @@ public final class ClassOperations {
       Map<String, Object> released = AgentBridge.releaseProbe(probeKey, loaderHash, className);
       List<String> stillRecording = AgentBridge.probeKeysOwnedBy(loaderHash, className);
       if (!stillRecording.isEmpty()) {
+        ProbeTransformations.arm(InstrumentationService.instrumentation(), entry, stillRecording.get(0));
         Map<String, Object> held =
             new LinkedHashMap<>(patchService().status(index, loaderHash, className));
         held.put("restored", Collections.emptyList());
@@ -210,18 +214,19 @@ public final class ClassOperations {
         held.put("probesClosed", probesClosed(released));
         return held;
       }
-      Map<String, Object> out = new LinkedHashMap<>(patchService().restore(index, entry));
+      Map<String, Object> out = new LinkedHashMap<>(patchService().restore(index,
+          new PatchService.RestoreRequest(entry, PatchService.RestoreScope.PROBES)));
       out.put("released", probeKey);
       out.put("heldBy", Collections.emptyList());
       out.put("probesClosed", probesClosed(released));
       return out;
     }
 
-    // Closed FIRST: the restore is itself a class rebuild, and ProbeWeaver re-applies every probe
-    // still open on the class to whatever bytes a rebuild installs.
-    List<Map<String, Object>> probesClosed = AgentBridge.closeProbesOwnedBy(loaderHash, className);
-    Map<String, Object> out = new LinkedHashMap<>(patchService().restore(index, entry));
-    out.put("probesClosed", probesClosed);
+    boolean sourceOnly = body.string("source") != null;
+    List<Map<String, Object>> closed = sourceOnly ? Collections.emptyList() : AgentBridge.closeProbesOwnedBy(loaderHash, className);
+    Map<String, Object> out = new LinkedHashMap<>(patchService().restore(index,
+        new PatchService.RestoreRequest(entry, sourceOnly ? PatchService.RestoreScope.SOURCE : PatchService.RestoreScope.ALL)));
+    out.put("probesClosed", closed);
     return out;
   }
 
@@ -235,6 +240,11 @@ public final class ClassOperations {
   public synchronized Map<String, Object> lease(JsonBody body) throws IOException {
     String className = body.required("class");
     ClassIndex.Entry entry = index().resolveForWrite(className, body.string("loader"));
+    Map<String, Object> held = patchService().heldStatus(entry);
+    String probeKey = body.optionalObject("probe").string("key");
+    if (body.string("source") != null) held.put("patched", SourceTransformations.contains(liveClass(entry, className)));
+    if (probeKey != null) held.put("patched", AgentBridge.probeKeysOwnedBy(entry.getLoaderHash(), className).contains(probeKey));
+    if (!Boolean.TRUE.equals(held.get("patched"))) return held;
     AgentBridge.lease(entry.getLoaderHash(), className, body.integer("seconds"));
     return patchService().heldStatus(entry);
   }

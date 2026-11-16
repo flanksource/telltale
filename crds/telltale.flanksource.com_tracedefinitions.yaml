@@ -134,10 +134,24 @@ spec:
                                   type: boolean
                               title: Agent
                               type: object
+                            bodies:
+                              description: Retained bytes of each body default 256KiB
+                                maximum 4MiB; zero keeps none
+                              title: Bodies
+                              type: string
                             dedupWindow:
                               description: Store an identical exchange only once within
                                 this duration such as 1h
                               title: Dedup window
+                              type: string
+                            direction:
+                              default: both
+                              description: Incoming requests outgoing clients or both
+                              enum:
+                              - incoming
+                              - outgoing
+                              - both
+                              title: Direction
                               type: string
                             features:
                               description: 'Telltale''s transports to observe by their
@@ -147,11 +161,32 @@ spec:
                               title: Features
                               type: array
                               x-kubernetes-list-type: atomic
+                            hosts:
+                              description: Host globs to record
+                              items:
+                                type: string
+                              title: Hosts
+                              type: array
+                              x-kubernetes-list-type: atomic
                             name:
                               description: Names the capture's session; empty takes
                                 <definition>-<section>-<group>-<type>-<n>
                               title: Name
                               type: string
+                            paths:
+                              description: URL path globs to record
+                              items:
+                                type: string
+                              title: Paths
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            redact:
+                              description: Additional header names to redact
+                              items:
+                                type: string
+                              title: Redact headers
+                              type: array
+                              x-kubernetes-list-type: atomic
                           required:
                           - features
                           type: object
@@ -386,10 +421,24 @@ spec:
                                   type: boolean
                               title: Agent
                               type: object
+                            bodies:
+                              description: Retained bytes of each body default 256KiB
+                                maximum 4MiB; zero keeps none
+                              title: Bodies
+                              type: string
                             dedupWindow:
                               description: Store an identical exchange only once within
                                 this duration such as 1h
                               title: Dedup window
+                              type: string
+                            direction:
+                              default: both
+                              description: Incoming requests outgoing clients or both
+                              enum:
+                              - incoming
+                              - outgoing
+                              - both
+                              title: Direction
                               type: string
                             features:
                               description: 'Telltale''s transports to observe by their
@@ -399,11 +448,32 @@ spec:
                               title: Features
                               type: array
                               x-kubernetes-list-type: atomic
+                            hosts:
+                              description: Host globs to record
+                              items:
+                                type: string
+                              title: Hosts
+                              type: array
+                              x-kubernetes-list-type: atomic
                             name:
                               description: Names the capture's session; empty takes
                                 <definition>-<section>-<group>-<type>-<n>
                               title: Name
                               type: string
+                            paths:
+                              description: URL path globs to record
+                              items:
+                                type: string
+                              title: Paths
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            redact:
+                              description: Additional header names to redact
+                              items:
+                                type: string
+                              title: Redact headers
+                              type: array
+                              x-kubernetes-list-type: atomic
                           required:
                           - features
                           type: object
@@ -1152,6 +1222,7 @@ spec:
                           properties:
                             connection:
                               description: Postgres or SQL Server connection reference
+                                for the database seam
                               title: Connection
                               type: string
                             databases:
@@ -2589,6 +2660,7 @@ spec:
                           properties:
                             connection:
                               description: Postgres or SQL Server connection reference
+                                for the database seam
                               title: Connection
                               type: string
                             databases:
@@ -2704,10 +2776,24 @@ spec:
                                   type: boolean
                               title: Agent
                               type: object
+                            bodies:
+                              description: Retained bytes of each body default 256KiB
+                                maximum 4MiB; zero keeps none
+                              title: Bodies
+                              type: string
                             dedupWindow:
                               description: Store an identical exchange only once within
                                 this duration such as 1h
                               title: Dedup window
+                              type: string
+                            direction:
+                              default: both
+                              description: Incoming requests outgoing clients or both
+                              enum:
+                              - incoming
+                              - outgoing
+                              - both
+                              title: Direction
                               type: string
                             features:
                               description: 'Telltale''s transports to observe by their
@@ -2717,11 +2803,32 @@ spec:
                               title: Features
                               type: array
                               x-kubernetes-list-type: atomic
+                            hosts:
+                              description: Host globs to record
+                              items:
+                                type: string
+                              title: Hosts
+                              type: array
+                              x-kubernetes-list-type: atomic
                             name:
                               description: Names the capture's session; empty takes
                                 <definition>-<section>-<group>-<type>-<n>
                               title: Name
                               type: string
+                            paths:
+                              description: URL path globs to record
+                              items:
+                                type: string
+                              title: Paths
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            redact:
+                              description: Additional header names to redact
+                              items:
+                                type: string
+                              title: Redact headers
+                              type: array
+                              x-kubernetes-list-type: atomic
                           required:
                           - features
                           type: object
@@ -3155,6 +3262,214 @@ spec:
                         title: Flight Recorder
                         type: array
                         x-kubernetes-list-type: atomic
+                      http:
+                        items:
+                          properties:
+                            agent:
+                              description: Read through a connected agent instead
+                                of the execution's process
+                              nullable: true
+                              properties:
+                                id:
+                                  title: Agent ID
+                                  type: string
+                                selector:
+                                  additionalProperties:
+                                    type: string
+                                  description: Agent resource attributes to match
+                                  title: Selector
+                                  type: object
+                                wait:
+                                  description: Wait for a matching agent to connect
+                                  title: Wait
+                                  type: boolean
+                              title: Agent
+                              type: object
+                            bodies:
+                              description: Retained bytes of each body default 256KiB
+                                maximum 4MiB; zero keeps none
+                              title: Bodies
+                              type: string
+                            dedupWindow:
+                              description: Store an identical exchange only once within
+                                this duration such as 1h
+                              title: Dedup window
+                              type: string
+                            direction:
+                              default: both
+                              description: Incoming requests outgoing clients or both
+                              enum:
+                              - incoming
+                              - outgoing
+                              - both
+                              title: Direction
+                              type: string
+                            features:
+                              description: 'Telltale''s transports to observe by their
+                                HAR level: http prometheus loki opensearch git ...'
+                              items:
+                                type: string
+                              title: Features
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            hosts:
+                              description: Host globs to record
+                              items:
+                                type: string
+                              title: Hosts
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            name:
+                              description: Names the capture's session; empty takes
+                                <definition>-<section>-<group>-<type>-<n>
+                              title: Name
+                              type: string
+                            paths:
+                              description: URL path globs to record
+                              items:
+                                type: string
+                              title: Paths
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            redact:
+                              description: Additional header names to redact
+                              items:
+                                type: string
+                              title: Redact headers
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          required:
+                          - features
+                          type: object
+                        title: HTTP exchanges
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      httpTop:
+                        items:
+                          properties:
+                            agent:
+                              description: Read through a connected agent instead
+                                of the execution's process
+                              nullable: true
+                              properties:
+                                id:
+                                  title: Agent ID
+                                  type: string
+                                selector:
+                                  additionalProperties:
+                                    type: string
+                                  description: Agent resource attributes to match
+                                  title: Selector
+                                  type: object
+                                wait:
+                                  description: Wait for a matching agent to connect
+                                  title: Wait
+                                  type: boolean
+                              title: Agent
+                              type: object
+                            direction:
+                              default: both
+                              description: Incoming requests outgoing clients or both
+                              enum:
+                              - incoming
+                              - outgoing
+                              - both
+                              title: Direction
+                              type: string
+                            hosts:
+                              description: Host globs to record
+                              items:
+                                type: string
+                              title: Hosts
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            minElapsed:
+                              description: Only show requests running at least this
+                                long
+                              title: Minimum elapsed
+                              type: string
+                            name:
+                              description: Names the capture's session; empty takes
+                                <definition>-<section>-<group>-<type>-<n>
+                              title: Name
+                              type: string
+                            paths:
+                              description: URL path globs to record
+                              items:
+                                type: string
+                              title: Paths
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            poll:
+                              description: Sampling interval such as 5s
+                              title: Poll
+                              type: string
+                            top:
+                              description: Maximum active requests per sample; default
+                                50
+                              format: int32
+                              title: Top
+                              type: integer
+                          type: object
+                        title: Active HTTP exchanges
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      jms:
+                        items:
+                          properties:
+                            agent:
+                              description: Read through a connected agent instead
+                                of the execution's process
+                              nullable: true
+                              properties:
+                                id:
+                                  title: Agent ID
+                                  type: string
+                                selector:
+                                  additionalProperties:
+                                    type: string
+                                  description: Agent resource attributes to match
+                                  title: Selector
+                                  type: object
+                                wait:
+                                  description: Wait for a matching agent to connect
+                                  title: Wait
+                                  type: boolean
+                              title: Agent
+                              type: object
+                            body:
+                              description: Capture bounded text bodies without consuming
+                                stream cursors or deserializing objects
+                              title: Message bodies
+                              type: boolean
+                            capacity:
+                              format: int32
+                              title: Buffer capacity
+                              type: integer
+                            destinations:
+                              description: Exact queue or topic names to observe;
+                                empty observes all
+                              items:
+                                type: string
+                              title: Destinations
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            direction:
+                              title: Direction
+                              type: string
+                            maxBodyBytes:
+                              format: int32
+                              title: Body byte limit
+                              type: integer
+                            name:
+                              description: Names the capture's session; empty takes
+                                <definition>-<section>-<group>-<type>-<n>
+                              title: Name
+                              type: string
+                          type: object
+                        title: JMS operations
+                        type: array
+                        x-kubernetes-list-type: atomic
                       methods:
                         items:
                           properties:
@@ -3386,6 +3701,158 @@ spec:
                           - source
                           type: object
                         title: Redefine Java code
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      spans:
+                        items:
+                          properties:
+                            agent:
+                              description: Read through a connected agent instead
+                                of the execution's process
+                              nullable: true
+                              properties:
+                                id:
+                                  title: Agent ID
+                                  type: string
+                                selector:
+                                  additionalProperties:
+                                    type: string
+                                  description: Agent resource attributes to match
+                                  title: Selector
+                                  type: object
+                                wait:
+                                  description: Wait for a matching agent to connect
+                                  title: Wait
+                                  type: boolean
+                              title: Agent
+                              type: object
+                            name:
+                              description: Names the capture's session; empty takes
+                                <definition>-<section>-<group>-<type>-<n>
+                              title: Name
+                              type: string
+                          type: object
+                        title: Existing OTel spans
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      sql:
+                        items:
+                          properties:
+                            agent:
+                              description: Read through a connected agent instead
+                                of the execution's process
+                              nullable: true
+                              properties:
+                                id:
+                                  title: Agent ID
+                                  type: string
+                                selector:
+                                  additionalProperties:
+                                    type: string
+                                  description: Agent resource attributes to match
+                                  title: Selector
+                                  type: object
+                                wait:
+                                  description: Wait for a matching agent to connect
+                                  title: Wait
+                                  type: boolean
+                              title: Agent
+                              type: object
+                            connections:
+                              default:
+                              - '*'
+                              description: JVM connection identities to observe; *
+                                selects every observed connection
+                              items:
+                                type: string
+                              title: Connections
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            minDuration:
+                              description: Record only statements that ran at least
+                                this long such as 100ms
+                              title: Minimum duration
+                              type: string
+                            name:
+                              description: Names the capture's session; empty takes
+                                <definition>-<section>-<group>-<type>-<n>
+                              title: Name
+                              type: string
+                          type: object
+                        title: SQL executions
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      sqlTop:
+                        items:
+                          properties:
+                            agent:
+                              description: Read through a connected agent instead
+                                of the execution's process
+                              nullable: true
+                              properties:
+                                id:
+                                  title: Agent ID
+                                  type: string
+                                selector:
+                                  additionalProperties:
+                                    type: string
+                                  description: Agent resource attributes to match
+                                  title: Selector
+                                  type: object
+                                wait:
+                                  description: Wait for a matching agent to connect
+                                  title: Wait
+                                  type: boolean
+                              title: Agent
+                              type: object
+                            connection:
+                              description: Postgres or SQL Server connection reference
+                                for the database seam
+                              title: Connection
+                              type: string
+                            databases:
+                              description: Database patterns with * wildcards and
+                                ! exclusions; empty keeps every database
+                              items:
+                                type: string
+                              title: Databases
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            idle:
+                              description: Also record idle sessions; sessions holding
+                                an open transaction are always recorded
+                              title: Idle sessions
+                              type: boolean
+                            minElapsed:
+                              description: Only record requests running at least this
+                                long such as 500ms
+                              title: Minimum elapsed
+                              type: string
+                            name:
+                              description: Names the capture's session; empty takes
+                                <definition>-<section>-<group>-<type>-<n>
+                              title: Name
+                              type: string
+                            poll:
+                              description: Poll interval such as 5s
+                              title: Poll
+                              type: string
+                            text:
+                              description: SQL text patterns with * wildcards and
+                                ! exclusions; bare values match substrings
+                              items:
+                                type: string
+                              title: Statement text
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            top:
+                              description: Maximum requests per poll ranked by elapsed
+                                time; defaults to 50
+                              format: int32
+                              title: Top
+                              type: integer
+                          type: object
+                        title: Active SQL executions
                         type: array
                         x-kubernetes-list-type: atomic
                     title: JVM

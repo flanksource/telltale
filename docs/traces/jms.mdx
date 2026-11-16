@@ -1,0 +1,32 @@
+# jms
+
+import { KindReference } from '../_components/KindReference';
+
+Records incoming and outgoing JMS operations inside an attached JVM: producer sends, consumer receive waits, and message processing. Spring templates and annotated listeners use the same capture. Records preserve each stage separately, including outgoing replies and redelivery attempts.
+
+```bash
+telltale run jms --agent java/checkout --allow-mutation --direction both --duration 1m
+```
+
+Message bodies are disabled by default. Records include available destination, message and correlation IDs, redelivery state, duration, outcome, exception phase, Spring handler, and existing trace correlation. Missing metadata stays absent. The observer never acknowledges messages, changes transactions, deserializes object messages, or consumes message-body cursors.
+
+An asynchronous send completes at its completion callback or synchronous failure. Successful send completion does not prove broker delivery or transaction commit. Listener failures handled by Spring remain observable, and receive timeouts are distinguished from successful message receipt. Provider metadata that cannot be observed appears in `metadataErrors`; incomplete operations retain an explicit outcome.
+
+Outcomes distinguish `success`, `error`, `timeout`, and `incomplete`. Unsupported body representations are reported as `bodyUnsupported`, and failures reading optional metadata appear in `metadataErrors` rather than silently replacing values.
+
+The JVM bounds active operations and pending asynchronous messages at 8,192 each. Exceeding either limit fails the capture explicitly.
+
+```yaml
+apiVersion: telltale.flanksource.com/v1alpha1
+kind: TraceDefinition
+metadata: {name: queue-traffic}
+spec:
+  instrument:
+    jvm:
+      jms:
+        - agent: {selector: {service.name: checkout}, wait: true}
+          direction: both
+          destinations: [orders]
+```
+
+<KindReference kind="jms" />

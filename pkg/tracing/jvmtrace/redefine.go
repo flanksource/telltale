@@ -71,10 +71,10 @@ func (h redefine) Checkpoint(ctx dbcontext.Context, _ RedefineParams, out tracin
 	return h.agent.Checkpoint(ctx, raw, out)
 }
 func NewRedefineKind(registry *agentclient.Registry) *tracing.Handler[RedefineParams, Patch] {
-	agent := seam.AgentSeam[RedefineParams, Patch]{Probe: RedefineKind, Registry: registry, Target: func(p RedefineParams) target.Target { return p.Target }, Mutates: func(RedefineParams) bool { return true }, ArmParams: func(p RedefineParams) (json.RawMessage, error) { return json.Marshal(p.RedefineOptions) }, DecodeBlob: func(b agentclient.Blob, r map[string]string) ([]Patch, error) {
+	agent := seam.AgentSeam[RedefineParams, Patch]{Probe: RedefineKind, Registry: registry, Target: func(p RedefineParams) target.Target { return p.Target }, Mutates: func(RedefineParams) bool { return true }, ArmParams: func(p RedefineParams) (json.RawMessage, error) { return json.Marshal(p.RedefineOptions) }, DecodeBlob: func(b agentclient.Blob, r map[string]string) (seam.DecodedBlob[Patch], error) {
 		var rows []Patch
 		err := json.Unmarshal(b.Data, &rows)
-		return rows, err
+		return seam.DecodedBlob[Patch]{Rows: rows}, err
 	}}
 	return tracing.NewHandler[RedefineParams, Patch](redefine{agent: agent}, tracing.Capabilities{Live: true}, target.Agent)
 }

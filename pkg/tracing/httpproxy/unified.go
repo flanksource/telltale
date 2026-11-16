@@ -19,8 +19,9 @@ import (
 
 type UnifiedParams struct {
 	Params
-	Features      []string `json:"features,omitempty" clicky:"title=Features,desc=HTTP features to observe"`
-	DedupWindow   string   `json:"dedupWindow,omitempty" clicky:"title=Dedup window,desc=Store identical exchanges only once within this duration"`
+	Direction     tracehttp.Direction `json:"direction,omitempty" clicky:"title=Direction,desc=Incoming requests outgoing clients or both"`
+	Features      []string            `json:"features,omitempty" clicky:"title=Features,desc=HTTP features to observe"`
+	DedupWindow   string              `json:"dedupWindow,omitempty" clicky:"title=Dedup window,desc=Store identical exchanges only once within this duration"`
 	dedupDuration time.Duration
 }
 
@@ -30,7 +31,7 @@ var (
 )
 
 func (p UnifiedParams) httpParams() tracehttp.Params {
-	return tracehttp.Params{Options: tracehttp.Options{Features: p.Features, DedupWindow: p.DedupWindow}, Target: p.Target}
+	return tracehttp.Params{Options: tracehttp.Options{Selection: tracehttp.Selection{Direction: p.Direction, Hosts: p.Hosts, Paths: p.Paths}, Bodies: p.Bodies, Redact: p.Redact, Features: p.Features, DedupWindow: p.DedupWindow}, Target: p.Target}
 }
 
 func (p *UnifiedParams) ValidateInput(raw json.RawMessage) error {

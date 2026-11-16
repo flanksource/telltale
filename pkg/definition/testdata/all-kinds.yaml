@@ -34,6 +34,22 @@ spec:
       pprof:
         - profile: mutex
     jvm:
+      http:
+        - agent: {selector: {service.name: example}}
+          features: [http]
+      httpTop:
+        - agent: {selector: {service.name: example}}
+          direction: both
+      sql:
+        - agent: {selector: {service.name: example}}
+      sqlTop:
+        - agent: {selector: {service.name: example}}
+          poll: 5s
+      jms:
+        - agent: {selector: {service.name: example}}
+          direction: both
+      spans:
+        - agent: {selector: {service.name: example}}
       notifications:
         - agent: {selector: {service.name: example}}
           mbean: 'java.lang:type=GarbageCollector,*'

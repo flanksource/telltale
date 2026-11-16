@@ -108,35 +108,35 @@ func (h diagnostic[P, R]) Checkpoint(ctx dbcontext.Context, _ P, out tracing.Emi
 }
 
 func NewNotificationKind(registry *agentclient.Registry) *tracing.Handler[NotificationParams, Notification] {
-	agent := seam.AgentSeam[NotificationParams, Notification]{Probe: NotificationsKind, Registry: registry, Target: func(p NotificationParams) target.Target { return p.Target }, Mutates: func(NotificationParams) bool { return false }, ArmParams: func(p NotificationParams) (json.RawMessage, error) { return json.Marshal(p.NotificationOptions) }, DecodeBlob: func(b agentclient.Blob, resource map[string]string) ([]Notification, error) {
+	agent := seam.AgentSeam[NotificationParams, Notification]{Probe: NotificationsKind, Registry: registry, Target: func(p NotificationParams) target.Target { return p.Target }, Mutates: func(NotificationParams) bool { return false }, ArmParams: func(p NotificationParams) (json.RawMessage, error) { return json.Marshal(p.NotificationOptions) }, DecodeBlob: func(b agentclient.Blob, resource map[string]string) (seam.DecodedBlob[Notification], error) {
 		if b.Info.ContentType != "application/json" {
-			return nil, fmt.Errorf("notifications require application/json")
+			return seam.DecodedBlob[Notification]{}, fmt.Errorf("notifications require application/json")
 		}
 		var rows []Notification
 		if err := json.Unmarshal(b.Data, &rows); err != nil {
-			return nil, err
+			return seam.DecodedBlob[Notification]{}, err
 		}
 		for i := range rows {
 			rows[i].Timestamp = time.UnixMilli(rows[i].TimeStamp).UTC()
 			rows[i].Resource = resource
 		}
-		return rows, nil
+		return seam.DecodedBlob[Notification]{Rows: rows}, nil
 	}}
 	return tracing.NewHandler[NotificationParams, Notification](diagnostic[NotificationParams, Notification]{agent: agent, defaults: NotificationParams{NotificationOptions: NotificationOptions{MBean: "java.lang:type=GarbageCollector,*", Capacity: 500}}, schema: recordresults.ResultType[Notification]{Title: "JMX notifications and GC", TimeColumn: "timestamp", Follow: true, SearchColumns: []string{"type", "source", "message"}}}, tracing.Capabilities{Live: true}, target.Agent)
 }
 func NewExpressionKind(registry *agentclient.Registry) *tracing.Handler[ExpressionParams, Expression] {
-	agent := seam.AgentSeam[ExpressionParams, Expression]{Probe: ExpressionKind, Registry: registry, Target: func(p ExpressionParams) target.Target { return p.Target }, Mutates: func(ExpressionParams) bool { return true }, ArmParams: func(p ExpressionParams) (json.RawMessage, error) { return json.Marshal(p.ExpressionOptions) }, DecodeBlob: func(b agentclient.Blob, resource map[string]string) ([]Expression, error) {
+	agent := seam.AgentSeam[ExpressionParams, Expression]{Probe: ExpressionKind, Registry: registry, Target: func(p ExpressionParams) target.Target { return p.Target }, Mutates: func(ExpressionParams) bool { return true }, ArmParams: func(p ExpressionParams) (json.RawMessage, error) { return json.Marshal(p.ExpressionOptions) }, DecodeBlob: func(b agentclient.Blob, resource map[string]string) (seam.DecodedBlob[Expression], error) {
 		if b.Info.ContentType != "application/json" {
-			return nil, fmt.Errorf("expressions require application/json")
+			return seam.DecodedBlob[Expression]{}, fmt.Errorf("expressions require application/json")
 		}
 		var rows []Expression
 		if err := json.Unmarshal(b.Data, &rows); err != nil {
-			return nil, err
+			return seam.DecodedBlob[Expression]{}, err
 		}
 		for i := range rows {
 			rows[i].Resource = resource
 		}
-		return rows, nil
+		return seam.DecodedBlob[Expression]{Rows: rows}, nil
 	}}
 	return tracing.NewHandler[ExpressionParams, Expression](diagnostic[ExpressionParams, Expression]{agent: agent, defaults: ExpressionParams{ExpressionOptions: ExpressionOptions{IntervalMs: 1000}}, schema: recordresults.ResultType[Expression]{Title: "OGNL samples", TimeColumn: "timestamp", Follow: true, SearchColumns: []string{"expression"}}}, tracing.Capabilities{Live: true}, target.Agent)
 }

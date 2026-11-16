@@ -69,6 +69,7 @@ func routes(options HandlerOptions, ui http.Handler) (http.Handler, error) {
 		options.OTLP = http.NotFoundHandler()
 	}
 	root.Handle("/v1/traces", options.OTLP)
+	root.Handle("/v1/profiles", options.OTLP)
 	installer := http.NewServeMux()
 	rpc.NewSwaggerServer(&rpc.ServeConfig{Version: options.Version, Executor: &rpc.ExecutorConfig{Enabled: true}}, options.Root, nil).
 		RegisterExecutionRoutes(route.NewRouter(installer))

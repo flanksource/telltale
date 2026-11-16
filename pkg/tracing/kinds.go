@@ -13,6 +13,7 @@ import (
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
+	"github.com/flanksource/telltale/pkg/otlp/profilepublication"
 )
 
 // KindInfo describes one registered kind.
@@ -187,7 +188,7 @@ func (k *Kinds) RegisterResultTypes(registry *recordresults.Registry) error {
 			return fmt.Errorf("trace kind %q: %w", name, err)
 		}
 	}
-	return nil
+	return recordresults.RegisterResultType(registry, profilepublication.ResultType())
 }
 
 func (k *Kinds) names() []string {

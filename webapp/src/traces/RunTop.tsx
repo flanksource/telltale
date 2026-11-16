@@ -6,9 +6,10 @@ import type { ClickyDocument, ClickyRow } from "@flanksource/clicky-ui/clicky";
 import { failure, fetchTraceKinds, traceRecordsUrl, type CaptureResult, type RunTraces, type TraceKindInfo } from "./api";
 import { recordQueryColumns, type RecordProfileColumn } from "./recordQuery";
 import { TopRowDetail } from "./TopRowDetail";
+import { ProfileSnapshotStatus } from "./ProfileSnapshotStatus";
 
 interface SampleState extends TopViewState { selected: string; kind: string; stream: string; sort: string; desc: boolean; filters: DataTableFilterSelection }
-interface TopResponse { selection: string; frame: SampleFrame; frames?: SampleFrame[]; table: ClickyDocument; hierarchy?: WeightedHierarchy; metric?: string; metrics?: NonNullable<TraceKindInfo["top"]>["metrics"]; count: number; nextCursor?: string }
+interface TopResponse { selection: string; frame: SampleFrame; frames?: SampleFrame[]; rows: Record<string,unknown>[]; table: ClickyDocument; hierarchy?: WeightedHierarchy; metric?: string; metrics?: NonNullable<TraceKindInfo["top"]>["metrics"]; count: number; nextCursor?: string }
 
 function readState(): SampleState {
   const params = new URLSearchParams(window.location.search);
@@ -60,12 +61,22 @@ function CaptureTop({ run, capture, info, state, onChange }: { run: RunTraces; c
   const result = useQuery({ queryKey: ["sample-top", run.runId, capture.ref.stream, scope, cursor], queryFn: ({ signal }) => loadJSON<TopResponse>(url.pathname + url.search, signal), refetchInterval: live ? 1000 : false, placeholderData: keepPreviousData, retry: false });
   const config = serverFiltersToFilterBar(recordQueryColumns(schema.data?.columns ?? []), state.filters, next => onChange({ filters: typeof next === "function" ? next(state.filters) : next }));
   const data=result.data;
-  const rowID = (row: ClickyRow) => JSON.stringify((info.top?.identity?.length ? info.top.identity : ["seq"]).map(key => row.cells[key]?.filterValue));
+  const statusFrames = live ? (frames.data ?? []).filter(frame => !state.source || frame.source === state.source) : data?.frames ?? (data ? [data.frame] : []);
+  const rowID = (row: ClickyRow) => {
+    const raw = data?.rows.find(value => value.seq === row.cells.seq?.filterValue);
+    if (!raw) throw new Error("Top row is missing its source values");
+    return JSON.stringify((info.top?.identity?.length ? info.top.identity : ["seq"]).map(key => {
+      if (raw[key] === undefined || raw[key] === null) throw new Error(`Top row is missing identity ${key}`);
+      return raw[key];
+    }));
+  };
   const change = (next: Partial<SampleState>) => {
     if (next.frame !== undefined || next.paused !== undefined) { setCursor(""); setPrevious([]); }
     onChange(next.paused === true && result.data ? { ...next, frame: result.data.selection } : next.paused === false ? { ...next, frame: "" } : next);
   };
-  return <TopView frames={frames.data ?? []} perSource={!!info.top?.perSource} metrics={result.data?.metrics ?? info.top?.metrics ?? []} state={state} onChange={change} onRefresh={() => { void result.refetch(); void frames.refetch(); }} loading={result.isFetching}
+  return <>
+    <ProfileSnapshotStatus frames={statusFrames} live={live} />
+    <TopView frames={frames.data ?? []} perSource={!!info.top?.perSource} metrics={result.data?.metrics ?? info.top?.metrics ?? []} state={state} onChange={change} onRefresh={() => { void result.refetch(); void frames.refetch(); }} loading={result.isFetching}
     {...(result.data ? { frame: result.data.frame, table: result.data.table } : {})} {...(result.data?.hierarchy ? { hierarchy: result.data.hierarchy } : {})}
     {...(result.data?.frames ? {selectedFrames:result.data.frames} : {})}
     {...(result.error || frames.error || schema.error ? { error: (result.error ?? frames.error ?? schema.error)!.message } : {})}
@@ -78,7 +89,8 @@ function CaptureTop({ run, capture, info, state, onChange }: { run: RunTraces; c
         if (page < previous.length) { setCursor(previous[page] ?? ""); setPrevious(previous.slice(0, page)); }
         else if (result.data?.nextCursor) { setPrevious([...previous, cursor]); setCursor(result.data.nextCursor); onChange({ frame: result.data.selection, paused: true }); }
       } },
-    }} />;
+    }} />
+  </>;
 }
 
 export function RunTop({ run }: { run: RunTraces }) {

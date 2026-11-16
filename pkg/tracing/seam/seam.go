@@ -20,8 +20,12 @@ import (
 	"github.com/flanksource/telltale/sdk/protocol"
 )
 
+type DecodedBlob[R any] struct {
+	Rows  []R
+	Frame *sampleframe.Frame
+}
+
 type AgentSeam[P, R any] struct {
-	SampledBlobs bool
 	Probe        string
 	Dir          string
 	Registry     *agentclient.Registry
@@ -32,7 +36,8 @@ type AgentSeam[P, R any] struct {
 	// before anything is armed; nil accepts every agent advertising the probe.
 	Compatible   func(P, protocol.ProbeSpec) error
 	DecodeRecord func(json.RawMessage) (R, error)
-	DecodeBlob   func(agentclient.Blob, map[string]string) ([]R, error)
+	DecodeBlob   func(agentclient.Blob, map[string]string) (DecodedBlob[R], error)
+	HandleBlob   func(context.Context, agentclient.Blob, map[string]string, tracing.Emitter[R]) error
 	CommitBlob   func(agentclient.Blob) error
 }
 
@@ -299,16 +304,18 @@ func (s AgentSeam[P, R]) Window(ctx context.Context, params P, raw json.RawMessa
 }
 
 func (s AgentSeam[P, R]) blob(ctx context.Context, blob agentclient.Blob, resource map[string]string, out tracing.Emitter[R]) error {
-	startedAt := time.Now().UTC()
+	if s.HandleBlob != nil {
+		return s.HandleBlob(ctx, blob, resource, out)
+	}
 	if s.DecodeBlob == nil {
 		return fmt.Errorf("probe %s has no blob decoder", s.Probe)
 	}
-	rows, err := s.DecodeBlob(blob, resource)
+	decoded, err := s.DecodeBlob(blob, resource)
 	if err != nil {
 		return err
 	}
-	if s.SampledBlobs {
-		if err := tracing.PublishFrame(ctx, out, sampleframe.Frame{Source: resource["telltale.agent.id"] + "/" + resource["process.pid"] + "/" + blob.Info.Name, StartedAt: startedAt, CompletedAt: time.Now().UTC(), Observed: len(rows)}, rows); err != nil {
+	if decoded.Frame != nil {
+		if err := tracing.PublishFrame(ctx, out, *decoded.Frame, decoded.Rows); err != nil {
 			return err
 		}
 		if s.CommitBlob != nil {
@@ -316,7 +323,7 @@ func (s AgentSeam[P, R]) blob(ctx context.Context, blob agentclient.Blob, resour
 		}
 		return nil
 	}
-	for _, row := range rows {
+	for _, row := range decoded.Rows {
 		if err := out.Emit(ctx, row); err != nil {
 			return err
 		}

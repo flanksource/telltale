@@ -25,6 +25,6 @@ export function TopRowDetail({raw,table,mount,capture,selection,relation}:{raw:R
     {!!id && !linked && <Button variant="outline" size="sm" loading={loading} onClick={()=>void openRelated()}>Open {relation?.label.toLowerCase()} {String(id)}</Button>}
     {linked && <Button variant="ghost" size="sm" onClick={()=>setLinked(null)}>Back to selected row</Button>}
     {message && <p role="status">{message}</p>}
-    {node && <ClickyNodeView node={node} />}
+    <ClickyNodeView node={node ?? linked?.node ?? {kind:"code",language:"json",source:JSON.stringify(raw,null,2)}} />
   </div>;
 }

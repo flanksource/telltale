@@ -72,6 +72,14 @@ func placeCapture(spec *Spec, capture telltale.RequestedCapture) (Located, error
 	if own := slices.DeleteFunc(slices.Clone(matches), func(at Located) bool { return at.Preset }); len(own) > 0 {
 		matches = own
 	}
+	if len(matches) > 1 {
+		preferred := slices.DeleteFunc(slices.Clone(matches), func(at Located) bool {
+			return (at.Section == SectionInstrument) != capture.Target.AllowMutation
+		})
+		if len(preferred) > 0 {
+			matches = preferred
+		}
+	}
 	switch {
 	case len(tried) == 0:
 		return Located{}, unarmable(capture)

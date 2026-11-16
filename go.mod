@@ -48,6 +48,7 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/ulikunitz/xz v0.5.15
 	go.opentelemetry.io/collector/pdata v1.69.0
+	go.opentelemetry.io/collector/pdata/pprofile v0.163.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.70.0
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.47.0

@@ -28,6 +28,7 @@ public final class BytecodeSource {
   }
 
   public byte[] bytecodeOf(Class<?> target) {
+    com.flanksource.telltale.observer.ObserverRuntime.assertTargetActive(target);
     if (!instrumentation.isRetransformClassesSupported()) {
       throw new IllegalStateException(
           "this JVM does not support class retransformation,"

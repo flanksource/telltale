@@ -4,7 +4,7 @@ Telltale includes the generic diagnostic services ported from `oipa-cli` revisio
 
 ## Build and install
 
-`make build` creates the embedded agent at `pkg/agentinstall/java/assets/telltale-agent.jar` and three artifacts in `sdk/java/build/libs`: `telltale-diag.war`, `telltale-extension-api.jar` and `telltale-example-extension.jar`. Runtime classes target Java 8. CI tests Java 8, 11, 17 and 21. The WAR uses `javax.servlet` and requires Servlet 3.1+ (for example, Tomcat 9).
+`make build` creates the embedded agent at `pkg/agentinstall/java/assets/telltale-agent.jar` and three artifacts in `sdk/java/build/libs`: `telltale-diag.war`, `telltale-extension-api.jar` and `telltale-example-extension.jar`. Runtime classes target Java 8. CI tests Java 8, 11, 17, 21 and 25. The WAR uses `javax.servlet` and requires Servlet 3.1+ (for example, Tomcat 9).
 
 Substitute a disposable application's PID and absolute target-host directories:
 
@@ -83,6 +83,8 @@ Captures share the existing run API, definitions, checkpoints and record stores:
 | `jvm_redefine` | Replacement source for a capture | `class`, optional `method`/`loader`, `source`, optional `classpath` |
 | `jvm_notifications` | JMX notifications and decoded GC | `mbean` name/pattern, optional `types` prefixes and `capacity` (default 500, maximum 50,000) |
 | `jvm_ognl` | Periodic expression samples | `expression`, optional `loader`, `intervalMs` (default 1,000, minimum 100) |
+
+`jvm_redefine` requires a verifiable local `CodeSource` class artifact matching the selected runtime logical method after Telltale hooks are excluded, or an exact previously coordinated Telltale source body. Unverifiable origins and uncoordinated foreign bytecode changes to that method are rejected before mutation, with the class and descriptor in the error; opaque advice stays intact. Stopping a source capture preserves generic method traces, and stopping a trace preserves source edits. Manual class restoration and lease expiry still clear all coordinated edits and method probes for that class.
 
 ```bash
 telltale jvm trace --agent 1234 --allow-mutation --duration 10s --targets '[{"class":"example.Worker","method":"compute"}]'
@@ -221,6 +223,14 @@ For an interactive local demo, first run `make build`, then:
 gavel fixtures examples/jvm-diagnostics.fixture.yaml --ui --addr 127.0.0.1
 ```
 
-The fixture compiles a disposable JVM, attaches the agent and starts the diagnostics UI on an allocated local port. Native Gavel `kind: telltale` steps check Groovy, method tracing, compile preview, managed redefinition, OGNL and original-byte restoration through HTTP. Use a Gavel build that includes this kind. The final form shows the UI URL and waits while you explore. Submit Exit or cancel to stop both supervised processes. Captures and agent artifacts remain in the unique `.tmp/jvm-demo/run.*` directory. A full JDK (`java`, `javac`, `jcmd`), curl and the built `.bin/telltale` must be available. Without `--ui`, run from a terminal to answer the same final form there.
+The fixture builds a disposable Spring application with embedded Tomcat, H2 and Artemis using the pinned dependencies in Gradle's `jvmDemo` task. It starts a local Telltale OTLP receiver, warms the application's clients and existing OpenTelemetry exporter, then attaches Telltale without restarting the JVM. A full JDK 17+ (`java`, `javac`, `jcmd`), Go, curl and the built `.bin/telltale` must be available. Use a Gavel build that includes `kind: telltale` and form steps. All listeners bind to loopback on allocated ports; no external application or database is required.
+
+Native capture steps retain the Groovy, method tracing, compile preview, managed redefinition, OGNL and original-byte restoration checks. Protocol checks exercise incoming Spring MVC requests, outgoing RestTemplate/WebClient calls, JDBC/R2DBC statements and Spring JMS sending/listening. Deterministic held operations verify successive HTTP/SQL Top snapshots retain their operation IDs while elapsed time increases. Releasing the operations verifies the schema-v2 Profiles control sample clears the Top rows. Mirrored spans are compared with normal OTLP exporter delivery.
+
+After verification, periodic traffic keeps the captures active. The final Exit form shows the diagnostics, capture and workload URLs and waits while you explore. Submit Exit or cancel to stop the owned captures, JVM and server. Captures, native snapshot evidence and agent artifacts remain in the unique `.tmp/jvm-demo/run.*` directory. Without `--ui`, run from a terminal to answer the same final form there. To run the same checks and clean up immediately, use:
+
+```bash
+gavel fixtures examples/jvm-diagnostics.fixture.yaml --param interactive=false
+```
 
 Java tests cover the copied services, real extension JAR lifecycle, isolated Groovy and embedded Tomcat WAR reload. The disposable-JVM installer integration checks packaged calls, trace budget completion, deadlines, method replacement/restoration and JFR decoding. API specs check live catalog changes, script integer precision and extension install/replace/unload over HTTP. UI tests check mutation consent and result conversion. Work is tracked by Gavel TODO `821b9a83-f816-4e6b-8b3d-c96ce5751f57`.

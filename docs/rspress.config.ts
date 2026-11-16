@@ -50,6 +50,7 @@ export default defineConfig({
           items: [
             { text: 'Web workspace', link: '/web-ui' },
             { text: 'OpenTelemetry receiver', link: '/otlp-receiver' },
+            { text: 'Active operation profiles', link: '/traces/profiles' },
             { text: 'Resource monitoring rules', link: '/rules' },
             { text: 'SQL Server and JVM captures', link: '/sqlserver-jvm' },
           ],
@@ -58,7 +59,7 @@ export default defineConfig({
           text: 'Trace kinds',
           items: [
             { text: 'Overview', link: '/traces/' },
-            ...['exec', 'goprof', 'http', 'jvm_jfr', 'llm', 'logs', 'process', 'prometheus', 'query', 'spans', 'sql', 'sql_deadlock', 'sql_plancache', 'sql_top', 'sql_xevent', 'stacks', 'terminal'].map((kind) => ({ text: kind, link: `/traces/${kind}` })),
+            ...['exec', 'goprof', 'http', 'http_top', 'jms', 'jvm_jfr', 'llm', 'logs', 'process', 'prometheus', 'query', 'spans', 'sql', 'sql_deadlock', 'sql_plancache', 'sql_top', 'sql_xevent', 'stacks', 'terminal'].map((kind) => ({ text: kind, link: `/traces/${kind}` })),
           ],
         },
       ],

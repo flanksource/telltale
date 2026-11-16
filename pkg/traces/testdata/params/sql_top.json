@@ -2,9 +2,14 @@
   "type": "object",
   "properties": {
     "connection": {
-      "type": "string",
+      "description": "Postgres or SQL Server connection reference for the database seam",
       "title": "Connection",
-      "description": "Postgres or SQL Server connection reference"
+      "type": "string",
+      "x-clicky-lookup": {
+        "filter": "connection",
+        "searchParam": "__lookup_q",
+        "url": "/api/v1/connection?types=postgres,sql_server"
+      }
     },
     "databases": {
       "type": "array",
@@ -51,9 +56,10 @@
         "seam": {
           "type": "string",
           "title": "Seam",
-          "description": "How the capture is armed (supported seams: [connection])",
+          "description": "How the capture is armed (supported seams: [connection agent])",
           "enum": [
-            "connection"
+            "connection",
+            "agent"
           ],
           "default": "connection"
         },
@@ -73,7 +79,8 @@
       },
       "type": "object",
       "x-telltale-seams": [
-        "connection"
+        "connection",
+        "agent"
       ]
     },
     "text": {
@@ -91,8 +98,5 @@
       "description": "Maximum requests per poll ranked by elapsed time; defaults to 50",
       "default": 50
     }
-  },
-  "required": [
-    "connection"
-  ]
+  }
 }

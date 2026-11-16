@@ -12,9 +12,12 @@ import (
 	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/commons-db/recordstore/owner"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
+	"github.com/flanksource/commons-db/recordstore/sampleframe"
 	"github.com/flanksource/commons-db/recordstore/sqlite"
 	"github.com/flanksource/telltale/pkg/tracing"
+	"github.com/flanksource/telltale/pkg/tracing/httptop"
 	"github.com/flanksource/telltale/pkg/tracing/spans"
+	"github.com/flanksource/telltale/pkg/tracing/sqltop"
 )
 
 type StoreOptions struct {
@@ -96,7 +99,24 @@ func OpenStore(options StoreOptions) (_ *Store, err error) {
 		Register: func(registry *recordresults.Registry) error {
 			resultType := spans.ResultType()
 			resultType.Retention = recordstore.RetainRows
-			return recordresults.RegisterResultType(registry, resultType)
+			if err := recordresults.RegisterResultType(registry, resultType); err != nil {
+				return err
+			}
+			if err := recordresults.RegisterResultType(registry, httptop.ResultType()); err != nil {
+				return err
+			}
+			if err := recordresults.RegisterResultType(registry, sqltop.ActiveResult()); err != nil {
+				return err
+			}
+			if err := recordresults.RegisterResultType(registry, profileIdentityResult()); err != nil {
+				return err
+			}
+			for _, kind := range []string{"http_top_frames", "sql_top_active_frames"} {
+				if err := recordresults.RegisterResultType(registry, recordresults.ResultType[sampleframe.Frame]{Kind: kind, Title: "Completed profile snapshots", TimeColumn: "completedAt", Follow: true}); err != nil {
+					return err
+				}
+			}
+			return nil
 		},
 	})
 	if err != nil {
@@ -104,6 +124,12 @@ func OpenStore(options StoreOptions) (_ *Store, err error) {
 	}
 	kinds := tracing.NewKinds()
 	if err := kinds.RegisterKind(spans.Kind, spans.NewKind(nil)); err != nil {
+		return nil, err
+	}
+	if err := kinds.RegisterKind(httptop.Kind, httptop.NewKind(nil)); err != nil {
+		return nil, err
+	}
+	if err := kinds.RegisterKind("sql_top_active", sqltop.NewActiveKind()); err != nil {
 		return nil, err
 	}
 	store.runtime = &tracing.Runtime{

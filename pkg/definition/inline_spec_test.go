@@ -35,4 +35,12 @@ var _ = Describe("an ad-hoc capture through an agent", func() {
 		Expect(def.Spec.Collect.Go.Exec).To(HaveExactElements(HaveField("Executable", "git"), HaveField("Executable", "make")))
 		Expect(pointers).To(Equal(map[string]string{"/spec/collect/go/exec/0": "/traces/exec/0", "/spec/collect/go/exec/1": "/traces/exec/1"}))
 	})
+
+	It("selects JVM instrumentation when a shared agent probe is allowed to mutate", func() {
+		mutable := agent
+		mutable.AllowMutation = true
+		_, pointers, fields := definition.Inline([]telltale.RequestedCapture{{Kind: "http", Pointer: "/traces/http", Params: map[string]any{"features": []any{"http"}}, Target: mutable, Seam: target.Agent}})
+		Expect(fields).To(BeEmpty())
+		Expect(pointers).To(Equal(map[string]string{"/spec/instrument/jvm/http/0": "/traces/http"}))
+	})
 })

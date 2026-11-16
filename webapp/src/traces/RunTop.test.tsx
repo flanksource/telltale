@@ -20,7 +20,7 @@ beforeEach(()=>{
     if(url.searchParams.get("view")==="frames") return Response.json([frame]);
     if((init?.headers as Record<string,string>)?.Accept==="application/schema+json") return Response.json({columns:[{name:"sessionId",label:"Session",type:"number",filter:{kind:"terms",key:"filter.sessionId"}}]});
     const empty=!!url.searchParams.get("q");
-    return Response.json({selection:frame.id,frame,metrics:[],count:empty?0:150,nextCursor:empty||url.searchParams.has("cursor")?"":"next-page",table:empty?{...table,node:{...table.node,rows:[]}}:table});
+    return Response.json({selection:frame.id,frame,metrics:[],rows:empty?[]:[{seq:1,sessionId:12}],count:empty?0:150,nextCursor:empty||url.searchParams.has("cursor")?"":"next-page",table:empty?{...table,node:{...table.node,rows:[]}}:table});
   }));
 });
 afterEach(()=>vi.unstubAllGlobals());
@@ -57,5 +57,35 @@ describe("run Top integration",()=>{
     expect(await screen.findByRole("status")).toHaveTextContent("Blocker 99 was omitted from this completed sample.");
     expect(requests[0]?.searchParams.get("frame")).toBe(frame.id);
     expect(requests[0]?.searchParams.get("filter")).toBe("sessionId=99");
+  });
+  it("shows a newer incomplete observation while retaining the last complete table",async()=>{
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn(async(input:string, init?:RequestInit)=>{
+      if(new URL(input,window.location.origin).searchParams.get("view")==="frames") return Response.json([
+        {...frame,tick:1},
+        {...frame,id:"incomplete",tick:2,summary:{profileId:"profile-2",complete:false,dropped:3}},
+      ]);
+      return originalFetch(input,init);
+    }));
+    render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><RunTop run={{...run,status:"running"}}/></QueryClientProvider>);
+    expect(await screen.findByText(/Incomplete snapshot/)).toHaveTextContent("3 observations dropped");
+    expect(await screen.findByText("session 12")).toBeInTheDocument();
+  });
+  it("selects string operation identities from raw values without requiring rendered filter metadata",async()=>{
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal("fetch",vi.fn(async(input:string,init?:RequestInit)=>{
+      const response=await originalFetch(input,init);
+      const body=await response.json();
+      if(body.table){
+        body.rows=[{seq:1,sessionId:"request-a"}];
+        body.table.node.rows[0].cells.sessionId={kind:"text",text:"request-a"};
+        delete body.table.node.rows[0].detail;
+      }
+      return Response.json(body);
+    }));
+    renderTop();
+    fireEvent.click(await screen.findByText("request-a"));
+    await waitFor(()=>expect(new URLSearchParams(window.location.search).get("sampleSelected")).toBe('["request-a"]'));
+    expect(screen.getByRole("dialog")).toHaveTextContent(/sessionId:\s*"request-a"/);
   });
 });

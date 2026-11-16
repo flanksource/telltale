@@ -9,6 +9,7 @@ import (
 
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
+	"github.com/flanksource/commons-db/recordstore/sampleframe"
 	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/jfr/decode"
@@ -32,15 +33,16 @@ func jfrAgent(p Params) seam.AgentSeam[Params, Sample] {
 	var mu sync.Mutex
 	watermarks := map[string]time.Time{}
 	pending := map[string]time.Time{}
-	return seam.AgentSeam[Params, Sample]{SampledBlobs: true, Probe: KindName, Target: func(p Params) target.Target { return p.Target }, ArmParams: func(p Params) (json.RawMessage, error) { return json.Marshal(p) }, DecodeBlob: func(blob agentclient.Blob, resource map[string]string) ([]Sample, error) {
+	return seam.AgentSeam[Params, Sample]{Probe: KindName, Target: func(p Params) target.Target { return p.Target }, ArmParams: func(p Params) (json.RawMessage, error) { return json.Marshal(p) }, DecodeBlob: func(blob agentclient.Blob, resource map[string]string) (seam.DecodedBlob[Sample], error) {
+		started := time.Now().UTC()
 		if blob.Info.ContentType != protocol.ContentTypeJFR {
-			return nil, fmt.Errorf("JFR content type %q", blob.Info.ContentType)
+			return seam.DecodedBlob[Sample]{}, fmt.Errorf("JFR content type %q", blob.Info.ContentType)
 		}
 		mu.Lock()
 		defer mu.Unlock()
 		profile, err := decode.Decode(blob.Data, decode.DecodeOptions{After: watermarks[blob.Info.Session], Threads: p.Threads, MaxStackDepth: p.MaxStackDepth})
 		if err != nil {
-			return nil, err
+			return seam.DecodedBlob[Sample]{}, err
 		}
 		if profile.Latest.After(watermarks[blob.Info.Session]) {
 			pending[blob.Info.Session] = profile.Latest
@@ -49,7 +51,7 @@ func jfrAgent(p Params) seam.AgentSeam[Params, Sample] {
 		for i, sample := range profile.Samples {
 			rows[i] = Sample{StackSample: sample, Resource: maps.Clone(resource)}
 		}
-		return rows, nil
+		return seam.DecodedBlob[Sample]{Rows: rows, Frame: &sampleframe.Frame{Source: resource["telltale.agent.id"] + "/" + resource["process.pid"] + "/" + blob.Info.Name, StartedAt: started, CompletedAt: time.Now().UTC(), Observed: len(rows)}}, nil
 	}, CommitBlob: func(blob agentclient.Blob) error {
 		mu.Lock()
 		defer mu.Unlock()

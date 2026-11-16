@@ -1,4 +1,4 @@
-package otelreceiver
+package spans
 
 import (
 	"bytes"

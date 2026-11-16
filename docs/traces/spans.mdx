@@ -9,4 +9,12 @@ telltale run spans --seam host --opensearch-connection traces --opensearch-from 
 ```
 
 Use `--opensearch-follow-index` to follow new documents, `--opensearch-to` to bound a window, and `--opensearch-search` for a structured JSON search. For continuous OTLP ingestion without a capture run, see [Receive OpenTelemetry traces](/otlp-receiver). The [web workspace](/web-ui) can search and inspect recorded spans.
+
+An attached JVM can mirror spans from its existing OpenTelemetry exporters without replacing its tracer provider or exporter configuration. It observes subsequent exported spans, preserving the application's trace IDs, resource attributes, events, links, and status. It cannot recover spans already exported before attachment or spans discarded by the application's sampling policy. Collector processing performed after export is outside this mirror.
+
+```sh
+telltale run spans --agent java/checkout --allow-mutation --duration 1m
+```
+
+Definitions use `instrument.jvm.spans`. JVM capabilities report the available OpenTelemetry exporters; an unsupported exporter fails explicitly.
 <KindReference kind="spans" />

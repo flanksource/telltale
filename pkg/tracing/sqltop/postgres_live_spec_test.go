@@ -66,7 +66,7 @@ var _ = Describe("sql top on a live Postgres", func() {
 			return &models.Connection{Name: "live", Type: models.ConnectionTypePostgres, URL: db.DSN()}, nil
 		})
 		out := &recorder{}
-		_, release, err := handler{}.Prepare(ctx, Params{Options: Options{Connection: "connection://live", Databases: clicky.MultiFilter{database}}}, out)
+		_, release, err := prepareLiveCapture(ctx, Params{Options: Options{Connection: "connection://live", Databases: clicky.MultiFilter{database}}}, out)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(release)
 
@@ -91,6 +91,6 @@ var _ = Describe("sql top on a live Postgres", func() {
 		Expect(blocker.State).To(Equal("idle in transaction"))
 		Expect(blocker.Blocked).To(BeFalse())
 		Expect(blocker.TransactionMs).To(BeNumerically(">", 0))
-		Expect(out.report).To(HaveKeyWithValue("blocked", 1))
+		Expect(out.report).To(HaveKeyWithValue("blocked", BeNumerically("==", 1)))
 	})
 })

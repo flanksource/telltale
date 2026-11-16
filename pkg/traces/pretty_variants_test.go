@@ -44,5 +44,7 @@ var _ = Describe("styled trace variants", func() {
 		Entry("HTTP response body", "http", query.Row{"request": map[string]any{"method": "GET"}, "response": map[string]any{"status": 200, "content": map[string]any{"mimeType": "application/json", "text": map[string]any{"result": "recorded-response"}}}}, "recorded-response"),
 		Entry("execution stdout", "exec", query.Row{"name": "git", "exitCode": 0, "stdoutTail": "recorded-stdout"}, "recorded-stdout"),
 		Entry("LLM prompt", "llm", query.Row{"phase": "request", "model": "example-model", "prompt": "recorded-prompt"}, "recorded-prompt"),
+		Entry("OGNL result", "jvm_ognl", query.Row{"expression": "@java.lang.Runtime@getRuntime().freeMemory()", "result": 4096}, "4096"),
+		Entry("JVM method value", "jvm_trace", query.Row{"kind": "return", "class": "example.Checkout", "method": "findOrder", "descriptor": "(J)Ljava/util/Map;", "value": map[string]any{"orderId": "recorded-method-value"}}, "recorded-method-value"),
 	)
 })

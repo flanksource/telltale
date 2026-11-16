@@ -97,6 +97,8 @@ public final class Agent {
   public static synchronized void agentmain(String args, Instrumentation instrumentation)
       throws Exception {
     com.flanksource.telltale.diag.agent.DiagAgent.agentmain(args, instrumentation);
+    System.setProperty("telltale.runtime.dir", Paths.get(args).toAbsolutePath().getParent().toString());
+    com.flanksource.telltale.observer.ObserverRuntime.install(instrumentation);
     start(
         JSON.fromJson(
             new String(Files.readAllBytes(Paths.get(args)), StandardCharsets.UTF_8),
@@ -106,6 +108,8 @@ public final class Agent {
   public static synchronized void premain(String args, Instrumentation instrumentation)
       throws Exception {
     com.flanksource.telltale.diag.agent.DiagAgent.premain(args, instrumentation);
+    System.setProperty("telltale.runtime.dir", Paths.get(args).toAbsolutePath().getParent().toString());
+    com.flanksource.telltale.observer.ObserverRuntime.install(instrumentation);
     start(
         JSON.fromJson(
             new String(Files.readAllBytes(Paths.get(args)), StandardCharsets.UTF_8),
@@ -135,11 +139,7 @@ public final class Agent {
     runtime.addProperty("version", System.getProperty("java.version"));
     runtime.addProperty("vendor", System.getProperty("java.vendor"));
     hello.add("runtime", runtime);
-    JsonObject resource =
-        config.has("resource") ? config.getAsJsonObject("resource").deepCopy() : new JsonObject();
-    resource.addProperty("process.pid", pid);
-    resource.addProperty("service.name", Recording.value(config, "service", "java"));
-    hello.add("resource", resource);
+    hello.add("resource", JSON.toJsonTree(AgentResource.from(JSON.fromJson(config, java.util.Map.class))));
     hello.add("probes", JSON.toJsonTree(RuntimeService.probes()));
     hello.add("ops", JSON.toJsonTree(diagnostics.catalog()));
     return hello;

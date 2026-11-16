@@ -25,10 +25,32 @@ type Params struct {
 	Options
 }
 
+func (p Params) Validate() error {
+	if p.Target.Seam != target.Agent {
+		return p.Options.Validate()
+	}
+	if p.Connection != "" || p.Idle {
+		return fmt.Errorf("connection and idle configure the database seam, not the agent seam")
+	}
+	if _, err := p.pollInterval(); err != nil {
+		return err
+	}
+	if _, err := p.minElapsed(); err != nil {
+		return err
+	}
+	if p.Top < 0 {
+		return fmt.Errorf("top must be non-negative")
+	}
+	if err := validatePatterns("databases", p.Databases); err != nil {
+		return err
+	}
+	return validatePatterns("text", p.Text)
+}
+
 // Options are the connection whose running requests a capture samples, which
 // of them it keeps, and how often and how many it records.
 type Options struct {
-	Connection string             `json:"connection" clicky:"required,title=Connection,desc=Postgres or SQL Server connection reference"`
+	Connection string             `json:"connection,omitempty" clicky:"title=Connection,desc=Postgres or SQL Server connection reference for the database seam"`
 	Databases  clicky.MultiFilter `json:"databases,omitempty" clicky:"title=Databases,desc=Database patterns with * wildcards and ! exclusions; empty keeps every database"`
 	Text       clicky.MultiFilter `json:"text,omitempty" clicky:"title=Statement text,desc=SQL text patterns with * wildcards and ! exclusions; bare values match substrings"`
 	Poll       string             `json:"poll,omitempty" clicky:"title=Poll,desc=Poll interval such as 5s"`
@@ -103,6 +125,19 @@ func (handler) Prepare(ctx dbcontext.Context, p Params, out tracing.Emitter[Samp
 	if err := p.Validate(); err != nil {
 		return ctx, nil, err
 	}
+	backend, err := tracing.CaptureBackend(ctx)
+	if err != nil {
+		return ctx, nil, err
+	}
+	store, err := newActiveStore(backend, tracing.StreamOf(ctx))
+	if err != nil {
+		return ctx, nil, err
+	}
+	ctx = ctx.WithValue(activeStoreKey{}, store)
+	if p.Target.Seam == target.Agent {
+		return agentCapture(p).Prepare(ctx, p, out)
+	}
+	out = activeEmitter{Emitter: out, store: store}
 	pool, connType, release, err := sqlconn.Open(ctx, sqlconn.OpenOptions{Reference: p.Connection,
 		Types: []string{models.ConnectionTypePostgres, models.ConnectionTypeSQLServer}, Purpose: "SQL top"})
 	if err != nil {
@@ -125,6 +160,14 @@ func (handler) Prepare(ctx dbcontext.Context, p Params, out tracing.Emitter[Samp
 }
 
 func (handler) Handle(ctx dbcontext.Context, p Params, out tracing.Emitter[Sample], _ tracing.Records[Sample]) error {
+	if p.Target.Seam == target.Agent {
+		return agentCapture(p).Handle(ctx, p, out)
+	}
+	store, ok := ctx.Value(activeStoreKey{}).(*activeStore)
+	if !ok {
+		return fmt.Errorf("SQL top active store was not prepared")
+	}
+	out = activeEmitter{Emitter: out, store: store}
 	c, err := preparedCapture(ctx)
 	if err != nil {
 		return err
@@ -152,18 +195,25 @@ func (handler) Handle(ctx dbcontext.Context, p Params, out tracing.Emitter[Sampl
 	}
 }
 
-func (handler) Checkpoint(ctx dbcontext.Context, _ Params, out tracing.Emitter[Sample]) error {
+func (handler) Checkpoint(ctx dbcontext.Context, p Params, out tracing.Emitter[Sample]) error {
 	var params struct {
 		Reason string `json:"reason,omitempty"`
 	}
 	if _, err := tracing.DecodeCheckpointParams(ctx, &params); err != nil {
 		return err
 	}
+	if p.Target.Seam == target.Agent {
+		return agentCapture(p).Checkpoint(ctx, nil, out)
+	}
 	c, err := preparedCapture(ctx)
 	if err != nil {
 		return err
 	}
-	return c.poll(ctx, out)
+	store, ok := ctx.Value(activeStoreKey{}).(*activeStore)
+	if !ok {
+		return fmt.Errorf("SQL top active store was not prepared")
+	}
+	return c.poll(ctx, activeEmitter{Emitter: out, store: store})
 }
 
 func preparedCapture(ctx dbcontext.Context) (*capture, error) {
@@ -175,5 +225,6 @@ func preparedCapture(ctx dbcontext.Context) (*capture, error) {
 }
 
 func Kind() *tracing.Handler[Params, Sample] {
-	return tracing.NewHandler[Params, Sample](handler{}, tracing.Capabilities{Follow: true}, target.Connection).WithTop(topSpec())
+	return tracing.NewHandler[Params, Sample](handler{}, tracing.Capabilities{Follow: true}, target.Connection, target.Agent).
+		WithResults(tracing.NewResultTable("active", ActiveResult())).WithTop(topSpec())
 }

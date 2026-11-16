@@ -9,6 +9,8 @@ The target seam determines what is observed: `process` follows a command or PID,
 | [exec](/traces/exec) | Instrumented command executions |
 | [goprof](/traces/goprof) | Go profiles at checkpoints |
 | [http](/traces/http) | HTTP exchanges |
+| [http_top](/traces/http_top) | Active incoming and outgoing JVM HTTP exchanges |
+| [jms](/traces/jms) | JVM message sends, receives, and processing |
 | [jvm_jfr](/traces/jvm_jfr) | JVM profiling samples |
 | [jvm_notifications](/traces/jvm_notifications) | JMX notifications and garbage collections |
 | [jvm_ognl](/traces/jvm_ognl) | Periodic expression samples |
@@ -23,7 +25,7 @@ The target seam determines what is observed: `process` follows a command or PID,
 | [sql](/traces/sql) | Instrumented or proxied SQL statements |
 | [sql_deadlock](/traces/sql_deadlock) | SQL Server deadlocks |
 | [sql_plancache](/traces/sql_plancache) | SQL Server plan cost deltas |
-| [sql_top](/traces/sql_top) | Running queries on Postgres or SQL Server |
+| [sql_top](/traces/sql_top) | Running database requests or active JVM SQL executions |
 | [sql_xevent](/traces/sql_xevent) | SQL Server Extended Events |
 | [stacks](/traces/stacks) | Process stacks at checkpoints |
 | [terminal](/traces/terminal) | Terminal events supplied by a host |

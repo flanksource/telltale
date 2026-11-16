@@ -24,14 +24,14 @@ const maxRepeats = 20
 type Summary struct {
 	Statements int `json:"statements"`
 	Errors     int `json:"errors,omitempty"`
-	// DurationMs sums every statement's duration; statements on concurrent
+	Incomplete int `json:"incomplete,omitempty"`
+	// DurationMs sums completed statements' durations; statements on concurrent
 	// connections overlap, so it can exceed WindowMs.
 	DurationMs    float64 `json:"durationMs"`
 	AvgDurationMs float64 `json:"avgDurationMs"`
 	P95DurationMs float64 `json:"p95DurationMs"`
 	MaxDurationMs float64 `json:"maxDurationMs"`
-	// Rows sums the rows the statements returned, leaving out the statements
-	// whose driver could not count them.
+	// Rows sums observed row counts from completed statements.
 	Rows int64 `json:"rows"`
 	// WindowMs is wall clock from the first statement's start to the last
 	// statement's end.
@@ -76,6 +76,15 @@ func NewAccumulator() *Accumulator {
 // Add folds one statement.
 func (a *Accumulator) Add(row StatementRow) {
 	a.sum.Statements++
+	a.sum.ByOp[row.Op]++
+	for _, table := range row.Tables {
+		a.tables[table] = struct{}{}
+	}
+	a.observeWindow(row)
+	if row.Incomplete {
+		a.sum.Incomplete++
+		return
+	}
 	if row.Error != "" {
 		a.sum.Errors++
 	}
@@ -85,9 +94,8 @@ func (a *Accumulator) Add(row StatementRow) {
 	if row.Rows > 0 {
 		a.sum.Rows += row.Rows
 	}
-	a.sum.ByOp[row.Op]++
-	for _, table := range row.Tables {
-		a.tables[table] = struct{}{}
+	if row.RepeatKey == "" {
+		return
 	}
 	repeat, ok := a.repeats[row.RepeatKey]
 	if !ok {
@@ -96,7 +104,6 @@ func (a *Accumulator) Add(row StatementRow) {
 	}
 	repeat.Count++
 	repeat.DurationMs += row.DurationMs
-	a.observeWindow(row)
 }
 
 func (a *Accumulator) observeWindow(row StatementRow) {
@@ -169,17 +176,25 @@ func WindowVars(rows iter.Seq[StatementRow]) map[string]any {
 	for row := range rows {
 		accumulator.Add(row)
 		if len(queries) < maxSummaryQueries {
-			queries = append(queries, map[string]any{
+			query := map[string]any{
 				"sql": row.SQL, "op": row.Op, "tables": row.Tables, "rows": row.Rows,
 				"duration_ms": row.DurationMs, "error": row.Error,
-			})
+			}
+			if row.Incomplete {
+				query["incomplete"], query["phase"], query["completion"] = true, row.Phase, row.Completion
+			}
+			queries = append(queries, query)
 		}
 	}
 	summary := accumulator.Result()
-	return map[string]any{
+	result := map[string]any{
 		"statements": summary.Statements, "errors": summary.Errors, "duration_ms": summary.DurationMs,
 		"by_op": summary.ByOp, "tables": summary.Tables, "queries": queries,
 	}
+	if summary.Incomplete > 0 {
+		result["incomplete"] = summary.Incomplete
+	}
+	return result
 }
 
 // Pretty renders the summary as one line, its durations toned as an xevent
@@ -190,6 +205,9 @@ func (s Summary) Pretty() api.Text {
 	t := api.Text{}.AddText(fmt.Sprintf("%d statements", s.Statements), "font-bold")
 	if s.Errors > 0 {
 		t = t.AddText(" · ", "text-muted").AddText(fmt.Sprintf("%d failed", s.Errors), "text-red-500 font-bold")
+	}
+	if s.Incomplete > 0 {
+		t = t.AddText(" · ", "text-muted").AddText(fmt.Sprintf("%d incomplete", s.Incomplete), "text-yellow-500")
 	}
 	if s.Statements == 0 {
 		return t

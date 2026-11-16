@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"go.opentelemetry.io/collector/pdata/pprofile/pprofileotlp"
 	"go.opentelemetry.io/collector/pdata/ptrace/ptraceotlp"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -40,7 +41,13 @@ func (r *Receiver) HTTPHandler(requireAuth bool) http.Handler {
 				return
 			}
 		}
-		body, err := r.exportHTTP(request, format)
+		var body []byte
+		if request.URL.Path == "/v1/profiles" {
+			w.Header().Set(pprofileotlp.DevelopmentVersionHeader, pprofileotlp.DevelopmentVersion)
+			body, err = r.exportProfilesHTTP(request, format)
+		} else {
+			body, err = r.exportHTTP(request, format)
+		}
 		if err != nil {
 			writeError(w, protocolError{format: format, err: err})
 			return

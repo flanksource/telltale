@@ -230,9 +230,10 @@ var _ = Describe("http trace kind", func() {
 		Expect(summary).To(MatchAllKeys(Keys{
 			"count": Equal(3), "entries": Equal(3), "errors": Equal(2),
 			"tunnelled": Equal(0), "bytes_in": BeEquivalentTo(0), "bytes_out": BeEquivalentTo(0),
-			"hosts":    Equal([]string{host}),
-			"methods":  Equal(map[string]int{"POST": 1, "GET": 2}),
-			"statuses": Equal(map[string]int{"200": 1, "404": 1, "0": 1}),
+			"durationMs": BeNumerically(">=", 0),
+			"hosts":      Equal([]string{host}),
+			"methods":    Equal(map[string]int{"POST": 1, "GET": 2}),
+			"statuses":   Equal(map[string]int{"200": 1, "404": 1, "0": 1}),
 			"requests": ConsistOf(
 				MatchAllKeys(Keys{"method": Equal("POST"), "url": Equal(server.URL + "/api"), "host": Equal(host), "path": Equal("/api"),
 					"status": Equal(200), "duration_ms": BeNumerically(">=", 0), "error": BeEmpty(),

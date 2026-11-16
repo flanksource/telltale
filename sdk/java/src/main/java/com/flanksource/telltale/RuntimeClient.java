@@ -5,7 +5,9 @@ import java.util.*;
 import javax.management.*;
 
 final class RuntimeClient {
+  private final Map<String, Object> resource;
   RuntimeClient(Map<String, Object> config) throws Exception {
+    resource = AgentResource.from(config);
     RuntimeService.acquire(config);
   }
 
@@ -58,6 +60,7 @@ final class RuntimeClient {
     request.put("params", params);
     request.put("id", id);
     request.put("allowMutation", allow);
+    request.put("resource", resource);
     Map<String, Object> description = (Map<String, Object>) request("captureOpen", request);
     return new Capture() {
       private boolean closed;
@@ -83,6 +86,12 @@ final class RuntimeClient {
 
       public boolean streaming() {
         return Boolean.TRUE.equals(description.get("streaming"));
+      }
+
+      public long intervalMillis() { return ((Number) description.get("intervalMillis")).longValue(); }
+      public long dropped() {
+        try { return ((Number) request("captureDropped", Collections.singletonMap("id", id))).longValue(); }
+        catch (Exception error) { throw new IllegalStateException("read capture drops", error); }
       }
 
       public boolean complete() {
