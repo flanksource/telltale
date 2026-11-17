@@ -2,13 +2,11 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"os/user"
 	"path/filepath"
 
-	"github.com/flanksource/clicky/rpc"
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/pkg/agentclient"
@@ -70,85 +68,6 @@ func setDeployerResolver(registry *agentclient.Registry) {
 		}
 		return store.Known()
 	})
-}
-
-// deployFlags are what `jvm deploy` deploys and how.
-type deployFlags struct {
-	file, deployer string
-	kubeconfig     []string
-	dryRun         bool
-}
-
-// load is the Deployer the flags give: the --deployer document, or the
-// --file one, which only a local invocation may read.
-func (f deployFlags) load(ctx context.Context) (*deploy.Deployer, error) {
-	if f.deployer != "" {
-		return deploy.Decode([]byte(f.deployer))
-	}
-	if _, remote := rpc.RequestFromContext(ctx); remote {
-		return nil, errors.New("--file reads a file on the machine running the command; send deployer in the request instead")
-	}
-	data, err := os.ReadFile(f.file)
-	if err != nil {
-		return nil, err
-	}
-	return deploy.Decode(data)
-}
-
-func newJVMDeployCommand() *cobra.Command {
-	var flags deployFlags
-	cmd := &cobra.Command{
-		Use:   "deploy (-f <deployer.yaml> | --deployer <document>)",
-		Short: "Install the agent into the JVMs a Deployer selects, and keep it for later commands",
-		Long: "Deploys the Deployer to the running pods its selector picks, with your kubeconfig, and keeps it with each target's state. " +
-			"Every jvm command then reaches a deployed pod with --agent deployer/<deployer>/<namespace>/<pod>, signing each request with the deployer's issuer. " +
-			"--dry-run only lists the pods the selector picks: it installs nothing and keeps nothing.",
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error { return runJVMDeploy(cmd, flags) },
-	}
-	cmd.Flags().StringVarP(&flags.file, "file", "f", "", "Deployer YAML file (kind: Deployer); local invocations only")
-	cmd.Flags().StringVar(&flags.deployer, "deployer", "", "Deployer document, YAML or JSON (kind: Deployer)")
-	cmd.MarkFlagsOneRequired("file", "deployer")
-	cmd.MarkFlagsMutuallyExclusive("file", "deployer")
-	cmd.Flags().BoolVar(&flags.dryRun, "dry-run", false, "List the pods the selector picks without installing or keeping anything")
-	cmd.Flags().StringSliceVar(&flags.kubeconfig, "kubeconfig", nil, "Kubeconfig files (default: KUBECONFIG or ~/.kube/config)")
-	return cmd
-}
-
-func runJVMDeploy(cmd *cobra.Command, flags deployFlags) error {
-	deployer, err := flags.load(cmd.Context())
-	if err != nil {
-		return err
-	}
-	ctx, err := deployerContext(cmd.Context())
-	if err != nil {
-		return err
-	}
-	client, err := ctx.LocalKubernetes(flags.kubeconfig...)
-	if err != nil {
-		return fmt.Errorf("kubernetes client: %w", err)
-	}
-	options := deploy.Options{Kubernetes: client, DryRun: flags.dryRun}
-	if !flags.dryRun {
-		if options.Issuer, err = deploy.NewIssuer(ctx, deployer.Spec.Auth); err != nil {
-			return fmt.Errorf("deployer %s: %w", deployer.Name, err)
-		}
-	}
-	status, deployErr := deploy.Deploy(ctx, *deployer, options)
-	if len(status.Targets) == 0 {
-		return deployErr
-	}
-	if !flags.dryRun {
-		store, err := deployerStore()
-		if err != nil {
-			return err
-		}
-		deployer.Status = status
-		if err := store.Save(*deployer); err != nil {
-			return err
-		}
-	}
-	return errors.Join(printRecords(cmd, status.Targets), deployErr)
 }
 
 func newJVMDeployersCommand() *cobra.Command {

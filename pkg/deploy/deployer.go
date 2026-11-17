@@ -52,9 +52,10 @@ type Selector struct {
 	Kind      WorkloadKind `json:"kind" clicky:"title=Kind,desc=Deployment StatefulSet or Pod"`
 	Namespace string       `json:"namespace" clicky:"title=Namespace"`
 	// Name selects one workload (or pod) of Kind, in place of Labels.
-	Name      string            `json:"name,omitempty" clicky:"title=Name,desc=The one workload (or pod) to select instead of labels"`
-	Labels    map[string]string `json:"labels,omitempty" clicky:"title=Labels,desc=Labels of the workloads (or pods) to select"`
-	Container string            `json:"container" clicky:"title=Container,desc=The container running the JVM"`
+	Name   string            `json:"name,omitempty" clicky:"title=Name,desc=The one workload (or pod) to select instead of labels"`
+	Labels map[string]string `json:"labels,omitempty" clicky:"title=Labels,desc=Labels of the workloads (or pods) to select"`
+	// Container is the JVM container; unset, each pod's only container.
+	Container string `json:"container,omitempty" clicky:"title=Container,desc=The container running the JVM (default: the pod's only container)"`
 }
 
 // AuthSpec names the connection whose signingKey secret signs execution

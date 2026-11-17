@@ -78,7 +78,9 @@ func newAgentsCommand() *cobra.Command {
 	}
 	create.Flags().StringVar(&scope, "scope", string(apitoken.ScopeAgent), "Token scope: agent or api")
 	tokens.AddCommand(create)
-	agents.AddCommand(list, get, tokens, newAgentInstallCommand())
+	install := &cobra.Command{Use: "install", Short: "Install a runtime agent"}
+	install.AddCommand(newJavaDeployCommand("java", "Attach the Java agent to one PID, or deploy it to a Deployer's pods (same command as jvm deploy)", "agents/install/java"))
+	agents.AddCommand(list, get, tokens, install)
 	return agents
 }
 

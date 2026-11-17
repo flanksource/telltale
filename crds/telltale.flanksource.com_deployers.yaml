@@ -76,7 +76,8 @@ spec:
                 description: Pods that receive the agent
                 properties:
                   container:
-                    description: The container running the JVM
+                    description: 'The container running the JVM (default: the pod''s
+                      only container)'
                     title: Container
                     type: string
                   kind:

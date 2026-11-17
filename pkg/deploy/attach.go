@@ -52,8 +52,8 @@ func newAttach(spec AttachSpec) (*attach, error) {
 	switch {
 	case spec.URL == "":
 		return nil, errors.New("url (the listener URL template) is required")
-	case spec.PID <= 0:
-		return nil, errors.New("pid of the JVM in the container is required")
+	case spec.PID < 0:
+		return nil, errors.New("pid of the JVM in the container must be non-negative; omit it to discover the JVM")
 	case !strings.HasPrefix(spec.Directory, "/"):
 		return nil, fmt.Errorf("directory %q must be absolute", spec.Directory)
 	case spec.Bind == "":

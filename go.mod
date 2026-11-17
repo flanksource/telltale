@@ -19,6 +19,7 @@ require (
 	github.com/flanksource/commons-db v0.1.72
 	github.com/flanksource/commons-db/cmd/query v0.1.70
 	github.com/flanksource/commons-db/recordstore v0.1.72
+	github.com/flanksource/deps v1.0.51
 	github.com/flanksource/deps/start v0.0.0-20261028154603-ac4c84178264
 	github.com/flanksource/gavel/sdk v0.0.0-20261108204313-d40d4b480181
 	github.com/flanksource/gomplate/v3 v3.24.91
@@ -202,7 +203,6 @@ require (
 	github.com/fergusstrange/embedded-postgres v1.34.0 // indirect
 	github.com/firebase/genkit/go v1.13.1 // indirect
 	github.com/flanksource/clicky/valkey v1.21.94 // indirect
-	github.com/flanksource/deps v1.0.51 // indirect
 	github.com/flanksource/gomplate/v4 v4.0.0-20261111091247-6aab4d0463bd // indirect
 	github.com/flanksource/is-healthy v1.0.93 // indirect
 	github.com/flanksource/kubectl-neat v1.0.4 // indirect

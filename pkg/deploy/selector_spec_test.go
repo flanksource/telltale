@@ -82,6 +82,15 @@ var _ = Describe("Selector", func() {
 		Expect(targets[0].Container.Name).To(Equal(jvm))
 	})
 
+	It("takes a pod's only container when the selector names none", func() {
+		single := pod("cycle-0", map[string]string{"app": "cycle"}, corev1.PodRunning)
+		single.Spec.Containers = single.Spec.Containers[1:]
+		targets, err := deploy.Resolve(context.Background(), fake.NewClientset(single), "example", deploy.Selector{Kind: deploy.WorkloadPod, Namespace: namespace, Name: "cycle-0"})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(targets).To(HaveLen(1))
+		Expect(targets[0].Container.Name).To(Equal(jvm))
+	})
+
 	DescribeTable("fails loud on a selector that cannot select",
 		func(selector deploy.Selector, message string) {
 			_, err := deploy.Resolve(context.Background(), cluster(), "example", selector)
@@ -93,7 +102,7 @@ var _ = Describe("Selector", func() {
 		Entry("a named workload that does not exist", deploy.Selector{Kind: deploy.WorkloadDeployment, Namespace: namespace, Name: "orders-api", Container: jvm}, `get Deployment orders/orders-api`),
 		Entry("a pending named pod", deploy.Selector{Kind: deploy.WorkloadPod, Namespace: namespace, Name: "orders-web-pending", Container: jvm}, "selector Pod orders-web-pending in orders matched no running pods"),
 		Entry("no namespace", deploy.Selector{Kind: deploy.WorkloadPod, Labels: map[string]string{"tier": "web"}, Container: jvm}, "namespace"),
-		Entry("no container", deploy.Selector{Kind: deploy.WorkloadPod, Namespace: namespace, Labels: map[string]string{"tier": "web"}}, "container"),
+		Entry("no container, on a pod running several", deploy.Selector{Kind: deploy.WorkloadPod, Namespace: namespace, Labels: map[string]string{"tier": "web"}}, `pod orders/billing runs containers sidecar, app: name the JVM container`),
 		Entry("a container a pod lacks", deploy.Selector{Kind: deploy.WorkloadPod, Namespace: namespace, Labels: map[string]string{"tier": "web"}, Container: "jvm"}, `pod orders/billing has no container "jvm"`),
 		Entry("no match", deploy.Selector{Kind: deploy.WorkloadPod, Namespace: namespace, Labels: map[string]string{"tier": "none"}, Container: jvm}, "matched no running pods"),
 	)

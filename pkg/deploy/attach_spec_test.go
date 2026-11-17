@@ -62,12 +62,24 @@ type container struct {
 func (c *container) Run(_ context.Context, args []string, input io.Reader) ([]byte, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.commands = append(c.commands, args[0])
-	switch args[0] {
-	case "ps":
-		return []byte("Thu Jan  1 00:00:00 2026\n"), nil
+	// env -u NAME… runs the rest of the command without those variables.
+	if args[0] == "env" {
+		args = args[1:]
+		for len(args) > 1 && args[0] == "-u" {
+			args = args[2:]
+		}
+	}
+	// The helper runs as <javaHome>/bin/java: a command is named by its base.
+	c.commands = append(c.commands, path.Base(args[0]))
+	switch path.Base(args[0]) {
+	case "sh":
+		return []byte("__TELLTALE_PRESENT__=true\nJAVA_VERSION=\"1.8.0_512\"\n__TELLTALE_TOOLS__=true\n"), nil
+	case "cat":
+		return []byte("1 (java) S 0 1 1 0 -1 4194560 950 0 0 0 1 2 0 0 20 0 41 0 2318867 5000000\n"), nil
 	case "uname":
 		return []byte("Linux\n"), nil
+	case "readlink":
+		return []byte("/opt/java/openjdk/bin/java\n"), nil
 	case "tar":
 		// tar -x … -f - -C <dir>: every file of the archive lands in dir.
 		dir := args[len(args)-1]

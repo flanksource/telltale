@@ -64,6 +64,9 @@ func (r Resolver) Resolve(ctx context.Context, registry *agentclient.Registry, i
 	if err != nil {
 		return err
 	}
+	if dbctx, err = ClusterOf(*deployer).Bind(dbctx); err != nil {
+		return fmt.Errorf("deployer %s: %w", name, err)
+	}
 	newIssuer := r.Issuer
 	if newIssuer == nil {
 		newIssuer = NewIssuer

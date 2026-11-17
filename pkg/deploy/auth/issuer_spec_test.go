@@ -51,6 +51,21 @@ func verify(token string, jwks auth.JWKS) (jwt.MapClaims, string) {
 	return claims, parsed.Header["kid"].(string)
 }
 
+var _ = Describe("a generated signing key", func() {
+	It("is a PKCS#8 PEM RSA key an issuer signs with", func() {
+		data, err := auth.GenerateSigningKey()
+		Expect(err).ToNot(HaveOccurred())
+		block, _ := pem.Decode(data)
+		Expect(block).NotTo(BeNil())
+		Expect(block.Type).To(Equal("PRIVATE KEY"))
+		key, err := auth.ParsePrivateKey(data)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(key.N.BitLen()).To(Equal(3072))
+		_, err = auth.NewIssuer(issuerName, key)
+		Expect(err).ToNot(HaveOccurred())
+	})
+})
+
 var _ = Describe("Issuer", func() {
 	It("mints an RS256 token an agent verifies with the published JWKS", func() {
 		issuer, err := auth.NewIssuer(issuerName, rsaKey())

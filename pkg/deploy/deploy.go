@@ -33,17 +33,14 @@ type ExecFunc func(Target) agentinstall.Transport
 type Options struct {
 	Kubernetes kubernetes.Interface
 	Issuer     *auth.Issuer
-	// Exec runs commands in a target's container; nil is kubectl exec with
-	// the current kubeconfig.
+	// Cluster is the cluster Kubernetes reaches; nil Exec runs kubectl exec
+	// against it.
+	Cluster Cluster
+	// Exec runs commands in a target's container; nil is Cluster.Exec().
 	Exec ExecFunc
 	// DryRun only selects the targets, each StateSelected: it installs
 	// nothing and needs no Issuer.
 	DryRun bool
-}
-
-// KubectlExec runs commands in the target's container with kubectl exec.
-func KubectlExec(target Target) agentinstall.Transport {
-	return agentinstall.CommandTransport{Destination: agentinstall.Destination{Kind: "kubernetes", Namespace: target.Pod.Namespace, Pod: target.Pod.Name, Container: target.Container.Name}}
 }
 
 // Deploy installs the agent into every target the deployer selects and
@@ -124,7 +121,7 @@ func prepare(deployer Deployer, options Options) (JavaContainer, Provision, erro
 	}
 	exec := options.Exec
 	if exec == nil {
-		exec = KubectlExec
+		exec = options.Cluster.Exec()
 	}
 	return container, Provision{Issuer: options.Issuer.Name(), JWKS: options.Issuer.JWKS(), JWKSURL: deployer.Spec.Auth.JWKSURL, Exec: exec}, nil
 }

@@ -192,11 +192,47 @@ Arm, checkpoint, renew, disarm and calls run through the same `agentclient.Agent
 - Streaming captures are read every 250 ms and renewed every 30 seconds.
 - A capture ends complete when the agent sets `X-Telltale-Complete`.
 
+For Kubernetes attachment, omit `pid` to scan `/proc/<pid>/exe`. Exactly one executable ending in `/bin/java` must be visible; multiple JVMs require an explicit PID. The installer reads the selected process's start time from `/proc/<pid>/stat` and derives its Java home from `/proc/<pid>/exe`, including Java 8's `jre/bin/java` layout. Discovery needs `sh` and `readlink`, with no `ps`, `jps`, or configured `JAVA_HOME`. SSH and local attachment require an explicit PID.
+
+On Linux, the installer inspects the runtime's `release` metadata and Attach API before staging the agent. If the runtime is a JRE, it uses `deps` to download and checksum-verify a matching major-version JDK for the target architecture, caches it on the Telltale host, and copies it through the exec transport into `<directory>/jdk-<major>-<architecture>`. The transfer preserves symlinks and executable permissions, validates the copied JDK, and publishes it only after a successful transfer. Later attaches reuse the copied JDK. Pod recreation removes these temporary files; a later deployment provisions them again from the host cache. The target container needs no downloader. `--java-home` selects an explicit full JDK and is rejected if it lacks the Attach API.
+
 ### From the CLI
 
-`telltale jvm deploy -f <deployer.yaml>` deploys with your kubeconfig (`--kubeconfig` to choose files) and the connections telltale reads, which must define the `spec.auth.issuer` connection and its `signingKey`. It prints each target's state and keeps the deployer with that status in the global config dir (`deployers/<name>.yaml`), even when some targets fail, so the deployed ones stay reachable. Run it again after pods are replaced; it is idempotent. `telltale jvm deployers` lists the kept targets (`--format json` prints them as JSON records). `--deployer '<yaml or json>'` passes the document itself instead of `-f`; exactly one of the two is required. `--dry-run` resolves the selector and prints each pod it picks with state `selected`, without an issuer, without installing anything and without keeping the deployer.
+On Linux, a JRE without the Attach API triggers automatic JDK provisioning. Telltale reads the Java major from the runtime's `release` file, uses `deps` to download and verify a JDK for the target OS and architecture, then copies it into a version-family directory under `--directory` (for example, `/tmp/telltale/jdk-8-amd64`). The copy preserves executable permissions and symlinks, validates the Attach API, and publishes the directory only after transfer succeeds. Later installations reuse that JDK without downloading or copying it again. A new pod provisions its own copy. The helper runs from that JDK with Java option environment variables removed; the application JVM keeps running. An explicit `--java-home` is honored and must contain the Attach API.
 
-Over the API, `telltale serve` exposes the same command as `POST /api/v1/jvm/deploy`, executed on the server with its kubeconfig and connections. Send the document as `deployer`; `file` is refused over HTTP because it would read the server's filesystem. For example, `{"deployer":"apiVersion: telltale.flanksource.com/v1alpha1\nkind: Deployer\n...","dry-run":true}` answers the selected targets as `[{"target":"deployer/orders/shop/orders-0","namespace":"shop","pod":"orders-0","container":"app","state":"selected"}]`. Without `dry-run` it deploys and keeps the deployer as the CLI does, and `/api/v1/jvm/deployers` lists the kept targets as the same records.
+`telltale jvm deploy` and `telltale agents install java` are one command with the same flags: either name deploys a Deployer or attaches to a single PID. Which inputs you give picks the mode, and a flag the chosen mode would ignore is refused rather than dropped:
+
+| Inputs | Mode |
+|---|---|
+| `-f <deployer.yaml>` or `--deployer '<yaml or json>'` (at most one) | Deploy that Deployer. |
+| a `[kind/]name` target, or `--issuer connection://<ns>/<name>` | Deploy a Deployer built from the flags (below). |
+| neither | Attach to one `--pid` at a `local`, `ssh` or `kubernetes` `--destination`, verified by local discovery or by a hub (`--hub-url`, `--token-file`). See [sqlserver-jvm.md](sqlserver-jvm.md). |
+
+A Deployer is deployed with your kubeconfig and the connections telltale reads, which must define the `spec.auth.issuer` connection and its `signingKey`. `--kubeconfig <file>` and `--context <name>` choose the cluster; the API client, the `kubectl exec` that attaches the agent and every port-forward use it. The command prints each target's state and keeps the deployer with that status in the global config dir (`deployers/<name>.yaml`), even when some targets fail, so the deployed ones stay reachable. The kept deployer records the kubeconfig and context as `telltale.flanksource.com/kubeconfig` and `telltale.flanksource.com/kubecontext` annotations, so a later `--agent deployer/…` reconnects to the same cluster whatever the current context is. Run it again after pods are replaced; it is idempotent. `telltale jvm deployers` lists the kept targets (`--format json` prints them as JSON records). `--dry-run` resolves the selector and prints each pod it picks with state `selected`, without an issuer, without installing anything and without keeping the deployer. In single-attach mode `--dry-run` previews the artifact and its path instead.
+
+A Deployer built from flags is one `attach` container per selected pod. Everything but the target defaults:
+
+| Part | Flags | Default |
+|---|---|---|
+| Pods | a target: `sts/<name>`, `deploy/<name>`, `pod/<name>` (or the long and plural forms), or a bare pod name. Without one, `--pod <name>`, or `--kind Deployment\|StatefulSet\|Pod` with `--workload <name>` or `--labels k=v,…` | — |
+| Namespace | `--namespace` | the kubeconfig context's namespace |
+| Container | `--container` | the pod's only container; a pod running several is refused with their names |
+| JVM | `--pid`, `--directory` | discover the only Java process from `/proc`, `/tmp/telltale` |
+| Identity | `--service`, `--name` | the target's name; `--name` defaults to `--service` and names the deployer in its target ids |
+| Listener | `--bind`, `--port`, `--url` | `127.0.0.1` (reachable only through a port-forward), `7070`, `portforward://{{.Pod.Name}}.{{.Pod.Namespace}}:<port>?kind=pod` |
+| Auth | `--issuer`, `--jwks-url`, `--jwks-mode read\|publish` with `--jwks-kind ConfigMap\|Secret`, `--jwks-name`, `--jwks-key` | `connection://telltale/issuer`; agents get the issuer's own JWKS inline |
+
+`--java-home`, `--extensions-dir` and `--allow-mutation` apply as for a single attach. The `tomcat` kind is deployed from a Deployer document.
+
+On first use the default issuer is created as `<config>/flanksource/connections/issuer.yaml`, the connections every Flanksource tool shares: namespace `telltale`, name `issuer`, a new 3072-bit RSA key as its `signingKey` secret, readable only by you. The command says so on stderr. An existing issuer, in any connection layer, keeps its key, so agents deployed with it stay valid. A dry run never creates it. `go run ./hack/signing-connection <name> <dir>` writes another issuer the same way.
+
+```bash
+telltale agents install java --namespace shop sts/orders          # every running pod of StatefulSet orders
+telltale jvm deploy orders-0 --dry-run                            # the pods it would select, nothing installed
+telltale jvm snapshot --agent deployer/orders/shop/orders-0
+```
+
+Over the API, `telltale serve` exposes the same command as `POST /api/v1/jvm/deploy` and `POST /api/v1/agents/install/java`, with the same inputs, executed on the server with its kubeconfig and connections. Send the document as `deployer`; `file` is refused over HTTP because it would read the server's filesystem. For example, `{"deployer":"apiVersion: telltale.flanksource.com/v1alpha1\nkind: Deployer\n...","dry-run":true}` answers the selected targets as `[{"target":"deployer/orders/shop/orders-0","namespace":"shop","pod":"orders-0","container":"app","state":"selected"}]`. Without `dry-run` it deploys and keeps the deployer as the CLI does, and `/api/v1/jvm/deployers` lists the kept targets as the same records.
 
 Every `jvm` command and capture then names a target by its id, or by a short name. `--agent` takes the agent's id, its service, the last part of its id, its pid, a deployed target's deployer or pod, or a unique prefix of any of these. An exact name wins over prefixes. Leave `--agent` out when only one agent can serve the command: the one connected Java agent, the one connected agent offering the capture's probe, or the one deployed target. A name that matches several agents, or an omitted one with several to choose from, is refused with the candidates listed. The web wizard likewise arms a new agent capture on the only agent that can run it.
 

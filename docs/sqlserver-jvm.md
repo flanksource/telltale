@@ -53,7 +53,9 @@ telltale agents install java --destination kubernetes --context development --na
 telltale agents list --server https://telltale.example.com
 ```
 
-SSH uses native SSH configuration, batch authentication, and optionally `--ssh-config`. Kubernetes uses native kubeconfig and requires explicit namespace, pod, and container. Destinations require POSIX `ps`, `install`, `dd`, `mv`, `rm`, `uname`, and `sha256sum` (or `shasum` on macOS). The installer copies and attaches the agent; profiling then uses the agent protocol.
+SSH uses native SSH configuration, batch authentication, and optionally `--ssh-config`. Kubernetes uses native kubeconfig, or `--kubeconfig` and `--context`, and requires explicit namespace, pod, and container.
+
+`telltale agents install java` is the same command as `telltale jvm deploy`. Instead of a hub, a Kubernetes JVM can verify short-lived tokens itself: name a target (`telltale agents install java --namespace shop sts/orders`), or add `--issuer connection://<ns>/<name>`, and the command deploys a Deployer built from the flags, signed by `connection://telltale/issuer` unless you name another, reached later as `--agent deployer/<name>/<namespace>/<pod>` over a port-forward. Neither a hub nor a token file is needed. See [Deployers](jvm-diagnostics-port.md#deployers). Destinations require POSIX `ps`, `install`, `dd`, `mv`, `rm`, `uname`, and `sha256sum` (or `shasum` on macOS). The installer copies and attaches the agent; profiling then uses the agent protocol.
 
 Start remote captures in the connected hub's browser, selecting the agent seam and an agent ID or resource selector such as `service.name=orders`. Remote agent identities are namespaced and cannot be confused with a controller's local PID. A JVM disconnect releases its recordings; the dial-out connection retries with bounded backoff. Recording blobs are limited to 64 MiB.
 

@@ -6,6 +6,7 @@
 package auth
 
 import (
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
@@ -195,6 +196,20 @@ func (i *Issuer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "max-age=60")
 	_ = json.NewEncoder(w).Encode(i.JWKS())
+}
+
+// GenerateSigningKey is a new 3072-bit RSA key as PKCS#8 PEM, the form
+// ParsePrivateKey reads.
+func GenerateSigningKey() ([]byte, error) {
+	key, err := rsa.GenerateKey(rand.Reader, 3072)
+	if err != nil {
+		return nil, fmt.Errorf("signing key: %w", err)
+	}
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		return nil, fmt.Errorf("signing key: %w", err)
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}), nil
 }
 
 // ParsePrivateKey reads a PKCS#8 or PKCS#1 PEM RSA private key.

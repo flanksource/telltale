@@ -135,8 +135,8 @@ spec:
 		Expect(executeJVM(remote, "deploy", "--dry-run", "-f", file)).To(MatchError(ContainSubstring("send deployer in the request instead")))
 	})
 
-	It("takes exactly one of a deployer file and a deployer document", func() {
-		Expect(executeJVM(context.Background(), "deploy", "--dry-run")).To(MatchError(ContainSubstring("[file deployer]")))
+	It("takes at most one of a deployer file and a deployer document, and without either attaches to one PID", func() {
 		Expect(executeJVM(context.Background(), "deploy", "-f", "x.yaml", "--deployer", "kind: Deployer")).To(MatchError(ContainSubstring("none of the others")))
+		Expect(executeJVM(context.Background(), "deploy", "--dry-run")).To(MatchError(ContainSubstring("a positive target JVM pid is required")))
 	})
 })

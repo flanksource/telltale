@@ -37,8 +37,6 @@ func (s Selector) validate() error {
 		return errors.New("selector labels or a workload name is required")
 	case len(s.Labels) > 0 && s.Name != "":
 		return errors.New("selector names a workload or matches labels, not both")
-	case s.Container == "":
-		return errors.New("selector container is required")
 	}
 	return nil
 }
@@ -98,7 +96,16 @@ func targets(deployer, container string, pods map[string]*corev1.Pod) ([]Target,
 	for _, name := range slices.Sorted(maps.Keys(pods)) {
 		pod := pods[name]
 		index := slices.IndexFunc(pod.Spec.Containers, func(c corev1.Container) bool { return c.Name == container })
-		if index < 0 {
+		switch {
+		case container == "" && len(pod.Spec.Containers) == 1:
+			index = 0
+		case container == "":
+			names := make([]string, len(pod.Spec.Containers))
+			for i, c := range pod.Spec.Containers {
+				names[i] = c.Name
+			}
+			return nil, fmt.Errorf("pod %s/%s runs containers %s: name the JVM container", pod.Namespace, pod.Name, strings.Join(names, ", "))
+		case index < 0:
 			return nil, fmt.Errorf("pod %s/%s has no container %q", pod.Namespace, pod.Name, container)
 		}
 		result = append(result, Target{ID: TargetID(deployer, pod.Namespace, pod.Name), Pod: pod, Container: pod.Spec.Containers[index]})

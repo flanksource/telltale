@@ -32,8 +32,21 @@ var _ = Describe("installation target validation", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(out)).To(HavePrefix(hex.EncodeToString(sum[:]) + " "))
 	})
+	It("runs kubectl against the destination's kubeconfig and context", func() {
+		bin := GinkgoT().TempDir()
+		// kubectl stands in for the cluster: it echoes the arguments it was given.
+		Expect(os.WriteFile(filepath.Join(bin, "kubectl"), []byte("#!/bin/sh\necho \"$@\"\n"), 0o755)).To(Succeed())
+		GinkgoT().Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+		destination := agentinstall.Destination{Kind: "kubernetes", Kubeconfig: "/home/example/.kube/uat", Context: "uat", Namespace: "shop", Pod: "orders-0", Container: "app"}
+		out, err := agentinstall.CommandTransport{Destination: destination}.Run(context.Background(), []string{"uname", "-s"}, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(out)).To(Equal("--kubeconfig /home/example/.kube/uat --context uat --namespace shop exec -i orders-0 --container app -- uname -s\n"))
+	})
 	It("builds the Java 8 attach command from one JDK home", func() {
 		args := (agentinstall.Java{}).Attach(agentinstall.Attachment{PID: 123, Artifact: "/opt/agent.jar", Config: "/opt/config.json", JavaHome: "/opt/jdk8"})
-		Expect(args).To(Equal([]string{"/opt/jdk8/bin/java", "-cp", "/opt/agent.jar:/opt/jdk8/lib/tools.jar", "com.flanksource.telltale.Attach", "123", "/opt/agent.jar", "/opt/config.json"}))
+		// The helper JVM must not load the javaagents JAVA_TOOL_OPTIONS gives the
+		// target, such as a jmx-exporter whose port the target already holds.
+		Expect(args).To(Equal([]string{"env", "-u", "JAVA_TOOL_OPTIONS", "-u", "_JAVA_OPTIONS", "-u", "JDK_JAVA_OPTIONS",
+			"/opt/jdk8/bin/java", "-cp", "/opt/agent.jar:/opt/jdk8/lib/tools.jar", "com.flanksource.telltale.Attach", "123", "/opt/agent.jar", "/opt/config.json"}))
 	})
 })
