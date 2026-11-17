@@ -16,14 +16,14 @@ const headerLines = 6
 
 var (
 	titleStyle    = terminalui.Title
-	headStyle     = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("244"))
+	headStyle     = terminalui.Heading
 	mutedStyle    = terminalui.Muted
 	selectedStyle = terminalui.Selected
-	statusStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("208"))
-	userStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("39"))
-	kernelStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("203"))
-	memoryStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("78"))
-	swapStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
+	statusStyle   = terminalui.Status
+	userStyle     = terminalui.CPU
+	kernelStyle   = terminalui.Kernel
+	memoryStyle   = terminalui.Memory
+	swapStyle     = terminalui.Swap
 )
 
 func (m Model) View() tea.View {
@@ -43,7 +43,7 @@ func (m Model) render() string {
 		return "Process Top\n↑↓ select · ←→ fold · enter list processes\ns sort · S reverse · / filter · b group\nd inspect and freeze · P pause/resume\nf process pane · x terminate · r nice (confirmation required)\n? close help · q quit"
 	}
 	lines := m.header()
-	lines = append(lines, padLines(m.processTable().View(m.width, max(1, m.bodyHeight()+1)), max(1, m.bodyHeight()+1))...)
+	lines = append(lines, terminalui.PadLines(m.processTable().View(m.width, max(1, m.bodyHeight()+1)), max(1, m.bodyHeight()+1))...)
 	lines = append(lines, m.renderDetail()...)
 	lines = append(lines, m.footer())
 	return strings.Join(lines[:min(len(lines), m.height)], "\n")
@@ -62,7 +62,7 @@ func (m Model) bodyHeight() int {
 
 func (m Model) header() []string {
 	if m.frame == nil {
-		return padLines(titleStyle.Render(fit("telltale top · "+m.options.Title, m.width))+"\n"+mutedStyle.Render("Reading process groups…"), headerLines)
+		return terminalui.PadLines(titleStyle.Render(terminalui.Fit("telltale top · "+m.options.Title, m.width))+"\n"+mutedStyle.Render("Reading process groups…"), headerLines)
 	}
 	processes := 0
 	present := map[string]bool{}
@@ -94,16 +94,16 @@ func (m Model) header() []string {
 	}
 	host := m.frame.Host
 	if host == nil {
-		return padLines(titleStyle.Render(fit(title, m.width))+"\n"+mutedStyle.Render(fit("The host's CPU, memory, swap and disks are read live, not recorded.", m.width)), headerLines)
+		return terminalui.PadLines(titleStyle.Render(terminalui.Fit(title, m.width))+"\n"+mutedStyle.Render(terminalui.Fit("The host's CPU, memory, swap and disks are read live, not recorded.", m.width)), headerLines)
 	}
 	barWidth := max(10, min(60, m.width/3))
-	cpu := "CPU " + bar(barWidth, []share{{percentOf(host.CPUUserPercent), userStyle}, {percentOf(host.CPUSystemPercent), kernelStyle}}) +
+	cpu := "CPU " + terminalui.Bar(barWidth, []terminalui.Share{{Percent: percentOf(host.CPUUserPercent), Style: userStyle}, {Percent: percentOf(host.CPUSystemPercent), Style: kernelStyle}}) +
 		fmt.Sprintf(" %s%% user  %s%% kernel  %s%% idle · %d cores · load %.2f %.2f %.2f",
 			groups.Percent(host.CPUUserPercent), groups.Percent(host.CPUSystemPercent), groups.Percent(host.CPUIdlePercent),
 			host.Cores, host.Load1, host.Load5, host.Load15)
-	memory := "MEM " + bar(barWidth, []share{{ratio(host.MemoryUsedBytes, host.MemoryTotalBytes), memoryStyle}}) +
+	memory := "MEM " + terminalui.Bar(barWidth, []terminalui.Share{{Percent: ratio(host.MemoryUsedBytes, host.MemoryTotalBytes), Style: memoryStyle}}) +
 		fmt.Sprintf(" %s / %s", groups.Size(float64(host.MemoryUsedBytes)), groups.Size(float64(host.MemoryTotalBytes)))
-	swap := "SWP " + bar(barWidth, []share{{ratio(host.SwapUsedBytes, host.SwapTotalBytes), swapStyle}}) +
+	swap := "SWP " + terminalui.Bar(barWidth, []terminalui.Share{{Percent: ratio(host.SwapUsedBytes, host.SwapTotalBytes), Style: swapStyle}}) +
 		fmt.Sprintf(" %s / %s", groups.Size(float64(host.SwapUsedBytes)), groups.Size(float64(host.SwapTotalBytes)))
 	if host.SwapTotalBytes == 0 {
 		swap = "SWP " + mutedStyle.Render("no swap")
@@ -114,7 +114,7 @@ func (m Model) header() []string {
 	if len(m.frame.Slots) > 0 {
 		slots = "SLT gavel " + groups.SlotsText(m.frame.Slots)
 	}
-	return []string{titleStyle.Render(fit(title, m.width)), clip(cpu, m.width), clip(memory, m.width), clip(swap, m.width), clip(disks, m.width), clip(slots, m.width)}
+	return []string{titleStyle.Render(terminalui.Fit(title, m.width)), terminalui.Clip(cpu, m.width), terminalui.Clip(memory, m.width), terminalui.Clip(swap, m.width), terminalui.Clip(disks, m.width), terminalui.Clip(slots, m.width)}
 }
 
 // ops is a known operations rate, in thousands from a thousand, or "-".
@@ -126,25 +126,6 @@ func ops(value *float64) string {
 		return fmt.Sprintf("%.1fK", *value/1000)
 	}
 	return fmt.Sprintf("%.0f", *value)
-}
-
-// share is a part of a bar, in percent, and how it is drawn.
-type share struct {
-	percent float64
-	style   lipgloss.Style
-}
-
-func bar(width int, shares []share) string {
-	var b strings.Builder
-	used := 0
-	for _, part := range shares {
-		cells := min(width-used, int(part.percent/100*float64(width)+0.5))
-		if cells > 0 {
-			b.WriteString(part.style.Render(strings.Repeat("█", cells)))
-			used += cells
-		}
-	}
-	return "[" + b.String() + mutedStyle.Render(strings.Repeat("░", width-used)) + "]"
 }
 
 func percentOf(value *float64) float64 {
@@ -182,11 +163,10 @@ func (m Model) renderDetail() []string {
 	lines := []string{headStyle.Render(heading + strings.Repeat("─", max(0, m.width-lipgloss.Width(heading))))}
 	rows := height
 	if !kept {
-		return append(lines, padLines(mutedStyle.Render("A recording keeps each group's use, not its processes."), rows-1)...)
+		return append(lines, terminalui.PadLines(mutedStyle.Render("A recording keeps each group's use, not its processes."), rows-1)...)
 	}
 	commandWidth := max(10, m.width-(8+12+7+8+8+8+9+9+9+9+6+24))
-	lines = append(lines, headStyle.Render(fit(fmt.Sprintf("%8s %-11s%7s%8s%8s%8s%9s%9s%9s%9s%6s  %-22s%s",
-		"PID", "USER", "CPU%", "RSS", "CMPRS", "SWAP", "DISK R/s", "DISK W/s", "NET IN/s", "NET OUT/s", "SOCK", "ORIGIN", "COMMAND"), m.width)))
+	lines = append(lines, headStyle.Render(terminalui.Fit(fmt.Sprintf("%8s %-11s%7s%8s%8s%8s%9s%9s%9s%9s%6s  %-22s%s", "PID", "USER", "CPU%", "RSS", "CMPRS", "SWAP", "DISK R/s", "DISK W/s", "NET IN/s", "NET OUT/s", "SOCK", "ORIGIN", "COMMAND"), m.width)))
 	start := 0
 	for index, p := range processes {
 		if p.Key == m.processKey {
@@ -199,11 +179,8 @@ func (m Model) renderDetail() []string {
 		if hog := m.hogLabel(p.Usage); hog != "" {
 			command = "! " + hog + " · " + command
 		}
-		text := fit(fmt.Sprintf("%8d %-11s%7s%8s%8s%8s%9s%9s%9s%9s%6s  %-22s%s",
-			p.PID, groups.Truncate(p.Origin.Owner, 10), groups.Percent(p.CPUPercent), groups.Size(float64(p.RSSBytes)),
-			groups.MemorySize(p.CompressedBytes), groups.MemorySize(p.SwapBytes),
-			groups.Rate(p.DiskRead), groups.Rate(p.DiskWrite), groups.Rate(p.NetRx), groups.Rate(p.NetTx), groups.Count(p.Sockets),
-			groups.Truncate(groups.OriginText(p.Origin), 21), groups.Truncate(command, commandWidth)), m.width)
+		text := terminalui.Fit(fmt.Sprintf("%8d %-11s%7s%8s%8s%8s%9s%9s%9s%9s%6s  %-22s%s", p.PID, groups.Truncate(p.Origin.Owner, 10), groups.Percent(p.CPUPercent), groups.Size(float64(p.RSSBytes)), groups.MemorySize(p.CompressedBytes), groups.MemorySize(p.SwapBytes), groups.Rate(p.DiskRead), groups.Rate(p.DiskWrite), groups.Rate(p.NetRx), groups.Rate(p.NetTx), groups.Count(p.Sockets), groups.Truncate(groups.OriginText(p.Origin), 21), groups.Truncate(command, commandWidth)), m.width)
+
 		if p.Key == m.processKey || (m.processKey == "" && index == 0) {
 			text = selectedStyle.Render(text)
 		} else if m.hogLabel(p.Usage) != "" {
@@ -211,21 +188,21 @@ func (m Model) renderDetail() []string {
 		}
 		lines = append(lines, text)
 	}
-	return padLines(strings.Join(lines, "\n"), height)
+	return terminalui.PadLines(strings.Join(lines, "\n"), height)
 }
 
 func (m Model) footer() string {
 	if m.status != "" {
-		return statusStyle.Render(fit(m.status, m.width))
+		return statusStyle.Render(terminalui.Fit(m.status, m.width))
 	}
 	if m.typing {
-		return mutedStyle.Render(fit("type to filter · enter keeps it · esc clears it", m.width))
+		return mutedStyle.Render(terminalui.Fit("type to filter · enter keeps it · esc clears it", m.width))
 	}
 	if m.detail {
-		return mutedStyle.Render(fit("[ ] choose process  x terminate  r nice=10  y confirm  esc cancel  f close · hogs pinned 120s · CMPRS includes swapped-out pages on macOS", m.width))
+		return mutedStyle.Render(terminalui.Fit("[ ] choose process  x terminate  r nice=10  y confirm  esc cancel  f close · hogs pinned 120s · CMPRS includes swapped-out pages on macOS", m.width))
 	}
 	toggles := fmt.Sprintf("o other:%s  n net:%s", onOff(m.toggles.All), onOff(m.toggles.Net))
-	return mutedStyle.Render(fit("↑↓ move  enter processes  d inspect  P pause/resume  / filter  ? help  "+toggles+"  q quit", m.width))
+	return mutedStyle.Render(terminalui.Fit("↑↓ move  enter processes  d inspect  P pause/resume  / filter  ? help  "+toggles+"  q quit", m.width))
 }
 
 func onOff(on bool) string {
@@ -233,26 +210,4 @@ func onOff(on bool) string {
 		return "on"
 	}
 	return "off"
-}
-
-// fit pads or cuts plain text to exactly width cells.
-func fit(text string, width int) string {
-	if lipgloss.Width(text) > width {
-		return groups.Truncate(text, width)
-	}
-	return text + strings.Repeat(" ", width-lipgloss.Width(text))
-}
-
-// clip cuts styled text to width cells.
-func clip(text string, width int) string {
-	return lipgloss.NewStyle().MaxWidth(width).Render(text)
-}
-
-// padLines is text as exactly height lines.
-func padLines(text string, height int) []string {
-	lines := strings.Split(text, "\n")
-	for len(lines) < height {
-		lines = append(lines, "")
-	}
-	return lines[:height]
 }

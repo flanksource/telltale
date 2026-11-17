@@ -10,10 +10,13 @@ import (
 // Known is an agent a resolver can connect but that is not connected yet,
 // such as a deployed target, with the short names it answers to.
 type Known struct {
-	ID string
+	ID string `json:"agentId"`
 	// Runtime is the agent's language, when known before it connects.
-	Runtime string
-	Names   []string
+	Runtime  string            `json:"runtime,omitempty"`
+	Names    []string          `json:"names,omitempty"`
+	Resource map[string]string `json:"resource,omitempty"`
+	State    string            `json:"state,omitempty"`
+	Endpoint string            `json:"endpoint,omitempty"`
 }
 
 // Lister lists the agents its resolver can connect.
@@ -56,6 +59,7 @@ type candidate struct {
 	id, label string
 	names     []string
 	agent     *Agent
+	known     *Known
 }
 
 // Lookup is the one agent query names: its id, or a short name (its service,
@@ -134,7 +138,7 @@ func (r *Registry) candidates(ctx context.Context, want Want) ([]candidate, erro
 			if len(agent.Names) > 0 {
 				label = agent.Names[0]
 			}
-			result = append(result, candidate{id: agent.ID, label: label, names: append([]string{lastPart(agent.ID)}, agent.Names...)})
+			result = append(result, candidate{id: agent.ID, label: label, names: append([]string{lastPart(agent.ID)}, agent.Names...), known: &agent})
 		}
 	}
 	slices.SortFunc(result, func(a, b candidate) int { return strings.Compare(a.id, b.id) })

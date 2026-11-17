@@ -86,6 +86,19 @@ var _ = Describe("deployer store and target resolver", func() {
 		Expect(err).To(MatchError(ContainSubstring("invalid deployer name")))
 	})
 
+	It("lists deployed target metadata for agent inventory and excludes failed targets", func() {
+		store := deploy.Store{Dir: GinkgoT().TempDir()}
+		value := deployed("http://127.0.0.1:7070")
+		value.Status.Targets = append(value.Status.Targets, deploy.TargetStatus{Target: deploy.TargetID("example", namespace, "orders-1"),
+			Namespace: namespace, Pod: "orders-1", Container: jvm, State: deploy.StateFailed, Error: "not deployed"})
+		Expect(store.Save(value)).To(Succeed())
+		known, err := store.Known()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(known).To(Equal([]agentclient.Known{{ID: target, Runtime: "java", Names: []string{"example", "orders-0", namespace + "/orders-0"},
+			State: string(deploy.StateDeployed), Endpoint: "http://127.0.0.1:7070", Resource: map[string]string{deploy.AttributeDeployer: "example",
+				deploy.AttributeTarget: target, deploy.AttributeNamespace: namespace, deploy.AttributePod: "orders-0", deploy.AttributeContainer: jvm}}}))
+	})
+
 	It("connects a stored target on its first use, with tokens its issuer mints for it", func() {
 		key, err := rsa.GenerateKey(rand.Reader, 2048)
 		Expect(err).ToNot(HaveOccurred())

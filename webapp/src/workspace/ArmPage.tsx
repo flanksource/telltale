@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "@flanksource/clicky-ui/rpc";
-import { useAgents, useDeployedTargets } from "../agents/api";
+import { isConnectedAgent, useAgents, useDeployedTargets } from "../agents/api";
 import { ArmWizard } from "../arm/ArmWizard";
 import type { ArmCatalog } from "../arm/catalog";
 import { EMPTY_DRAFT, agentProbeDraft, readKinds } from "../arm/model";
@@ -28,7 +28,7 @@ export default function ArmPage({ agent, probe }: { agent?: string; probe?: stri
   );
   if (failed?.error) return <div className="space-y-4">{header}<p role="alert">{failed.error.message}</p></div>;
   if (loading || !kinds) return <div className="space-y-4">{header}<p role="status">Loading the arming form…</p></div>;
-  const catalog: ArmCatalog = { kinds, connections: connections.data ?? [], definitions: definitions.data ?? [], agents: agents.data ?? [], deployed: deployed.data ?? [] };
+  const catalog: ArmCatalog = { kinds, connections: connections.data ?? [], definitions: definitions.data ?? [], agents: (agents.data ?? []).filter(isConnectedAgent), deployed: deployed.data ?? [] };
   if (probe && !kinds.some(kind => kind.name === probe && kind.seams.includes("agent"))) {
     return <div className="space-y-4">{header}<p role="alert">Probe {probe} has no trace kind this server arms on an agent.</p></div>;
   }

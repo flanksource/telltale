@@ -1,7 +1,7 @@
 import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { once } from "node:events";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { connect } from "node:net";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -42,6 +42,42 @@ afterAll(async () => {
 });
 
 describe("agents API", () => {
+  it("mirrors saved deployed inventory between the API and CLI without connecting targets", async () => {
+    const directory = join(testDir, "config", "telltale", "deployers");
+    const file = join(directory, "fixture-orders.yaml");
+    const target = "deployer/fixture-orders/fixture-ns/orders-0";
+    const endpoint = "http://127.0.0.1:1";
+    await mkdir(directory, { recursive: true });
+    await writeFile(file, JSON.stringify({
+      apiVersion: "telltale.flanksource.com/v1alpha1", kind: "Deployer", metadata: { name: "fixture-orders" },
+      spec: {
+        selector: { kind: "Pod", namespace: "fixture-ns", name: "orders-0" },
+        javaContainer: { kind: "attach", url: endpoint, directory: "/tmp/telltale", bind: "127.0.0.1", port: 7070, service: "orders" },
+        auth: { issuer: "connection://example/issuer" },
+      },
+      status: { targets: [{ target, namespace: "fixture-ns", pod: "orders-0", container: "app", state: "deployed", endpoint }] },
+    }));
+    try {
+      const response = await fetch(`${apiURL}/api/agents`);
+      expect(response.status).toBe(200);
+      const inventory = await response.json() as Array<Record<string, unknown>>;
+      const agent = inventory.find(entry => entry.agentId === target);
+      expect(agent).toMatchObject({
+        agentId: target, connected: false, group: "namespace/fixture-ns",
+        resource: { "k8s.namespace.name": "fixture-ns", "k8s.pod.name": "orders-0", "k8s.container.name": "app" },
+        known: { agentId: target, runtime: "java", state: "deployed", endpoint },
+      });
+      expect(agent).not.toHaveProperty("runtime");
+      expect(agent).not.toHaveProperty("started");
+      expect(agent).not.toHaveProperty("probes");
+      const cli = await run(".bin/telltale", ["agents", "list", "--server", apiURL, "--format", "json"], { env: env() });
+      const groups = JSON.parse(cli.stdout) as Record<string, unknown[]>;
+      expect(groups["namespace/fixture-ns"]).toContainEqual(agent);
+    } finally {
+      await rm(file);
+    }
+  });
+
   it("serves the live JVM catalog, preserves script integers and hot-loads an extension", async () => {
     await run("javac", ["-d", testDir, "pkg/agentinstall/testdata/Workload.java"]);
     const config = join(testDir, "java-agent.json");

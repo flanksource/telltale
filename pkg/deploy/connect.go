@@ -84,8 +84,13 @@ func connect(ctx dbcontext.Context, deployer string, container JavaContainer, ta
 	if err != nil {
 		return nil, fmt.Errorf("resolve %s: %w", target.Endpoint, err)
 	}
-	resource := map[string]string{AttributeDeployer: deployer, AttributeTarget: target.Target, AttributeNamespace: target.Namespace, AttributePod: target.Pod, AttributeContainer: target.Container}
+	resource := targetResource(deployer, target)
 	return agentclient.DialHTTP(ctx, agentclient.HTTPEndpoint{ID: target.Target, URL: url, Client: client, Tokens: tokens, Resource: resource})
+}
+
+func targetResource(deployer string, target TargetStatus) map[string]string {
+	return map[string]string{AttributeDeployer: deployer, AttributeTarget: target.Target, AttributeNamespace: target.Namespace,
+		AttributePod: target.Pod, AttributeContainer: target.Container}
 }
 
 func closeAll(agents []*agentclient.Agent) error {

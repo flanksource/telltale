@@ -112,7 +112,8 @@ func (s Store) Known() ([]agentclient.Known, error) {
 			if target.State != StateDeployed {
 				continue
 			}
-			known = append(known, agentclient.Known{ID: target.Target, Runtime: "java", Names: []string{deployer.Name, target.Pod, target.Namespace + "/" + target.Pod}})
+			known = append(known, agentclient.Known{ID: target.Target, Runtime: "java", Names: []string{deployer.Name, target.Pod, target.Namespace + "/" + target.Pod},
+				Resource: targetResource(deployer.Name, target), State: string(target.State), Endpoint: target.Endpoint})
 		}
 	}
 	return known, nil

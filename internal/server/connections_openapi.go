@@ -10,7 +10,7 @@ import (
 	"github.com/flanksource/commons-db/models"
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/internal/jvm"
-	"github.com/flanksource/telltale/sdk/protocol"
+	"github.com/flanksource/telltale/pkg/agentclient"
 )
 
 func addConnectionPaths(spec *rpc.OpenAPISpec) {
@@ -35,7 +35,9 @@ func addConnectionPaths(spec *rpc.OpenAPISpec) {
 			status := http.StatusOK
 			response := &rpc.OpenAPISchema{Type: "object"}
 			if path == "/api/agents" {
-				response = &rpc.OpenAPISchema{Type: "array", Items: rpc.SchemaForStruct(protocol.Hello{})}
+				item := rpc.SchemaForStruct(agentclient.Info{})
+				item.Required = []string{"agentId", "resource", "connected", "group"}
+				response = &rpc.OpenAPISchema{Type: "array", Items: item}
 			}
 			if strings.HasSuffix(path, "/catalog") {
 				response = &rpc.OpenAPISchema{Type: "array", Items: &rpc.OpenAPISchema{Type: "object", AdditionalProperties: &rpc.OpenAPISchema{}}}

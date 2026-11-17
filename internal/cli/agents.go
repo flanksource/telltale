@@ -13,7 +13,6 @@ import (
 	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/credentials/apitoken"
 	"github.com/flanksource/telltale/pkg/datadir"
-	"github.com/flanksource/telltale/sdk/protocol"
 	"github.com/spf13/cobra"
 )
 
@@ -21,29 +20,17 @@ func newAgentsCommand() *cobra.Command {
 	agents := &cobra.Command{Use: "agents", Short: "Manage agents and their credentials"}
 	var serverURL string
 	list := &cobra.Command{
-		Use: "list", Short: "List discovered and connected agents", Args: cobra.NoArgs,
+		Use: "list", Short: "List discovered, connected and deployed agents", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			infos, err := agentInfos(cmd.Context(), serverURL)
 			if err != nil {
 				return err
 			}
-			groups := make(map[string][]protocol.Hello)
-			for _, info := range infos {
-				key := "other"
-				if namespace := info.Resource["k8s.namespace.name"]; namespace != "" {
-					key = "namespace/" + namespace
-				} else if provider := info.Resource["cloud.provider"]; provider != "" {
-					key = "cloud/" + provider + "/" + info.Resource["cloud.region"]
-				} else if host := info.Resource["host.name"]; host != "" {
-					key = "host/" + host
-				}
-				groups[key] = append(groups[key], info)
-			}
-			return json.NewEncoder(cmd.OutOrStdout()).Encode(groups)
+			return printRecords(cmd, agentclient.GroupInventory(infos))
 		},
 	}
 	get := &cobra.Command{
-		Use: "get <id>", Short: "Show a discovered or connected agent", Args: cobra.ExactArgs(1),
+		Use: "get <id>", Short: "Show a discovered, connected or deployed agent", Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			infos, err := agentInfos(cmd.Context(), serverURL)
 			if err != nil {
@@ -57,8 +44,8 @@ func newAgentsCommand() *cobra.Command {
 			return fmt.Errorf("agent %q not found", args[0])
 		},
 	}
-	list.Flags().StringVar(&serverURL, "server", "", "Telltale server URL for connected agents")
-	get.Flags().StringVar(&serverURL, "server", "", "Telltale server URL for connected agents")
+	list.Flags().StringVar(&serverURL, "server", "", "Telltale server URL for agent inventory")
+	get.Flags().StringVar(&serverURL, "server", "", "Telltale server URL for agent inventory")
 	tokens := &cobra.Command{Use: "token", Short: "Manage hub credentials"}
 	var scope string
 	create := &cobra.Command{
@@ -84,7 +71,7 @@ func newAgentsCommand() *cobra.Command {
 	return agents
 }
 
-func agentInfos(ctx context.Context, serverURL string) (infos []protocol.Hello, err error) {
+func agentInfos(ctx context.Context, serverURL string) (infos []agentclient.Info, err error) {
 	if serverURL != "" {
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(serverURL, "/")+"/api/agents", nil)
 		if err != nil {
@@ -104,14 +91,12 @@ func agentInfos(ctx context.Context, serverURL string) (infos []protocol.Hello, 
 		if err := json.NewDecoder(io.LimitReader(response.Body, 16<<20)).Decode(&infos); err != nil {
 			return nil, fmt.Errorf("decode agents: %w", err)
 		}
+		for _, info := range infos {
+			if info.AgentID == "" || info.Group == "" || (!info.Connected && info.Known == nil) || (info.Connected && info.Hello == nil) {
+				return nil, fmt.Errorf("server returned incomplete agent inventory metadata for %q", info.AgentID)
+			}
+		}
 		return infos, nil
 	}
-	if err := agentclient.Default.Discover(ctx, ""); err != nil {
-		return nil, err
-	}
-	infos = make([]protocol.Hello, 0)
-	for _, agent := range agentclient.Default.Match(nil) {
-		infos = append(infos, agent.Hello)
-	}
-	return infos, nil
+	return agentclient.Default.Inventory(ctx)
 }

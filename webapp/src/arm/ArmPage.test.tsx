@@ -24,7 +24,7 @@ function stubServer(extra: Handler = () => undefined) {
       case "/api/traces/start": return Response.json(START_FORM);
       case "/api/traces/connections": return Response.json({ connections: [{ reference: "connection://mssql", name: "mssql", type: "sql_server", source: "file:///connections/mssql.yaml" }] });
       case "/api/traces/definitions": return Response.json([]);
-      case "/api/agents": return Response.json(attached ? [{ agentId: NEW_AGENT, service: "orders", runtime: { lang: "java", version: "21" }, resource: {}, labels: {}, probes: [{ name: "jvm_trace", title: "JVM methods" }] }] : []);
+      case "/api/agents": return Response.json(attached ? [{ agentId: NEW_AGENT, service: "orders", connected: true, group: "other", runtime: { lang: "java", version: "21" }, resource: {}, labels: {}, probes: [{ name: "jvm_trace", title: "JVM methods" }] }] : []);
       case "/api/v1/jvm/deployers": return Response.json({ success: true, output: "[]\n" });
       case "/api/top/processes": return Response.json({ sampledAt: "", tick: 1, processes: [{ key: "4242", pid: JAVA_PID, ppid: 1, name: "java", command: "java -jar orders.jar", groupKey: "", origin: {} }] });
       case "/api/v1/agents/install/java":

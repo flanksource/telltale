@@ -1,21 +1,43 @@
 import { useQuery } from "@tanstack/react-query";
 import { failure } from "../traces/api";
 
-/** A connected agent as the server lists it (protocol.Hello). */
-export interface Agent {
+interface AgentIdentity {
   agentId: string;
+  group: string;
+  resource: Record<string, string>;
+}
+
+/** A connected agent with its live handshake. */
+export interface Agent extends AgentIdentity {
+  connected: true;
   service: string;
   runtime: { lang: string; version: string };
-  resource: Record<string, string>;
   labels: Record<string, string>;
   probes: { name: string; title: string; mutates?: boolean; checkpoints?: boolean }[];
   warnings?: string[];
 }
 
-export async function fetchAgents(): Promise<Agent[]> {
+export interface KnownAgent extends AgentIdentity {
+  connected: false;
+  known: {
+    agentId: string;
+    runtime?: string;
+    names?: string[];
+    state?: string;
+    endpoint?: string;
+  };
+}
+
+export type AgentInfo = Agent | KnownAgent;
+
+export function isConnectedAgent(agent: AgentInfo): agent is Agent {
+  return agent.connected;
+}
+
+export async function fetchAgents(): Promise<AgentInfo[]> {
   const response = await fetch("/api/agents", { headers: { Accept: "application/json" } });
   if (!response.ok) throw await failure(response, "List agents");
-  return response.json() as Promise<Agent[]>;
+  return response.json() as Promise<AgentInfo[]>;
 }
 
 export const agentKeys = { connected: ["agents"] as const, deployed: ["deployed-targets"] as const };
