@@ -9,7 +9,17 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing"
 )
 
-var assignments = regexp.MustCompile(`(?i)([-D]*[a-z0-9_.-]*(?:password|passwd|secret|token|credential|api[_-]?key)[a-z0-9_.-]*\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s,;]+)`)
+// secretWords name a secret in a key or an argument, in any case: tracing's
+// masking misses camelCase property names such as trustStorePassword.
+const secretWords = `(?:password|passwd|secret|token|credential|api[_-]?key)`
+
+var (
+	assignments = regexp.MustCompile(`(?i)([-D]*[a-z0-9_.-]*` + secretWords + `[a-z0-9_.-]*\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s,;]+)`)
+	secretKey   = regexp.MustCompile(`(?i)` + secretWords)
+)
+
+// masked is what tracing.MaskAttribute replaces a secret with.
+const masked = "****"
 
 func sanitized(raw []byte, text bool) ([]byte, error) {
 	var value any
@@ -37,10 +47,18 @@ func maskArguments(value any) any {
 	case map[string]any:
 		if key, ok := v["key"].(string); ok {
 			if child, exists := v["value"]; exists {
-				v["value"] = tracing.MaskAttribute(key, child)
+				if _, scalar := child.(string); scalar && secretKey.MatchString(key) {
+					v["value"] = masked
+				} else {
+					v["value"] = tracing.MaskAttribute(key, child)
+				}
 			}
 		}
 		for key, child := range v {
+			if _, scalar := child.(string); scalar && secretKey.MatchString(key) {
+				v[key] = masked
+				continue
+			}
 			v[key] = maskArguments(child)
 		}
 	case []any:

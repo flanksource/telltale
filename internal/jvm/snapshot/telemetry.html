@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Activity telemetry — JVM snapshot</title>
+  <style>
+    :root { color-scheme: light dark; font-family: system-ui, sans-serif; line-height: 1.5; }
+    body { max-width: 1080px; margin: auto; padding: 24px; }
+    h1, h2, h3 { line-height: 1.25; overflow-wrap: anywhere; }
+    section, article { border: 1px solid #8886; border-radius: 8px; padding: 20px; margin: 20px 0; }
+    article { background: #8881; }
+    .metadata { color: light-dark(#475569, #cbd5e1); overflow-wrap: anywhere; }
+    dl { display: flex; gap: 24px; flex-wrap: wrap; }
+    dl div { min-width: 100px; }
+    dt { font-size: 0.8rem; color: light-dark(#475569, #cbd5e1); }
+    dd { margin: 0; font-variant-numeric: tabular-nums; }
+    table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+    th, td { text-align: left; border-bottom: 1px solid #8885; padding: 8px; }
+    td:last-child, th:last-child { text-align: right; }
+    .label { display: inline-block; padding: 3px 8px; margin: 3px; background: #8882; border-radius: 4px; overflow-wrap: anywhere; max-width: 100%; }
+    .error { white-space: pre-wrap; overflow-wrap: anywhere; color: light-dark(#991b1b, #fca5a5); }
+    summary { cursor: pointer; padding: 8px 0; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Activity telemetry</h1>
+    <p class="metadata">Recorded by Telltale at {{.CapturedAt.Format "2006-01-02T15:04:05Z07:00"}}. Cumulative durations are in seconds.</p>
+    {{range .Applications}}
+    <section>
+      <h2>{{.Label}}</h2>
+      <p class="metadata">Application loader {{.Loader}} · {{.Status.Mode}} · {{if .Status.Armed}}Armed{{else}}Inactive{{end}}</p>
+      <dl>
+        <div><dt>Histogram series</dt><dd>{{.Status.SeriesCount}}</dd></div>
+        <div><dt>Errors</dt><dd>{{.Status.Errors}}</dd></div>
+        <div><dt>Abandoned frames</dt><dd>{{.Status.AbandonedFrames}}</dd></div>
+        <div><dt>Overflow</dt><dd>{{.Status.Overflow}}</dd></div>
+      </dl>
+      {{if .Status.LastError}}<pre class="error">{{.Status.LastError}}</pre>{{end}}
+      {{range .Histograms}}
+      <article>
+        <h3>{{.Name}}</h3>
+        <div>{{range $name, $value := .Labels}}<span class="label">{{$name}}={{$value}}</span>{{end}}</div>
+        <dl>
+          <div><dt>Observations</dt><dd>{{.Count}}</dd></div>
+          <div><dt>Total duration (seconds)</dt><dd>{{.SumSeconds}}</dd></div>
+        </dl>
+        <details>
+          <summary>Cumulative histogram buckets</summary>
+          <table>
+            <thead><tr><th scope="col">Upper bound (seconds)</th><th scope="col">Observations</th></tr></thead>
+            <tbody>{{range .BucketRows}}<tr><td>{{.Bound}}</td><td>{{.Count}}</td></tr>{{end}}</tbody>
+          </table>
+        </details>
+      </article>
+      {{else}}<p>No completed histogram series in this application.</p>{{end}}
+    </section>
+    {{else}}<p>No loaded activity telemetry implementations were found in this JVM.</p>{{end}}
+  </main>
+  <script type="application/json" id="telemetry-data">{{.JSON}}</script>
+</body>
+</html>

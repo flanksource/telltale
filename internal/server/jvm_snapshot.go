@@ -59,6 +59,7 @@ func addJVMSnapshotPath(spec *rpc.OpenAPISpec) {
 		Summary: "Download a JVM support ZIP", OperationID: "jvmSnapshot",
 		RequestBody: &rpc.OpenAPIRequestBody{Required: true, Content: map[string]rpc.OpenAPIMediaType{"application/json": {Schema: &rpc.OpenAPISchema{Type: "object", Required: []string{"agent"}, Properties: map[string]*rpc.OpenAPISchema{
 			"agent": {Type: "string"}, "jfr": {Type: "string", Description: "Positive duration, at most 5m; omitted disables profiling"}, "heapHistogram": {Type: "boolean"},
+			"workload": {Type: "string", Description: "Duration from 5s to 5m to sample into workload.html; omitted disables it"},
 		}}}}},
 		Responses: map[string]rpc.OpenAPIResponse{"200": {Description: "ZIP; X-Telltale-Snapshot-Status is complete or partial", Content: map[string]rpc.OpenAPIMediaType{"application/zip": {Schema: &rpc.OpenAPISchema{Type: "string", Format: "binary"}}}}, "400": {Description: "Invalid request or unavailable Java target"}},
 	}}

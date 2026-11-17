@@ -293,6 +293,55 @@
     "scope": "jvm:read"
   },
   {
+    "name": "jvm.telemetry",
+    "title": "jvm.telemetry",
+    "description": "Read native activity telemetry from every loaded application without arming it or using JMX",
+    "command": "jvm telemetry",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object",
+      "properties": {
+        "capturedAt": {
+          "type": "string",
+          "title": "capturedAt"
+        },
+        "applications": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "loader": {
+                "type": "string",
+                "title": "loader"
+              },
+              "label": {
+                "type": "string",
+                "title": "label"
+              },
+              "status": {
+                "type": "object",
+                "title": "status",
+                "additionalProperties": {}
+              },
+              "histograms": {
+                "type": "array",
+                "title": "histograms",
+                "items": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
     "name": "jvm.settings",
     "title": "jvm.settings",
     "description": "Read OS/JVM properties, environment and resource settings",

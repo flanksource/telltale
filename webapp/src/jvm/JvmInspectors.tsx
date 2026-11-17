@@ -71,7 +71,7 @@ export function JvmThreads({ agent }: { agent: string }) {
   </div>;
 }
 
-function ThreadDetail({ agent, id }: { agent: string; id: number }) {
+export function ThreadDetail({ agent, id }: { agent: string; id: number }) {
   const { renderLink } = useRouter();
   const stack = useQuery({ queryKey: ["jvm-thread-stack", agent, id], queryFn: () => inspect<ThreadStack>(agent, "jvm.threads.stack", { id }) });
   return <Panel title={`Thread ${id}`}>

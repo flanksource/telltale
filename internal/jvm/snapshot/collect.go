@@ -27,7 +27,7 @@ func Collect(ctx context.Context, options Options) (*Result, error) {
 	if agent == nil || agent.Hello.Runtime.Lang != "java" {
 		return nil, fmt.Errorf("connected Java agent %q is required", options.Agent)
 	}
-	result, err := collect(ctx, options, func(ctx context.Context, op string) (json.RawMessage, error) {
+	result, err := collect(ctx, options, workloadTarget(agent.Hello.Resource, agent.Hello.Service), func(ctx context.Context, op string) (json.RawMessage, error) {
 		return agent.Call(ctx, agentclient.CallRequest{Op: op, Params: json.RawMessage(`{}`)})
 	})
 	if err != nil {
@@ -47,7 +47,7 @@ func Collect(ctx context.Context, options Options) (*Result, error) {
 	return result, nil
 }
 
-func collect(ctx context.Context, options Options, call caller) (*Result, error) {
+func collect(ctx context.Context, options Options, target WorkloadTarget, call caller) (*Result, error) {
 	if err := options.Validate(); err != nil {
 		return nil, err
 	}
@@ -56,6 +56,7 @@ func collect(ctx context.Context, options Options, call caller) (*Result, error)
 		{"jvm.settings", "settings.json"}, {"jvm.resources", "resources.json"}, {"jvm.flags", "vm-flags.txt"}, {"jvm.metrics", "metrics.json"},
 		{"jvm.threads.dump", "threads.txt"}, {"jvm.loaders", "loaders.json"},
 		{"jvm.logging.list", "logging.json"}, {"jvm.status", "status.json"},
+		{"jvm.telemetry", "telemetry.json"},
 	}
 	if options.HeapHistogram {
 		operations = append(operations, struct{ op, file string }{"jvm.heap.histogram", "heap-histogram.json"})
@@ -74,8 +75,29 @@ func collect(ctx context.Context, options Options, call caller) (*Result, error)
 		}
 		result.add(operation.file, data, err)
 	}
+	addTelemetryReport(result)
+	if count := options.workloadSamples(); count > 0 {
+		addWorkload(ctx, result, target, call, count)
+	}
 	result.finish()
 	return result, nil
+}
+
+// addWorkload adds the sampled series and the page that summarises it.
+func addWorkload(ctx context.Context, result *Result, target WorkloadTarget, call caller, count int) {
+	samples, err := collectWorkload(ctx, call, count)
+	var series, page []byte
+	if err == nil {
+		series, err = json.MarshalIndent(samples, "", "  ")
+	}
+	result.add("workload.json", series, err)
+	if err == nil {
+		var panel workloadPanel
+		if panel, err = newWorkloadPanel(target, samples); err == nil {
+			page, err = workloadHTML(panel)
+		}
+	}
+	result.add("workload.html", page, err)
 }
 
 func (r *Result) add(name string, data []byte, err error) {

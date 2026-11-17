@@ -19,7 +19,7 @@ import (
 // addKindCommands.
 func newJVMCommand() *cobra.Command {
 	root := &cobra.Command{Use: "jvm", Short: "Inspect and operate a connected Java runtime"}
-	root.AddCommand(newJVMCallCommand(), newJavaDeployCommand("deploy", "Install the agent into JVMs: a Deployer's pods, or one PID (same command as agents install java)", "jvm/deploy"), newJVMDeployersCommand(), newJVMSnapshotCommand())
+	root.AddCommand(newJVMTopCommand(), newJVMCallCommand(), newJavaDeployCommand("deploy", "Install the agent into JVMs: a Deployer's pods, or one PID (same command as agents install java)", "jvm/deploy"), newJVMDeployersCommand(), newJVMSnapshotCommand())
 	setDeployerResolver(agentclient.Default)
 	return root
 }

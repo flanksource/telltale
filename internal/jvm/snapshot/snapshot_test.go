@@ -19,7 +19,7 @@ func TestSnapshot(t *testing.T) { RegisterFailHandler(Fail); RunSpecs(t, "JVM sn
 
 var _ = Describe("support archive", func() {
 	It("retains evidence and masks secrets when a collector fails", func() {
-		result, err := collect(context.Background(), Options{}, func(_ context.Context, op string) (json.RawMessage, error) {
+		result, err := collect(context.Background(), Options{}, WorkloadTarget{}, func(_ context.Context, op string) (json.RawMessage, error) {
 			if op == "jvm.threads.dump" {
 				return nil, errors.New("thread dump denied")
 			}
@@ -63,7 +63,7 @@ var _ = Describe("support archive", func() {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		called := false
-		result, err := collect(ctx, Options{HeapHistogram: true}, func(context.Context, string) (json.RawMessage, error) { called = true; return nil, nil })
+		result, err := collect(ctx, Options{HeapHistogram: true}, WorkloadTarget{}, func(context.Context, string) (json.RawMessage, error) { called = true; return nil, nil })
 		Expect(err).NotTo(HaveOccurred())
 		Expect(called).To(BeFalse())
 		Expect(result.Manifest.Complete).To(BeFalse())
@@ -72,5 +72,21 @@ var _ = Describe("support archive", func() {
 		data, err := sanitized([]byte(`{"SystemProperties":[{"key":"example.password","value":"private-value"}]}`), false)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(data)).NotTo(ContainSubstring("private-value"))
+	})
+
+	It("masks settings properties whose camelCase key names a secret, and keeps the others", func() {
+		data, err := sanitized([]byte(`{"properties":{"javax.net.ssl.trustStorePassword":"private-store","javax.net.ssl.keyStorePassword":"private-key","example.apiKey":"private-api","java.version":"1.8.0_302"}}`), false)
+		Expect(err).NotTo(HaveOccurred())
+		var settings struct{ Properties map[string]string }
+		Expect(json.Unmarshal(data, &settings)).To(Succeed())
+		Expect(settings.Properties).To(Equal(map[string]string{"javax.net.ssl.trustStorePassword": "****", "javax.net.ssl.keyStorePassword": "****",
+			"example.apiKey": "****", "java.version": "1.8.0_302"}))
+	})
+
+	It("masks the value of a JMX key/value pair whose camelCase key names a secret", func() {
+		data, err := sanitized([]byte(`{"runtime":{"attributes":[{"value":[{"key":"javax.net.ssl.trustStorePassword","value":"private-store"},{"key":"java.version","value":"1.8.0_302"}]}]}}`), false)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(data)).NotTo(ContainSubstring("private-store"))
+		Expect(string(data)).To(ContainSubstring("1.8.0_302"))
 	})
 })

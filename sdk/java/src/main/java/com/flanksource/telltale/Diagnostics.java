@@ -70,6 +70,7 @@ public final class Diagnostics {
                 list(p, "args").toArray(),
                 list(p, "signature").toArray(new String[0])));
     register("jvm.metrics", Scope.READ, p -> new JvmMetricsService().snapshot());
+    register("jvm.telemetry", Scope.READ, p -> new NativeTelemetryService(InstrumentationService.instrumentation()).snapshot());
     register("jvm.settings", Scope.READ, p -> SettingsService.snapshot());
     register("jvm.resources", Scope.READ, p -> ResourceSettings.snapshot());
     register("jvm.flags", Scope.READ, p -> SettingsService.command("vmFlags", "-all"));

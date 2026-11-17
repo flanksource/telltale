@@ -26,6 +26,7 @@ final class DiagnosticSchemas {
     doc("jvm.jmx.write", "jvm jmx write", "Write an MBean attribute");
     doc("jvm.jmx.invoke", "jvm jmx invoke", "Invoke an MBean operation");
     doc("jvm.metrics", "jvm metrics", "Snapshot memory, GC, thread, class-loading and runtime metrics");
+    doc("jvm.telemetry", "jvm telemetry", "Read native activity telemetry from every loaded application without arming it or using JMX");
     doc("jvm.threads", "jvm threads", "Sample thread states and CPU over a short interval");
     doc("jvm.threads.dump", "jvm threads dump", "Dump every thread's stack as text");
     doc("jvm.threads.stack", "jvm threads stack", "Read one thread's stack and lock state");
@@ -105,6 +106,23 @@ final class DiagnosticSchemas {
       add(properties, "totalBytes", "integer");
       add(properties, "matched", "integer");
       add(properties, "rows", "array");
+      schema.put("properties", properties);
+    }
+    if (name.equals("jvm.telemetry")) {
+      Map<String, Object> properties = new LinkedHashMap<>();
+      add(properties, "capturedAt", "string");
+      Map<String, Object> application = new LinkedHashMap<>();
+      add(application, "loader", "string");
+      add(application, "label", "string");
+      add(application, "status", "object");
+      add(application, "histograms", "array");
+      Map<String, Object> item = new LinkedHashMap<>();
+      item.put("type", "object");
+      item.put("properties", application);
+      Map<String, Object> applications = new LinkedHashMap<>();
+      applications.put("type", "array");
+      applications.put("items", item);
+      properties.put("applications", applications);
       schema.put("properties", properties);
     }
     return schema;

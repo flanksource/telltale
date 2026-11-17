@@ -32,7 +32,8 @@ func newJVMSnapshotCommand() *cobra.Command {
 		if err := options.Validate(); err != nil {
 			return err
 		}
-		ctx, cancel := context.WithTimeout(cmd.Context(), 7*time.Minute)
+		// The collectors and a JFR recording take up to 7m; workload sampling runs after them.
+		ctx, cancel := context.WithTimeout(cmd.Context(), 12*time.Minute)
 		defer cancel()
 		if output == "" {
 			identifier := strconv.Itoa(pid)
@@ -101,6 +102,7 @@ func newJVMSnapshotCommand() *cobra.Command {
 	flags.StringVarP(&output, "output", "o", "", "Destination ZIP (must not exist)")
 	flags.StringVar(&options.JFR, "jfr", "", "Include a bounded JFR recording, e.g. 30s (maximum 5m)")
 	flags.BoolVar(&options.HeapHistogram, "heap-histogram", false, "Include all-object heap histogram; may pause the JVM")
+	flags.StringVar(&options.Workload, "workload", "1m", "Sample CPU, memory, GC and threads every 5s for this long into workload.html (5s to 5m; empty disables)")
 	command.MarkFlagsOneRequired("agent", "pid")
 	command.MarkFlagsMutuallyExclusive("agent", "pid")
 	return command
