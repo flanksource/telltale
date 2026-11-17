@@ -16,7 +16,7 @@ const conventionVersion int64 = 2
 const sampleKindAttribute = "telltale.sample.kind"
 const snapshotControlKind = "snapshot_control"
 
-var sampleTypes = map[string]string{"http_top": "telltale.http.active.elapsed", "sql_top": "telltale.sql.active.elapsed"}
+var sampleTypes = map[string]string{"http_top": "telltale.http.active.elapsed", "sql_top": "telltale.sql.active.elapsed", "jms_top": "telltale.jms.active.elapsed"}
 
 var ErrLimit = errors.New("OTLP Profiles limit exceeded")
 

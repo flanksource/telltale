@@ -129,7 +129,7 @@ public final class ObserverRuntime {
     String name;
     switch (kind) {
       case "http": case "http_top": name = "http.HttpObserver"; break;
-      case "jms": name = "jms.JmsObserver"; break;
+      case "jms": case "jms_top": name = "jms.JmsObserver"; break;
       case "sql": case "sql_top": name = "sql.SqlObserver"; break;
       default: throw new IllegalArgumentException("unknown observer kind " + kind);
     }
@@ -249,6 +249,11 @@ public final class ObserverRuntime {
     for (ObserverAdapter adapter : adapters()) if (adapter.kinds().contains(kind)) rows.addAll(adapter.snapshot(kind));
     return rows;
   }
+  static Map<String,Object> report(String kind) {
+    Map<String,Object> report = new LinkedHashMap<>();
+    for (ObserverAdapter adapter : adapters()) if (adapter.kinds().contains(kind)) report.putAll(adapter.report(kind));
+    return report;
+  }
 
   static Map<String, Object> project(String kind, Map<String, Object> params, Map<String, Object> row) {
     for (ObserverAdapter adapter : adapters()) {
@@ -362,6 +367,7 @@ public final class ObserverRuntime {
   }
 
   public static void assertTargetActive(Class<?> type) { LoaderLifecycle.requireActive(type); }
+  public static boolean retiredTarget(Class<?> type) { return LoaderLifecycle.retired(type.getClassLoader()) != null; }
 
   private static final class Call {
     final ObserverAdapter adapter;

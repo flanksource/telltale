@@ -35,7 +35,13 @@ final class ObserverCapture implements Capture {
     long begin = ObserverRuntime.epochNanos();
     List<Map<String, Object>> rows = new ArrayList<>((List<Map<String, Object>>) call("snapshot"));
     int observed = rows.size();
-    rows.sort((first, second) -> Long.compare(((Number) second.get("elapsedNs")).longValue(), ((Number) first.get("elapsedNs")).longValue()));
+    rows.sort((first, second) -> {
+      if (kind.equals("jms_top")) {
+        int count = Integer.compare(((Number)((Map<?,?>)second.get("attributes")).get("activeCount")).intValue(), ((Number)((Map<?,?>)first.get("attributes")).get("activeCount")).intValue());
+        if (count != 0) return count;
+      }
+      return Long.compare(((Number) second.get("elapsedNs")).longValue(), ((Number) first.get("elapsedNs")).longValue());
+    });
     if (rows.size() > limit) rows = new ArrayList<>(rows.subList(0, limit));
     Map<String, Object> snapshot = new LinkedHashMap<>();
     snapshot.put("kind", kind); snapshot.put("captureId", id);

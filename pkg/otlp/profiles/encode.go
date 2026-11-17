@@ -67,7 +67,7 @@ func metadata(s Snapshot) map[string]any {
 }
 
 func validate(s Snapshot) error {
-	if s.Kind != "http_top" && s.Kind != "sql_top" {
+	if _, ok := sampleTypes[s.Kind]; !ok {
 		return fmt.Errorf("unsupported top profile kind %q", s.Kind)
 	}
 	if s.CaptureID == "" || s.Source == "" || s.Sequence <= 0 {

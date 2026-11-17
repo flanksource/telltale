@@ -219,7 +219,7 @@ describe("runs started over the API", () => {
     const response = await fetch(`${apiURL}/api/traces/start`);
     const form = await response.json() as { schema: { properties: { traces: { properties: Record<string, { title: string }> }; pid: { type: string }; duration: { type: string } } } };
     expect(response.status).toBe(200);
-    expect(form.schema.properties.traces.properties).toMatchObject({ sql_xevent: { title: "SQL Server XEvents" }, sql_deadlock: { title: "SQL Server deadlocks" }, jvm_jfr: { title: "JVM JFR" } });
+    expect(form.schema.properties.traces.properties).toMatchObject({ sql_xevent: { title: "SQL Server XEvents" }, sql_deadlock: { title: "SQL Server deadlocks" }, jvm_jfr: { title: "JVM JFR" }, jms_top: { title: "JMS top" } });
     expect(form.schema.properties.pid.type).toBe("integer");
     expect(form.schema.properties.duration.type).toBe("string");
   });

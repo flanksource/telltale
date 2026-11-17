@@ -48,7 +48,6 @@ func (h handler) Checkpoint(ctx dbcontext.Context, _ Params, out tracing.Emitter
 func NewKind(registry *agentclient.Registry) *tracing.Handler[Params, Row] {
 	agent := seam.AgentSeam[Params, Row]{
 		Probe: Kind, Registry: registry, Target: func(p Params) target.Target { return p.Target },
-		Mutates:      func(Params) bool { return true },
 		ArmParams:    func(p Params) (json.RawMessage, error) { return json.Marshal(p.Options) },
 		DecodeRecord: DecodeRecord,
 		DecodeBlob: func(blob agentclient.Blob, resource map[string]string) (seam.DecodedBlob[Row], error) {

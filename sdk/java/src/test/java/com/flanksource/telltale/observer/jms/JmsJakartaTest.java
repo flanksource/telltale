@@ -53,8 +53,7 @@ public class JmsJakartaTest {
       assertEquals(1, rows.stream().filter(row -> "receive".equals(row.get("operation"))).count());
       assertEquals(Optional.empty(), operations.getMethod("receive", Class.class).invoke(queue, String.class));
       rows = capture.drain();
-      assertEquals(1, rows.size());
-      assertEquals("timeout", rows.get(0).get("outcome"));
+      assertTrue(rows.isEmpty());
     }
   }
 

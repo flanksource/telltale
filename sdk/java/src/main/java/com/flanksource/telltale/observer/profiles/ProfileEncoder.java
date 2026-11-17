@@ -16,7 +16,7 @@ public final class ProfileEncoder {
 
   public static byte[] encode(Map<String, Object> snapshot) {
     String kind = text(snapshot, "kind");
-    if (!kind.equals("http_top") && !kind.equals("sql_top")) {
+    if (!kind.equals("http_top") && !kind.equals("sql_top") && !kind.equals("jms_top")) {
       throw new IllegalArgumentException("unsupported top profile kind: " + kind);
     }
     String capture = text(snapshot, "captureId");
@@ -40,7 +40,7 @@ public final class ProfileEncoder {
     ProfileDictionary dictionary = new ProfileDictionary();
     Profile.Builder profile = Profile.newBuilder().setProfileId(uuid(id)).setTimeUnixNano(start)
         .setDurationNano(end - start).setSampleType(ValueType.newBuilder()
-            .setTypeStrindex(dictionary.text(kind.equals("http_top") ? "telltale.http.active.elapsed" : "telltale.sql.active.elapsed"))
+            .setTypeStrindex(dictionary.text("telltale." + kind.substring(0, kind.length() - 4) + ".active.elapsed"))
             .setUnitStrindex(dictionary.text("ns")));
     Map<String, Object> metadata = new TreeMap<>();
     metadata.put("telltale.schema.version", 2L);

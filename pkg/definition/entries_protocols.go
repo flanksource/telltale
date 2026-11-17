@@ -7,6 +7,7 @@ import (
 	"github.com/flanksource/clicky/rpc"
 	"github.com/flanksource/telltale/pkg/tracing/httptop"
 	"github.com/flanksource/telltale/pkg/tracing/jms"
+	"github.com/flanksource/telltale/pkg/tracing/jmstop"
 	"github.com/flanksource/telltale/pkg/tracing/sqltop"
 	"github.com/flanksource/telltale/pkg/tracing/target"
 )
@@ -46,6 +47,19 @@ type JMSProbe struct {
 	Named
 	Agent
 	jms.Options
+}
+
+type JMSTopProbe struct {
+	Named
+	Agent
+	Poll         string   `json:"poll,omitempty"`
+	Top          int      `json:"top,omitempty"`
+	Destinations []string `json:"destinations,omitempty"`
+}
+
+func (p *JMSTopProbe) options(Located) (any, any, error) {
+	params := jmstop.Params{Poll: p.Poll, Top: p.Top, Destinations: p.Destinations}
+	return params, nil, params.Validate()
 }
 
 func (p *JMSProbe) options(Located) (any, any, error) {

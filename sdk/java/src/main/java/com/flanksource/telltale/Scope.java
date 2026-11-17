@@ -33,6 +33,7 @@ public enum Scope {
       case "sql":
       case "sql_top":
       case "jms":
+      case "jms_top":
       case "spans":
         return TRACE;
       case "jvm_redefine":

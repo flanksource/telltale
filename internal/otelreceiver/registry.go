@@ -76,8 +76,15 @@ func standingCaptures(dataDir string) ([]telltale.CaptureResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	captures := []telltale.CaptureResult{{Kind: spans.Kind, Ref: tracing.TraceRef{Kind: spans.Kind, Stream: stream}}}
-	for _, kind := range []string{"http_top", "sql_top"} {
+	var captures []telltale.CaptureResult
+	_, err = runtime.Results.Backend.Meta(context.Background(), stream)
+	if err != nil && !errors.Is(err, recordstore.ErrNotFound) {
+		return nil, errors.Join(err, closeStore())
+	}
+	if err == nil {
+		captures = append(captures, telltale.CaptureResult{Kind: spans.Kind, Ref: tracing.TraceRef{Kind: spans.Kind, Stream: stream}})
+	}
+	for _, kind := range []string{"http_top", "sql_top", "jms_top"} {
 		meta, err := runtime.Results.Backend.Meta(context.Background(), profileStream(kind)+"-frames")
 		if errors.Is(err, recordstore.ErrNotFound) {
 			continue

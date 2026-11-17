@@ -41,6 +41,7 @@ type InstrumentJVM struct {
 	SQL            []JVMSQLProbe      `json:"sql,omitempty" clicky:"title=SQL executions" telltale:"kind=sql,seam=agent"`
 	SQLTop         []JVMTop           `json:"sqlTop,omitempty" clicky:"title=Active SQL executions" telltale:"kind=sql_top,seam=agent"`
 	JMS            []JMSProbe         `json:"jms,omitempty" clicky:"title=JMS operations" telltale:"kind=jms,seam=agent"`
+	JMSTop         []JMSTopProbe      `json:"jmsTop,omitempty" clicky:"title=JMS receive handlers" telltale:"kind=jms_top,seam=agent"`
 	Spans          []SpansProbe       `json:"spans,omitempty" clicky:"title=Existing OTel spans" telltale:"kind=spans,seam=agent"`
 }
 

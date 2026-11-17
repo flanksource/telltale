@@ -3470,6 +3470,48 @@ spec:
                         title: JMS operations
                         type: array
                         x-kubernetes-list-type: atomic
+                      jmsTop:
+                        items:
+                          properties:
+                            agent:
+                              description: Read through a connected agent instead
+                                of the execution's process
+                              nullable: true
+                              properties:
+                                id:
+                                  title: Agent ID
+                                  type: string
+                                selector:
+                                  additionalProperties:
+                                    type: string
+                                  description: Agent resource attributes to match
+                                  title: Selector
+                                  type: object
+                                wait:
+                                  description: Wait for a matching agent to connect
+                                  title: Wait
+                                  type: boolean
+                              title: Agent
+                              type: object
+                            destinations:
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            name:
+                              description: Names the capture's session; empty takes
+                                <definition>-<section>-<group>-<type>-<n>
+                              title: Name
+                              type: string
+                            poll:
+                              type: string
+                            top:
+                              format: int32
+                              type: integer
+                          type: object
+                        title: JMS receive handlers
+                        type: array
+                        x-kubernetes-list-type: atomic
                       methods:
                         items:
                           properties:

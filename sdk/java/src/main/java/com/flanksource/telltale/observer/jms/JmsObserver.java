@@ -14,6 +14,10 @@ public final class JmsObserver implements ObserverAdapter {
   private final ThreadLocal<Exchange> exchange = new ThreadLocal<>();
   private final JmsPending pending = new JmsPending(8192);
   private final JmsActive active = new JmsActive(8192);
+  private final JmsHandlers handlers = new JmsHandlers();
+  private final java.util.concurrent.atomic.AtomicLong emptyReceives = new java.util.concurrent.atomic.AtomicLong();
+  private final java.util.concurrent.atomic.AtomicLong receiveFailures = new java.util.concurrent.atomic.AtomicLong();
+  private volatile String lastReceiveFailure;
   private final Map<Object, JmsOperation> nativeOperations = new java.util.concurrent.ConcurrentHashMap<>();
   private static final Set<String> CONTRACTS = new HashSet<>(Arrays.asList(
       "MessageProducer", "MessageConsumer", "MessageListener", "CompletionListener", "JMSProducer", "JMSConsumer", "Session", "JMSContext"));
@@ -31,7 +35,8 @@ public final class JmsObserver implements ObserverAdapter {
   }
 
   public String id() { return "jms"; }
-  public Set<String> kinds() { return Collections.singleton("jms"); }
+  public Set<String> kinds() { return new HashSet<>(Arrays.asList("jms", "jms_top")); }
+  public List<Map<String,Object>> snapshot(String kind) { return kind.equals("jms_top") ? handlers.snapshot() : Collections.emptyList(); }
 
   public void validate(String kind, Map<String, Object> params) { JmsOptions.validate(params); }
 
@@ -69,7 +74,7 @@ public final class JmsObserver implements ObserverAdapter {
         || name.equals("doExecuteListener") || name.equals("invoke")
         || name.equals("fromMessage") || name.equals("toMessage")
         || name.equals("handleListenerException") || name.equals("commitIfNecessary")
-        || name.startsWith("rollback");
+        || name.startsWith("rollback") || name.equals("close") || name.equals("shutdown") || name.equals("destroy") || name.equals("stop");
   }
 
   public boolean matchesInvocation(String owner, String name, String descriptor) {
@@ -80,6 +85,17 @@ public final class JmsObserver implements ObserverAdapter {
   }
 
   public Object onEnter(String owner, String name, String descriptor, Object receiver, Object[] args) {
+    if (Arrays.asList("close", "shutdown", "destroy", "stop").contains(name)) {
+      handlers.remove(receiver);
+      if (JmsAccess.type(receiver, "MessageConsumer") || JmsAccess.type(receiver, "org.springframework.jms.listener.AbstractMessageListenerContainer"))
+        handlers.remove(JmsAccess.read(receiver,"getMessageListener",new JmsOperation("process")));
+      return null;
+    }
+    if (name.equals("receiveAndExecute")) {
+      JmsOperation registration = new JmsOperation("process");
+      handlerMetadata(registration, receiver, owner);
+      handlers.discover(registration);
+    }
     for (JmsOperation lost : pending.collected()) {
       active.remove(lost);
       if (!lost.ended.get()) failure.accept(new IllegalStateException("JMS Message collected before its completion callback was observed"));
@@ -99,6 +115,7 @@ public final class JmsObserver implements ObserverAdapter {
       if (method instanceof java.lang.reflect.Method) {
         java.lang.reflect.Method handler = (java.lang.reflect.Method) method;
         current.put("handler", handler.getDeclaringClass().getName() + "." + handler.getName());
+        handlers.refresh(current);
       }
       return null;
     }
@@ -107,6 +124,8 @@ public final class JmsObserver implements ObserverAdapter {
     if (operation == null) return null;
     Object message = find(args, "Message");
     JmsOperation existing = active(operation);
+    if (existing == null && operation.equals("process") && current != null && current.operation.equals("receive")
+        && current.message() == message && message != null) existing = current;
     if (existing != null && message != null && existing.message() != null && existing.message() != message) existing = null;
     boolean root = existing == null;
     if (existing == null) {
@@ -121,6 +140,17 @@ public final class JmsObserver implements ObserverAdapter {
     calls.get().push(call);
     try {
       configure(observed, owner, name, receiver, args);
+      if (!observed.handlerObserved && operation.equals("process")) {
+        observed.handlerObserved = true;
+        observed.operation = "process";
+        observed.phase = "handler";
+        observed.startedNanos = System.nanoTime();
+        observed.put("operation", "process");
+        observed.put("startedAt", java.time.Instant.now().toString());
+        handlerMetadata(observed, receiver, owner);
+        JmsAccess.message(observed, 0);
+        handlers.enter(observed);
+      }
       if (root && operation.equals("send")) configureSend(observed, receiver, args);
       if (root && operation.equals("process")) JmsAccess.message(observed, bodyLimit.getAsInt());
       return call;
@@ -214,6 +244,18 @@ public final class JmsObserver implements ObserverAdapter {
     }
   }
 
+  private void handlerMetadata(JmsOperation operation, Object receiver, String owner) {
+    Object listener = receiver;
+    if (JmsAccess.type(receiver, "org.springframework.jms.listener.AbstractMessageListenerContainer")) {
+      listener = JmsAccess.read(receiver, "getMessageListener", operation);
+      operation.put("destination", JmsAccess.read(receiver, "getDestinationName", operation));
+      operation.put("subscription", JmsAccess.read(receiver, "getSubscriptionName", operation));
+    }
+    operation.put("handler", listener == null ? "unresolved:" + owner : listener.getClass().getName() + ".onMessage");
+    operation.put("handlerLoader", listener == null ? "unresolved" : Integer.toHexString(System.identityHashCode(listener.getClass().getClassLoader())));
+    if (listener != null) operation.handlerOwner = new java.lang.ref.WeakReference<>(listener);
+  }
+
   private void configureSend(JmsOperation operation, Object receiver, Object[] args) {
     Object listener = find(args, "CompletionListener");
     if (listener == null && JmsAccess.type(receiver, "JMSProducer")) {
@@ -239,9 +281,14 @@ public final class JmsObserver implements ObserverAdapter {
   }
 
   private void finish(JmsOperation operation, Throwable error, String outcome) {
+    if (operation.operation.equals("receive") && !operation.messageObserved) {
+      if (error == null) emptyReceives.incrementAndGet();
+      else { receiveFailures.incrementAndGet(); lastReceiveFailure = error.toString(); }
+    }
     Object message = operation.message();
     if (message != null) pending.remove(message);
     Map<String, Object> row = operation.finish(error, outcome, bodyLimit.getAsInt());
+    handlers.exit(operation);
     if (row != null) emit(row);
     active.remove(operation);
   }
@@ -265,15 +312,7 @@ public final class JmsObserver implements ObserverAdapter {
     if (!call.root) return;
     exchange.remove();
     if (error != null) {
-      if (call.exchange.rows.isEmpty()) {
-        JmsOperation failed = new JmsOperation("send");
-        failed.put("startedAt", call.exchange.startedAt);
-        failed.put("framework", "spring-jms");
-        if (error.getClass().getName().contains("Conversion")) failed.phase = "conversion";
-        Map<String, Object> row = failed.finish(error, "error", 0);
-        row.put("durationMs", (System.nanoTime() - call.exchange.startedNanos) / 1000000.0);
-        call.exchange.rows.add(row);
-      }
+      if (call.exchange.rows.isEmpty()) return;
       Map<String, Object> last = call.exchange.rows.get(call.exchange.rows.size() - 1);
       if (!"error".equals(last.get("outcome"))) {
         last.put("outcome", "error");
@@ -338,14 +377,22 @@ public final class JmsObserver implements ObserverAdapter {
   }
 
   public void onDisarm(String kind) {
-    if (!kind.equals("jms")) return;
+    if (ObserverRuntime.armed("jms") || ObserverRuntime.armed("jms_top")) return;
     pending.drain();
     active.clear();
     nativeOperations.clear();
+    handlers.clear();
   }
 
   public List<Map<String, Object>> terminalRows(String kind, Map<String, Object> params) {
     return kind.equals("jms") ? active.terminalRows() : Collections.emptyList();
+  }
+  public Map<String,Object> report(String kind) {
+    Map<String,Object> report = new LinkedHashMap<>();
+    report.put("emptyReceivePolls", emptyReceives.get());
+    report.put("receiveFailures", receiveFailures.get());
+    if (lastReceiveFailure != null) report.put("lastReceiveFailure",lastReceiveFailure);
+    return report;
   }
 
   public void onOperation(Map<String, Object> metadata) {
@@ -363,6 +410,8 @@ public final class JmsObserver implements ObserverAdapter {
       String name = nativeOperation(attributes);
       if (name == null) return;
       operation = new JmsOperation(name);
+      Object request = metadata.get("request");
+      if (JmsAccess.type(request, "Message")) bind(operation, request);
       if (!reserve(operation)) return;
       operation.put("startedAt", metadata.get("startedAt"));
       nativeMetadata(operation, metadata, attributes);
@@ -376,6 +425,7 @@ public final class JmsObserver implements ObserverAdapter {
       nativeMetadata(operation, metadata, attributes);
       Object error = metadata.get("error");
       Map<String, Object> row = operation.finish(error == null ? null : new IllegalStateException(error.toString()), "success", 0);
+      handlers.exit(operation);
       if (row != null) {
         Object duration = metadata.get("durationNs");
         if (duration instanceof Number) row.put("durationMs", ((Number) duration).doubleValue() / 1000000);
@@ -410,8 +460,6 @@ public final class JmsObserver implements ObserverAdapter {
   }
 
   private static final class Exchange {
-    final String startedAt = java.time.Instant.now().toString();
-    final long startedNanos = System.nanoTime();
     final List<Map<String, Object>> rows = new ArrayList<>();
   }
 

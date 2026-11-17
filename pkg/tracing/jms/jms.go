@@ -58,6 +58,7 @@ type Row struct {
 	Destination     string            `json:"destination,omitempty" filter:"terms"`
 	DestinationType string            `json:"destinationType,omitempty"`
 	MessageID       string            `json:"messageId,omitempty"`
+	DeliveryID      string            `json:"deliveryId,omitempty"`
 	CorrelationID   string            `json:"correlationId,omitempty"`
 	Redelivered     *bool             `json:"redelivered,omitempty"`
 	ReplyTo         string            `json:"replyTo,omitempty"`

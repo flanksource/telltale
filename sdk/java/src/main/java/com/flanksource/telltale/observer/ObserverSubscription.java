@@ -74,6 +74,7 @@ public final class ObserverSubscription implements AutoCloseable {
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("unmatchedPreAttachmentEnds", ObserverRuntime.unmatchedEnds() - unmatchedAtStart);
     result.put("leaseExpired", expired);
+    result.putAll(ObserverRuntime.report(kind));
     return result;
   }
   void startLease() { expiresAt = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(leaseMillis); }

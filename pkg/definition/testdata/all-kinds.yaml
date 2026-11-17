@@ -48,6 +48,10 @@ spec:
       jms:
         - agent: {selector: {service.name: example}}
           direction: both
+      jmsTop:
+        - agent: {selector: {service.name: example}}
+          poll: 1s
+          destinations: [orders]
       spans:
         - agent: {selector: {service.name: example}}
       notifications:

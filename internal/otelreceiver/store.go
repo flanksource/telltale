@@ -16,6 +16,7 @@ import (
 	"github.com/flanksource/commons-db/recordstore/sqlite"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/httptop"
+	"github.com/flanksource/telltale/pkg/tracing/jmstop"
 	"github.com/flanksource/telltale/pkg/tracing/spans"
 	"github.com/flanksource/telltale/pkg/tracing/sqltop"
 )
@@ -111,7 +112,10 @@ func OpenStore(options StoreOptions) (_ *Store, err error) {
 			if err := recordresults.RegisterResultType(registry, profileIdentityResult()); err != nil {
 				return err
 			}
-			for _, kind := range []string{"http_top_frames", "sql_top_active_frames"} {
+			if err := recordresults.RegisterResultType(registry, jmstop.ResultType()); err != nil {
+				return err
+			}
+			for _, kind := range []string{"http_top_frames", "sql_top_active_frames", "jms_top_frames"} {
 				if err := recordresults.RegisterResultType(registry, recordresults.ResultType[sampleframe.Frame]{Kind: kind, Title: "Completed profile snapshots", TimeColumn: "completedAt", Follow: true}); err != nil {
 					return err
 				}
@@ -123,6 +127,9 @@ func OpenStore(options StoreOptions) (_ *Store, err error) {
 		return nil, err
 	}
 	kinds := tracing.NewKinds()
+	if err := kinds.RegisterKind(jmstop.Kind, jmstop.NewKind(nil)); err != nil {
+		return nil, err
+	}
 	if err := kinds.RegisterKind(spans.Kind, spans.NewKind(nil)); err != nil {
 		return nil, err
 	}

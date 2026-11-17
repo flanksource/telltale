@@ -23,7 +23,7 @@ func (s *Store) ReadProfiles(ctx context.Context, options ProfileReadOptions) ([
 	if s.closed {
 		return nil, fmt.Errorf("OTLP store is closed")
 	}
-	if options.Kind != "" && options.Kind != "http_top" && options.Kind != "sql_top" {
+	if options.Kind != "" && options.Kind != "http_top" && options.Kind != "sql_top" && options.Kind != "jms_top" {
 		return nil, fmt.Errorf("unsupported profile kind %q", options.Kind)
 	}
 	if options.Limit < 0 {
@@ -34,7 +34,7 @@ func (s *Store) ReadProfiles(ctx context.Context, options ProfileReadOptions) ([
 	}
 	kinds := []string{options.Kind}
 	if options.Kind == "" {
-		kinds = []string{"http_top", "sql_top"}
+		kinds = []string{"http_top", "sql_top", "jms_top"}
 	}
 	result := []profiles.Snapshot{}
 	for _, kind := range kinds {

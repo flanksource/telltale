@@ -35,6 +35,13 @@ final class JmsOptions {
   }
 
   static Map<String, Object> project(Map<String, Object> params, Map<String, Object> row) {
+    if (row.get("attributes") instanceof Map) {
+      Map<?,?> attributes = (Map<?,?>) row.get("attributes");
+      Object selected = params.get("destinations");
+      if (selected instanceof Collection && !((Collection<?>)selected).isEmpty()
+          && !((Collection<?>)selected).contains(attributes.get("destination"))) return null;
+      return row;
+    }
     Object destinations = params.get("destinations");
     if (destinations instanceof Collection && !((Collection<?>) destinations).isEmpty()
         && !((Collection<?>) destinations).contains(row.get("destination"))) return null;

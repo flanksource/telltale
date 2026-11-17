@@ -21,7 +21,7 @@ public final class RuntimeService implements DynamicMBean {
   /** The protocol captures served by the observer runtime rather than by a probe or recording. */
   static final List<String> OBSERVATIONS =
       Collections.unmodifiableList(
-          Arrays.asList("http", "http_top", "sql", "sql_top", "jms", "spans"));
+          Arrays.asList("http", "http_top", "sql", "sql_top", "jms", "jms_top", "spans"));
 
   final Diagnostics diagnostics;
   final String started = Instant.now().toString();

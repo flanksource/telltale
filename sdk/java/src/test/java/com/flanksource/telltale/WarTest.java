@@ -129,7 +129,7 @@ public class WarTest {
     expected.put("jvm_redefine", "jvm:instrument");
     expected.put("jvm_notifications", "jvm:trace");
     expected.put("jvm_ognl", "jvm:eval");
-    for (String observation : new String[] {"http", "http_top", "sql", "sql_top", "jms", "spans"})
+    for (String observation : new String[] {"http", "http_top", "sql", "sql_top", "jms", "jms_top", "spans"})
       expected.put(observation, "jvm:trace");
     assertEquals(expected, scopes);
   }

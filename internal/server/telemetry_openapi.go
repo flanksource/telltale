@@ -36,7 +36,7 @@ func addReceiverPath(spec *rpc.OpenAPISpec) {
 	profileResponses["413"] = rpc.OpenAPIResponse{Description: "Profile request or sample limit exceeded", Content: profileContent}
 	spec.Paths["/v1/profiles"] = rpc.OpenAPIPath{"post": {
 		Summary: "Receive OTLP active-operation Profiles (serve --otlp)", Tags: []string{"OpenTelemetry"},
-		Description: "Stores complete HTTP and SQL top snapshots in the receiver source. Capture attributes do not authorize writes into active runs. Supports gzip and requires the compiled Profiles development version.",
+		Description: "Stores complete HTTP, SQL and JMS handler top snapshots in the receiver source. Capture attributes do not authorize writes into active runs. Supports gzip and requires the compiled Profiles development version.",
 		Parameters:  []rpc.OpenAPIParameter{{Name: "OTLP-Profiles-Development-Version", In: "header", Required: true, Schema: &rpc.OpenAPISchema{Type: "string", Description: "Profiles development version; currently 1"}}},
 		RequestBody: &rpc.OpenAPIRequestBody{Required: true, Content: profileContent}, Responses: profileResponses,
 	}}

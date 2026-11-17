@@ -13,6 +13,7 @@ import (
 	"github.com/flanksource/telltale/pkg/otlp/profilepublication"
 	"github.com/flanksource/telltale/pkg/otlp/profiles"
 	"github.com/flanksource/telltale/pkg/tracing/httptop"
+	"github.com/flanksource/telltale/pkg/tracing/jmstop"
 	"github.com/flanksource/telltale/pkg/tracing/sqltop"
 )
 
@@ -25,6 +26,9 @@ func profileIdentityResult() recordresults.ResultType[profilepublication.Identit
 }
 
 func profileStream(kind string) string {
+	if kind == jmstop.Kind {
+		return "received-jms-top"
+	}
 	if kind == "sql_top" {
 		return "received-sql-top-active"
 	}
@@ -32,6 +36,9 @@ func profileStream(kind string) string {
 }
 
 func profileStorageKind(kind string) string {
+	if kind == jmstop.Kind {
+		return jmstop.Kind
+	}
 	if kind == "sql_top" {
 		return "sql_top_active"
 	}
@@ -51,7 +58,7 @@ func (s *Store) PersistProfiles(ctx context.Context, snapshots []profiles.Snapsh
 	}
 	outcome := Outcome{}
 	for _, snapshot := range snapshots {
-		if len(snapshot.Native) == 0 || len(snapshot.Digest) != sha256.Size*2 || (snapshot.Kind != "http_top" && snapshot.Kind != "sql_top") {
+		if len(snapshot.Native) == 0 || len(snapshot.Digest) != sha256.Size*2 || (snapshot.Kind != "http_top" && snapshot.Kind != "sql_top" && snapshot.Kind != jmstop.Kind) {
 			return Outcome{}, fmt.Errorf("%w: profile requires validated native payload, digest and supported kind", errInvalidProfile)
 		}
 		published, err := s.appendProfile(ctx, snapshot)
@@ -74,7 +81,7 @@ func (s *Store) PersistProfiles(ctx context.Context, snapshots []profiles.Snapsh
 
 func (s *Store) trimProfiles(ctx context.Context) error {
 	cutoff := time.Now().Add(-s.options.Retention)
-	for _, stream := range []string{profileStream("http_top"), profileStream("http_top") + "-frames", profileStream("sql_top"), profileStream("sql_top") + "-frames", profileIdentityStream} {
+	for _, stream := range []string{profileStream("http_top"), profileStream("http_top") + "-frames", profileStream("sql_top"), profileStream("sql_top") + "-frames", profileStream(jmstop.Kind), profileStream(jmstop.Kind) + "-frames", profileIdentityStream} {
 		_, err := s.results.Backend.Trim(ctx, stream, cutoff)
 		if err != nil && !errors.Is(err, recordstore.ErrNotFound) {
 			return err
@@ -97,6 +104,15 @@ func (s *Store) appendProfile(ctx context.Context, snapshot profiles.Snapshot) (
 }
 
 func profileRows(snapshot profiles.Snapshot) ([]recordstore.Row, recordstore.KindSchema, error) {
+	if snapshot.Kind == jmstop.Kind {
+		samples, err := jmstop.FromSnapshot(snapshot)
+		if err != nil {
+			return nil, recordstore.KindSchema{}, err
+		}
+		rows, err := profileSampleRows(samples)
+		schema, schemaErr := jmstop.ResultType().KindSchema()
+		return rows, schema, errors.Join(err, schemaErr)
+	}
 	if snapshot.Kind == "http_top" {
 		samples, err := httptop.FromSnapshot(snapshot)
 		if err != nil {

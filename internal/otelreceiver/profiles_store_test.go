@@ -24,6 +24,27 @@ func decodedTop(snapshot profiles.Snapshot) profiles.Snapshot {
 }
 
 var _ = Describe("durable Profiles snapshots", func() {
+	It("replays a JMS-only receiver without advertising a nonexistent spans stream", func() {
+		_, store := testReceiver(DefaultOptions())
+		snapshot := topSnapshot(1)
+		snapshot.Kind = "jms_top"
+		snapshot.Rows[0].Attributes = map[string]any{"destination": "orders", "handler": "OrderListener.accept", "state": "idle", "activeCount": 0}
+		outcome, err := store.PersistProfiles(context.Background(), []profiles.Snapshot{decodedTop(snapshot)})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(outcome.Accepted).To(Equal(int64(1)))
+		selected, err := read.ResolveRuns(read.Scope{DataDir: store.options.DataDir, Runs: []string{SourceID}})
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(selected.Close)
+		page, err := read.FeedPage(context.Background(), selected.Refs, read.FeedQuery{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(page.Rows).To(ContainElement(And(HaveField("Kind", "jms_top"), HaveField("Result", ""))))
+		Expect(selected.Refs).NotTo(ContainElement(HaveField("Kind", "spans")))
+		latest, err := read.Top(context.Background(), read.Ref{Runtime: store.Runtime(), TraceRef: tracing.TraceRef{Kind: "jms_top", Stream: profileStream("jms_top")}}, read.TopQuery{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(latest.Rows).To(ConsistOf(And(HaveKeyWithValue("handler", "OrderListener.accept"), HaveKeyWithValue("state", "idle"))))
+		Expect(latest.Display.RowDetail).To(ConsistOf(Not(BeNil())))
+		Expect(latest.Display.Rows[0]["activeCount"].String()).To(Equal("0"))
+	})
 	It("rejects unsealed snapshots without leaving partial rows or frames", func() {
 		_, store := testReceiver(DefaultOptions())
 		_, err := store.PersistProfiles(context.Background(), []profiles.Snapshot{topSnapshot(1)})

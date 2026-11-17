@@ -113,9 +113,7 @@ public class JmsSpringTest {
         try { template.convertAndSend("orders", "unconvertible"); fail("conversion must throw"); }
         catch (MessageConversionException expected) { assertEquals("invalid order", expected.getMessage()); }
         rows = capture.drain();
-        assertEquals(1, count(rows, "send"));
-        assertEquals("error", rows.get(0).get("outcome"));
-        assertEquals("conversion", rows.get(0).get("phase"));
+        assertTrue(rows.isEmpty());
       }
     }
   }

@@ -21,4 +21,5 @@ public interface ObserverAdapter {
   default Map<String, Object> project(String kind, Map<String, Object> params, Map<String, Object> row) { return row; }
   default void validate(String kind, Map<String, Object> params) {}
   default List<Map<String, Object>> terminalRows(String kind, Map<String, Object> params) { return Collections.emptyList(); }
+  default Map<String, Object> report(String kind) { return Collections.emptyMap(); }
 }

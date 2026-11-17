@@ -32,11 +32,10 @@ public class JmsObserverTest {
       observer.onExit(replying, null, rejected);
       observer.onExit(processing, null, rejected);
       observer.onExit(sending, null, null);
-      assertEquals(3, rows.size());
-      assertEquals("replies", rows.get(0).get("destination"));
+      assertEquals(2, rows.size());
       assertEquals("error", rows.get(0).get("outcome"));
-      assertEquals("process", rows.get(1).get("operation"));
-      assertEquals("success", rows.get(2).get("outcome"));
+      assertEquals("process", rows.get(0).get("operation"));
+      assertEquals("success", rows.get(1).get("outcome"));
     }
   }
 
@@ -189,17 +188,16 @@ public class JmsObserverTest {
   }
 
   @Test
-  public void capturesTimeoutsAndUnchangedExceptions() {
+  public void excludesEmptyPollsAndReceiveFailuresWithoutMessages() {
     List<Map<String, Object>> rows = new ArrayList<>();
     JmsObserver observer = new JmsObserver(rows::add, () -> 0);
     Object token = observer.onEnter("javax.jms.MessageConsumer", "receive", "()Ljavax/jms/Message;", null, new Object[0]);
     observer.onExit(token, null, null);
-    assertEquals("timeout", rows.get(0).get("outcome"));
+    assertTrue(rows.isEmpty());
     token = observer.onEnter("javax.jms.MessageConsumer", "receive", "()Ljavax/jms/Message;", null, new Object[0]);
     Exception failure = new java.lang.IllegalStateException("broker unavailable");
     observer.onExit(token, null, failure);
-    assertEquals("error", rows.get(1).get("outcome"));
-    assertEquals("broker unavailable", rows.get(1).get("error"));
+    assertTrue(rows.isEmpty());
   }
 
   @Test
@@ -276,13 +274,13 @@ public class JmsObserverTest {
     JmsObserver observer = new JmsObserver(rows::add, () -> 3);
     Object token = observer.onEnter("org.springframework.jms.core.JmsTemplate", "convertAndSend", "(Ljava/lang/String;Ljava/lang/Object;)V", null, new Object[]{"orders", "payload"});
     observer.onExit(token, null, new IllegalArgumentException("conversion rejected"));
-    assertFalse(rows.get(0).containsKey("body"));
+    assertTrue(rows.isEmpty());
     try (Broker broker = new Broker()) {
       TextMessage message = broker.session.createTextMessage("éé");
       token = observer.onEnter("javax.jms.MessageListener", "onMessage", "(Ljavax/jms/Message;)V", null, new Object[]{message});
       observer.onExit(token, null, null);
-      assertEquals("é", rows.get(1).get("body"));
-      assertEquals(true, rows.get(1).get("bodyTruncated"));
+      assertEquals("é", rows.get(0).get("body"));
+      assertEquals(true, rows.get(0).get("bodyTruncated"));
     }
   }
 
