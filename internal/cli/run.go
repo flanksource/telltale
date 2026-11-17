@@ -248,7 +248,7 @@ func runTraced(cmd *cobra.Command, options telltale.StartOptions, start func(con
 	}
 	if options.Stdin == nil && options.Stdout == nil && options.Stderr == nil && options.PID == 0 {
 		options.Stdin, options.Stdout, options.Stderr = cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr()
-		if follow && format == "ndjson" {
+		if format != "pretty" && format != "ansi" {
 			options.Stdout = cmd.ErrOrStderr()
 		}
 	}
@@ -284,18 +284,30 @@ func runTraced(cmd *cobra.Command, options telltale.StartOptions, start func(con
 	}
 	var result *telltale.Result
 	printer := newFeedPrinter(cmd.OutOrStdout())
+	human := newFeedPrinter(cmd.ErrOrStderr())
+	human.ndjson = false
 	if tui {
 		result, err = showTraceTUI(cmd.Context(), started, sort)
 	} else {
-		result, err = read.Wait(cmd.Context(), started, follow, printer.print)
+		result, err = read.Wait(cmd.Context(), started, true, func(record read.Record) error {
+			if err := human.print(record); err != nil {
+				return err
+			}
+			if follow && format == "ndjson" {
+				return printer.print(record)
+			}
+			return nil
+		})
 	}
 	if err != nil {
 		return err
 	}
-	if follow {
-		if err := printer.stats(cmd.ErrOrStderr()); err != nil {
+	if !tui {
+		if err := human.stats(cmd.ErrOrStderr()); err != nil {
 			return err
 		}
+	}
+	if follow {
 		if err := writeLine(cmd.ErrOrStderr(), result.Pretty()); err != nil {
 			return err
 		}
