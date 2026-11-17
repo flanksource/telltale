@@ -125,7 +125,7 @@ func filterFeed(refs []read.Ref, r *http.Request) ([]read.Ref, error) {
 	if len(selected) == 0 && len(refs) != 0 && (r.URL.Query().Get("kind") != "" || r.URL.Query().Get("stream") != "") {
 		return nil, fmt.Errorf("capture selection is not armed by this run")
 	}
-	return selected, nil
+	return read.EventRefs(selected), nil
 }
 
 type feedResume struct {

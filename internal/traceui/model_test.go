@@ -3,6 +3,7 @@ package traceui
 import (
 	tea "charm.land/bubbletea/v2"
 	"context"
+	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/traces/read"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/processcapture"
@@ -15,6 +16,24 @@ import (
 func TestTraceUI(t *testing.T) { RegisterFailHandler(Fail); RunSpecs(t, "Trace UI") }
 
 var _ = Describe("record model", func() {
+	It("keeps protocol samples in their Top tabs and out of All events", func() {
+		kinds, err := traces.Kinds()
+		Expect(err).NotTo(HaveOccurred())
+		runtime := &tracing.Runtime{Kinds: kinds}
+		var refs []read.Ref
+		for _, kind := range []string{"http", "sql", "jms", "http_top", "sql_top", "sql_top_active", "jms_top"} {
+			refs = append(refs, read.Ref{Runtime: runtime, TraceRef: tracing.TraceRef{Kind: kind, Stream: kind}})
+		}
+		model := New(context.Background(), Options{Refs: refs})
+		Expect(model.tabs[0].refs).To(ConsistOf(HaveField("Kind", "http"), HaveField("Kind", "sql"), HaveField("Kind", "jms")))
+		var topKinds []string
+		for _, tab := range model.tabs {
+			if tab.top != nil {
+				topKinds = append(topKinds, tab.name)
+			}
+		}
+		Expect(topKinds).To(ConsistOf("http_top", "sql_top", "jms_top"))
+	})
 	runtime := &tracing.Runtime{Kinds: tracing.NewKinds()}
 	It("keeps enabled empty kinds visible and uses an alternate screen", func() {
 		model := New(context.Background(), Options{Refs: []read.Ref{{Runtime: runtime, TraceRef: tracing.TraceRef{Kind: "sql", Stream: "s"}}, {Runtime: runtime, TraceRef: tracing.TraceRef{Kind: "http", Stream: "h"}}}})

@@ -329,6 +329,7 @@ func (m *Model) buildTabs() {
 			names = append(names, owner)
 		}
 	}
+	m.tabs[0].refs = read.EventRefs(m.tabs[0].refs)
 	slices.Sort(names)
 	for _, name := range names {
 		t := tab{name: name, following: !m.options.Replay}

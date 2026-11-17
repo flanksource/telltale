@@ -22,7 +22,6 @@ function readView(): RunView {
 /** The captures one run armed, read from its store. */
 export function TracesPanel({ run, summary }: { run: RunTraces; summary?: ReactNode }) {
   const source = useMemo(() => traceFeedSource(run.mount), [run.mount]);
-  const kinds = [...new Set([...(run.captures ?? []).map(capture => capture.kind), ...(run.process ? ["stacks"] : [])])].filter(kind => kind !== "process");
   const live = run.status === "running" || !!run.standing;
   const [showExited, setShowExited] = useState(() => new URLSearchParams(window.location.search).get("showExited") === "1");
   const [view, setView] = useState(readView);
@@ -38,6 +37,7 @@ export function TracesPanel({ run, summary }: { run: RunTraces; summary?: ReactN
   const hasDetails = !!run.process || !!processGroupsCapture(run);
   const taskCapture = run.captures?.find(capture => capture.kind === "task");
   const catalog = useQuery({ queryKey: ["sample-kinds", run.mount], queryFn: () => fetchTraceKinds(run.mount), retry: false });
+  const kinds = [...new Set([...(run.captures ?? []).map(capture => capture.kind), ...(run.process ? ["stacks"] : [])])].filter(kind => kind !== "process" && !catalog.data?.some(info => info.name === kind && info.top));
   const hasTop = [...(run.captures ?? []), ...(run.process ? [{ kind: run.process.tree.kind }, { kind: run.process.stacks.kind }] : [])].some(capture => catalog.data?.some(info => info.name === capture.kind && info.top));
   const tabs = [...(hasTop ? [{ id: "top", label: "Top" }] : []), { id: "events", label: "History" }, ...(taskCapture ? [{ id: "tasks", label: "Tasks" }] : []), ...(hasDetails ? [{ id: "process", label: "Process details" }] : [])];
   const activeView: RunView = tabs.some(tab => tab.id === view) ? view : "events";

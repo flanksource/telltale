@@ -13,7 +13,7 @@ func addFeedPaths(spec *rpc.OpenAPISpec) {
 	addRecordsPath(spec)
 	pageSchema := rpc.SchemaForStruct(read.FeedResult{})
 	pageSchema.Properties["rows"].Items.Properties["ansi"] = &rpc.OpenAPISchema{Type: "string", Description: "Styled summary, included when presentation=ansi"}
-	operation := rpc.OpenAPIOperation{Summary: "Read or follow every armed capture of a run", Tags: []string{"Traces"}, Responses: map[string]rpc.OpenAPIResponse{
+	operation := rpc.OpenAPIOperation{Summary: "Read or follow a run's events", Description: "Top samples and their named results are excluded from the event feed. Read them through the capture's records endpoint with view=top.", Tags: []string{"Traces"}, Responses: map[string]rpc.OpenAPIResponse{
 		"200": {Description: "Paged records, or a resumable live stream", Content: map[string]rpc.OpenAPIMediaType{
 			"application/json":     {Schema: pageSchema},
 			"application/x-ndjson": {Schema: &rpc.OpenAPISchema{Type: "string"}},

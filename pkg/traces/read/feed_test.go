@@ -8,11 +8,23 @@ import (
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/traces/read"
+	"github.com/flanksource/telltale/pkg/tracing"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
 var _ = Describe("unified record feed", func() {
+	It("excludes Top samples and their named results from event selections", func() {
+		kinds, err := traces.Kinds()
+		Expect(err).NotTo(HaveOccurred())
+		runtime := &tracing.Runtime{Kinds: kinds}
+		var refs []read.Ref
+		for _, kind := range []string{"http", "sql", "jms", "http_top", "http_top_frames", "sql_top", "sql_top_active", "sql_top_frames", "jms_top", "jms_top_frames"} {
+			refs = append(refs, read.Ref{Runtime: runtime, TraceRef: tracing.TraceRef{Kind: kind, Stream: kind}})
+		}
+		Expect(read.EventRefs(refs)).To(ConsistOf(HaveField("Kind", "http"), HaveField("Kind", "sql"), HaveField("Kind", "jms")))
+		Expect(refs).To(HaveLen(10))
+	})
 	BeforeEach(func() { feeding = &feed{rows: make(chan reading), ack: make(chan error, 1)} })
 	It("keeps identical stream names from different runs separate across pages", func() {
 		host, capture := fixture(GinkgoT().TempDir(), "run-shared-stream")
