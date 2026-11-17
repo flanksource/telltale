@@ -82,7 +82,7 @@ public class NoRestartOtelTest {
         attachClasspath += File.pathSeparator + tools;
       }
       Process attach = new ProcessBuilder(fixtureJava, "-cp", attachClasspath, "com.flanksource.telltale.Attach",
-          before.get("pid").getAsString(), agent, config.toString())
+          before.get("pid").getAsString(), agent, config.toString(), "false")
           .redirectErrorStream(true).redirectOutput(directory.resolve("attach.log").toFile()).start();
       try {
         assertTrue("attach timed out", attach.waitFor(45, TimeUnit.SECONDS));

@@ -17,6 +17,8 @@ public final class Diagnostics {
   private final JmxService jmx = new JmxService();
   private final Extensions extensions;
   private final ClassOperations classes = new ClassOperations();
+
+  void close() throws Exception { extensions.close(); }
   private final NotificationHub notifications =
       new NotificationHub(java.lang.management.ManagementFactory.getPlatformMBeanServer());
 

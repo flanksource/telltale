@@ -18,7 +18,7 @@ final class TransformOwner {
   }
 
   private static Class<?> owner(Class<?> local) {
-    try { return Class.forName(local.getName(), false, ClassLoader.getSystemClassLoader()); }
+    try { return Class.forName(local.getName(), false, com.flanksource.telltale.RuntimeOwner.loader()); }
     catch (ClassNotFoundException error) {
       throw new IllegalStateException("the attached agent has no JVM transform coordinator " + local.getName(), error);
     }

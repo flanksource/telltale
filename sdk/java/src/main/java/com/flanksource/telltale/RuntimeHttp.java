@@ -131,12 +131,14 @@ final class RuntimeHttp {
     Map<String, Object> hello = new LinkedHashMap<>();
     hello.put("apiVersion", RuntimeService.API_VERSION);
     hello.put("protocol", 1);
+    hello.put("sdkVersion", RuntimeService.class.getPackage().getImplementationVersion());
     hello.put("started", runtime.started);
     Map<String, Object> platform = new LinkedHashMap<>();
     platform.put("lang", "java");
     platform.put("version", System.getProperty("java.version"));
     platform.put("vendor", System.getProperty("java.vendor"));
     hello.put("runtime", platform);
+    hello.put("resource", runtime.resource);
     hello.put("probes", RuntimeService.probes());
     hello.put("ops", runtime.diagnostics.catalog());
     return hello;

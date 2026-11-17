@@ -142,10 +142,10 @@ func latestProfileRows(ref read.Ref) read.TopResult {
 	return result
 }
 
-var _ = Describe("attached JVM Profiles over authenticated hub sessions", func() {
-	It("captures warmed HTTP and JDBC operations, updates the same IDs and clears both Top tables", func() {
+var _ = Describe("attached JVM Profiles over authenticated sessions", func() {
+	DescribeTable("captures warmed HTTP and JDBC operations, updates the same IDs and clears both Top tables", func(attach func(profilesWorkload) *agentclient.Registry) {
 		workload := startProfilesWorkload()
-		registry := attachProfilesHub(workload)
+		registry := attach(workload)
 		previous := agentclient.Default
 		agentclient.Default = registry
 		DeferCleanup(func() { agentclient.Default = previous })
@@ -207,5 +207,5 @@ var _ = Describe("attached JVM Profiles over authenticated hub sessions", func()
 				g.Expect(frames).To(ContainElement(HaveField("Retained", BeNumerically(">", 0))))
 			}).WithTimeout(15 * time.Second).Should(Succeed())
 		}
-	})
+	}, Entry("over the hub", attachProfilesHub), Entry("over direct HTTP", attachProfilesHTTP), Entry("over direct HTTP after a runtime upgrade", attachUpgradedProfilesHTTP))
 })

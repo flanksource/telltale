@@ -24,6 +24,7 @@ type Provision struct {
 	JWKS    auth.JWKS
 	JWKSURL string
 	Exec    ExecFunc
+	Upgrade bool
 }
 
 // ExecFunc runs commands in a target's JVM container.
@@ -40,7 +41,8 @@ type Options struct {
 	Exec ExecFunc
 	// DryRun only selects the targets, each StateSelected: it installs
 	// nothing and needs no Issuer.
-	DryRun bool
+	DryRun  bool
+	Upgrade bool
 }
 
 // Deploy installs the agent into every target the deployer selects and
@@ -123,7 +125,10 @@ func prepare(deployer Deployer, options Options) (JavaContainer, Provision, erro
 	if exec == nil {
 		exec = options.Cluster.Exec()
 	}
-	return container, Provision{Issuer: options.Issuer.Name(), JWKS: options.Issuer.JWKS(), JWKSURL: deployer.Spec.Auth.JWKSURL, Exec: exec}, nil
+	if options.Upgrade && deployer.Spec.JavaContainer.Kind != KindAttach {
+		return nil, Provision{}, errors.New("--upgrade replaces attached Java runtimes; select an attach deployer")
+	}
+	return container, Provision{Issuer: options.Issuer.Name(), JWKS: options.Issuer.JWKS(), JWKSURL: deployer.Spec.Auth.JWKSURL, Exec: exec, Upgrade: options.Upgrade}, nil
 }
 
 // adapterConfig is the agent configuration a target is provisioned with,

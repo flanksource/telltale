@@ -49,7 +49,7 @@ var _ = Describe("jvm deploy and agents install java", func() {
 		Expect(deployCmd.Name()).To(Equal("deploy"))
 		Expect(installCmd.Name()).To(Equal("java"))
 		Expect(flagNames(installCmd)).To(Equal(flagNames(deployCmd)))
-		Expect(flagNames(deployCmd)).To(ContainElements("hub-url=", "token-file=", "host=", "file=", "deployer=", "issuer=", "jwks-name=", "labels=[]", "kubeconfig=", "context="))
+		Expect(flagNames(deployCmd)).To(ContainElements("hub-url=", "token-file=", "host=", "file=", "deployer=", "issuer=", "jwks-name=", "labels=[]", "kubeconfig=", "context=", "upgrade=false"))
 	})
 
 	It("serves both names over RPC with the same inputs", func() {
@@ -64,7 +64,7 @@ var _ = Describe("jvm deploy and agents install java", func() {
 			return names
 		}
 		Expect(inputs("/api/v1/agents/install/java")).To(Equal(inputs("/api/v1/jvm/deploy")))
-		Expect(inputs("/api/v1/jvm/deploy")).To(ContainElements("target", "deployer", "issuer", "dry-run"))
+		Expect(inputs("/api/v1/jvm/deploy")).To(ContainElements("target", "deployer", "issuer", "dry-run", "upgrade"))
 	})
 
 	It("builds a Deployer from flags: one pod's attach listener, reached over a port-forward, verifying the issuer's tokens", func() {

@@ -3,6 +3,7 @@ package com.flanksource.telltale;
 import static org.junit.Assert.*;
 
 import com.flanksource.telltale.auth.TestTokens;
+import com.flanksource.telltale.observer.ObserverRuntime;
 import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
@@ -25,7 +26,10 @@ public class HttpListenerTest {
     config.put("audience", TestTokens.AUDIENCE);
     config.put("jwks", Agent.JSON.fromJson(tokens.jwks(), Map.class));
     config.put("configDigest", "sha256:listener");
-    RuntimeService.acquire(Collections.emptyMap());
+    Map<String, Object> runtimeConfig = new LinkedHashMap<>();
+    runtimeConfig.put("service", "listener-fixture");
+    runtimeConfig.put("resource", Collections.singletonMap("deployment.environment.name", "integration"));
+    RuntimeService.acquire(runtimeConfig);
     try (HttpListener listener = HttpListener.start(config)) {
       String port =
           new String(Files.readAllBytes(directory.resolve("port")), StandardCharsets.UTF_8);
@@ -34,6 +38,14 @@ public class HttpListenerTest {
       HttpReply health = HttpReply.send(base + "/health", "GET", null, null);
       assertEquals(health.body, 200, health.status);
       assertEquals("sha256:listener", health.json().get("configDigest").getAsString());
+      HttpReply hello = HttpReply.send(base + "/hello", "GET", null, tokens.token("jvm:read"));
+      assertEquals(hello.body, 200, hello.status);
+      Map<String, Object> expectedResource = new LinkedHashMap<>();
+      expectedResource.put("service.name", "listener-fixture");
+      expectedResource.put("process.pid", ManagementFactory.getRuntimeMXBean().getName().split("@")[0]);
+      expectedResource.put("deployment.environment.name", "integration");
+      expectedResource.put("telltale.source.instance", ObserverRuntime.SOURCE);
+      assertEquals(Agent.JSON.toJsonTree(expectedResource), hello.json().get("resource"));
       String search =
           "{\"operation\":\"jvm.jmx.search\",\"params\":{\"pattern\":\"java.lang:type=Runtime\"}}";
       HttpReply anonymous = HttpReply.send(base + "/call", "POST", search, null);

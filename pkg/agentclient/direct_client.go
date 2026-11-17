@@ -50,19 +50,24 @@ type HTTPClient struct {
 
 // Health is an agent's unauthenticated readiness and version report.
 type Health struct {
-	Status       string `json:"status"`
-	APIVersion   int    `json:"apiVersion"`
-	Required     int    `json:"required,omitempty"`
-	ConfigDigest string `json:"configDigest,omitempty"`
-	Error        string `json:"error,omitempty"`
+	Status            string `json:"status"`
+	APIVersion        int    `json:"apiVersion"`
+	Required          int    `json:"required,omitempty"`
+	ConfigDigest      string `json:"configDigest,omitempty"`
+	UpgradeAPIVersion int    `json:"upgradeApiVersion,omitempty"`
+	RuntimeVersion    string `json:"runtimeVersion,omitempty"`
+	ArtifactSHA256    string `json:"artifactSHA256,omitempty"`
+	Error             string `json:"error,omitempty"`
 }
 
 // AgentHello is what an agent says about itself over HTTP.
 type AgentHello struct {
+	SDKVersion string               `json:"sdkVersion"`
 	APIVersion int                  `json:"apiVersion"`
 	Protocol   int                  `json:"protocol"`
 	Started    time.Time            `json:"started"`
 	Runtime    protocol.Runtime     `json:"runtime"`
+	Resource   map[string]string    `json:"resource"`
 	Probes     []protocol.ProbeSpec `json:"probes"`
 	Ops        []protocol.OpSpec    `json:"ops"`
 }

@@ -270,20 +270,41 @@ final class Session implements AutoCloseable {
     }
   }
 
-  public synchronized void close() throws Exception {
-    calls.shutdownNow();
-    deadlines.shutdownNow();
+  public void close() throws Exception {
     Exception failure = null;
-    for (Capture r : recordings.values()) {
-      try {
-        r.close();
-      } catch (Exception e) {
-        if (failure == null) failure = e;
-        else failure.addSuppressed(e);
+    synchronized (this) {
+      calls.shutdownNow();
+      deadlines.shutdownNow();
+      for (Capture r : recordings.values()) {
+        try { r.close(); }
+        catch (Exception error) {
+          if (failure == null) failure = error;
+          else failure.addSuppressed(error);
+        }
       }
+      recordings.clear();
     }
-    recordings.clear();
+    if (!(awaitStopped(calls) & awaitStopped(deadlines))) {
+      Exception timeout = new IllegalStateException("agent session workers did not stop");
+      if (failure == null) failure = timeout;
+      else failure.addSuppressed(timeout);
+    }
     if (failure != null) throw failure;
+  }
+
+  boolean stopped() { return calls.isTerminated() && deadlines.isTerminated(); }
+
+  private static boolean awaitStopped(java.util.concurrent.ExecutorService executor) {
+    boolean interrupted = false;
+    long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+    try {
+      while (true) {
+        try { return executor.awaitTermination(Math.max(0, deadline - System.nanoTime()), java.util.concurrent.TimeUnit.NANOSECONDS); }
+        catch (InterruptedException stop) { interrupted = true; }
+      }
+    } finally {
+      if (interrupted) Thread.currentThread().interrupt();
+    }
   }
 
   private void failCapture(String id, Exception error) {

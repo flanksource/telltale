@@ -31,6 +31,7 @@ type Options struct {
 	TokenFile     string      `json:"tokenFile,omitempty"`
 	Service       string      `json:"service"`
 	DryRun        bool        `json:"dryRun,omitempty"`
+	Upgrade       bool        `json:"upgrade,omitempty"`
 	AllowMutation bool        `json:"allowMutation,omitempty"`
 	ExtensionsDir string      `json:"extensionsDir,omitempty"`
 	// HTTP starts the agent's HTTP listener, which executions reach directly
@@ -109,6 +110,7 @@ type Attachment struct {
 	PID              int
 	Artifact, Config string
 	JavaHome         string
+	Upgrade          bool
 }
 type Runtime interface {
 	Artifact() (Artifact, error)
@@ -155,11 +157,13 @@ func (i Installer) Install(ctx context.Context, o Options) (Result, error) {
 				return result, dialErr
 			}
 			defer func() { _ = client.Close() }()
-			if client.Hello.Resource["telltale.artifact.sha256"] != result.SHA256 || client.Hello.Service != o.Service || client.Hello.Resource["telltale.hub.url"] != o.HubURL || client.Hello.Resource["telltale.allowMutation"] != strconv.FormatBool(o.AllowMutation) || client.Hello.Resource["telltale.extensionsDir"] != o.ExtensionsDir {
-				return result, fmt.Errorf("an incompatible agent is already installed; restart the JVM before changing its agent")
+			if !o.Upgrade {
+				if client.Hello.Resource["telltale.artifact.sha256"] != result.SHA256 || client.Hello.Service != o.Service || client.Hello.Resource["telltale.hub.url"] != o.HubURL || client.Hello.Resource["telltale.allowMutation"] != strconv.FormatBool(o.AllowMutation) || client.Hello.Resource["telltale.extensionsDir"] != o.ExtensionsDir {
+					return result, fmt.Errorf("an incompatible agent is already installed; use --upgrade to replace its runtime")
+				}
+				result.Agent = client.Hello.AgentID
+				return result, nil
 			}
-			result.Agent = client.Hello.AgentID
-			return result, nil
 		} else if !os.IsNotExist(statErr) {
 			return result, statErr
 		}
@@ -260,7 +264,7 @@ func (i Installer) Install(ctx context.Context, o Options) (Result, error) {
 	if !bytes.Equal(identity, current) {
 		return result, fmt.Errorf("target process identity changed before attachment")
 	}
-	_, err = transport.Run(ctx, i.Runtime.Attach(Attachment{PID: o.PID, Artifact: result.Jar, Config: configPath, JavaHome: javaHome}), nil)
+	_, err = transport.Run(ctx, i.Runtime.Attach(Attachment{PID: o.PID, Artifact: result.Jar, Config: configPath, JavaHome: javaHome, Upgrade: o.Upgrade}), nil)
 	if err != nil {
 		return result, fmt.Errorf("attach Java agent (requires compatible JDK Attach API and permission to attach): %w", err)
 	}

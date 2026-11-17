@@ -57,6 +57,7 @@ type container struct {
 	files    map[string][]byte
 	commands []string
 	config   map[string]any
+	upgrade  bool
 }
 
 func (c *container) Run(_ context.Context, args []string, input io.Reader) ([]byte, error) {
@@ -105,7 +106,10 @@ func (c *container) Run(_ context.Context, args []string, input io.Reader) ([]by
 		sum := sha256.Sum256(c.files[args[1]])
 		return []byte(hex.EncodeToString(sum[:]) + "  " + args[1] + "\n"), nil
 	case "java":
-		Expect(json.Unmarshal(c.files[args[len(args)-1]], &c.config)).To(Succeed())
+		upgrade, err := strconv.ParseBool(args[len(args)-1])
+		Expect(err).NotTo(HaveOccurred())
+		c.upgrade = upgrade
+		Expect(json.Unmarshal(c.files[args[len(args)-2]], &c.config)).To(Succeed())
 		listener := c.config["http"].(map[string]any)
 		c.listener.mu.Lock()
 		c.listener.digest = listener["configDigest"].(string)
@@ -135,6 +139,22 @@ func attachDeployer() deploy.Deployer {
 }
 
 var _ = Describe("attach java containers", func() {
+	It("reattaches a healthy target when an upgrade is explicitly requested", func() {
+		listener := &listenerStub{apiVersion: agentclient.AgentAPIVersion}
+		jvmContainer := &container{listener: listener, files: map[string][]byte{}}
+		options := deploy.Options{Kubernetes: fake.NewClientset(listenerPod("orders-0", listener)), Issuer: issuer(), Exec: func(deploy.Target) agentinstall.Transport { return jvmContainer }}
+		_, err := deploy.Deploy(dbcontext.New(), attachDeployer(), options)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(jvmContainer.upgrade).To(BeFalse())
+		before := len(jvmContainer.commands)
+		options.Upgrade = true
+		status, err := deploy.Deploy(dbcontext.New(), attachDeployer(), options)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(status.Targets).To(ConsistOf(HaveField("State", deploy.StateDeployed)))
+		Expect(len(jvmContainer.commands)).To(BeNumerically(">", before))
+		Expect(jvmContainer.upgrade).To(BeTrue())
+	})
+
 	It("attaches the agent with a hub-less listener once and leaves a current one alone", func() {
 		listener := &listenerStub{apiVersion: agentclient.AgentAPIVersion}
 		jvmContainer := &container{listener: listener, files: map[string][]byte{}}

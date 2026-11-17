@@ -16,6 +16,7 @@ public final class ProbeTransformations implements ClassFileTransformer {
   private static final Logger LOG = Logger.getLogger(ProbeTransformations.class.getName());
   private static final Map<Class<?>, Target> TARGETS = Collections.synchronizedMap(new WeakHashMap<>());
   private static Instrumentation instrumentation;
+  private static ProbeTransformations transformer;
   private static final InstrumentService INSTRUMENTER = new InstrumentService();
   private static final Map<Class<?>, AtomicReference<byte[]>> READS = new ConcurrentHashMap<>();
 
@@ -25,8 +26,18 @@ public final class ProbeTransformations implements ClassFileTransformer {
     }
     if (!installed.isRetransformClassesSupported()) throw new IllegalStateException("method probes require class retransformation");
     SourceTransformations.install(installed);
-    installed.addTransformer(new ProbeTransformations(), true);
+    transformer = new ProbeTransformations();
+    installed.addTransformer(transformer, true);
     instrumentation = installed;
+  }
+
+  public static synchronized void shutdown() {
+    if (!TARGETS.isEmpty()) throw new IllegalStateException("method probes are still active");
+    if (transformer != null && !instrumentation.removeTransformer(transformer))
+      throw new IllegalStateException("probe transformer was not registered");
+    transformer = null;
+    instrumentation = null;
+    READS.clear();
   }
 
   static synchronized InstrumentService.Result arm(Instrumentation installed, ClassIndex.Entry entry, String probeKey) {

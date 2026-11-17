@@ -83,6 +83,22 @@ public final class ObserverRuntime {
     ADAPTERS.put(adapter.id(), adapter);
   }
 
+  public static synchronized void shutdown() throws Exception {
+    if (!CAPTURES.isEmpty()) throw new IllegalStateException("observer has active captures");
+    EXPIRY.shutdownNow();
+    if (instrumentation == null) return;
+    if (transformer != null && !instrumentation.removeTransformer(transformer))
+      throw new IllegalStateException("observer transformer was not registered");
+    Class<?> bridge = Class.forName("com.flanksource.telltale.observer.bootstrap.ObserverBridge", false, null);
+    bridge.getField("handler").set(null, null);
+    OPERATIONS.clear();
+    ADAPTERS.clear();
+    installedAdapters = Collections.emptyList();
+    if (bootstrap != null) bootstrap.close();
+    transformer = null;
+    instrumentation = null;
+  }
+
   public static ObserverSubscription subscribe(String kind, String id, Map<String, Object> params)
       throws Exception {
     synchronized (MUTATIONS) {
@@ -396,10 +412,10 @@ public final class ObserverRuntime {
   }
 
   private static boolean foreignLoader() {
-    return ObserverRuntime.class.getClassLoader() != ClassLoader.getSystemClassLoader();
+    return ObserverRuntime.class.getClassLoader() != com.flanksource.telltale.RuntimeOwner.loader();
   }
 
   private static Class<?> owner() throws ClassNotFoundException {
-    return Class.forName(ObserverRuntime.class.getName(), true, ClassLoader.getSystemClassLoader());
+    return Class.forName(ObserverRuntime.class.getName(), true, com.flanksource.telltale.RuntimeOwner.loader());
   }
 }

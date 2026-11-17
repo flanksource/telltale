@@ -91,14 +91,15 @@ public final class NoRestartOtelFixture {
       System.out.println("READY " + new Gson().toJson(result));
       if (!"CAPTURE".equals(new BufferedReader(new InputStreamReader(System.in, "UTF-8")).readLine()))
         throw new IllegalStateException("expected CAPTURE after attach");
-      Class<?> capture = Class.forName("observerfixture.NoRestartOtelCapture");
+      try (NoRestartCaptureLoader captures = new NoRestartCaptureLoader()) {
+      Class<?> capture = captures.loadClass("observerfixture.NoRestartOtelCapture");
       Object armed = capture.getMethod("arm").invoke(null);
       operation(instrumenter, url, "during", otel, armed);
       flush(provider);
       awaitOfficial(official, sampled ? 4 : 0);
       result.put("during", collector.requests.size());
       result.put("officialDuring", official.httpCount());
-      Class<?> sql = Class.forName("observerfixture.NoRestartSqlCapture");
+      Class<?> sql = captures.loadClass("observerfixture.NoRestartSqlCapture");
       for (Map.Entry<?, ?> entry : ((Map<?, ?>) sql.getMethod("run").invoke(null)).entrySet())
         result.put(String.class.cast(entry.getKey()), entry.getValue());
       for (Map.Entry<?, ?> entry : ((Map<?, ?>) capture.getMethod("finish").invoke(armed)).entrySet())
@@ -124,6 +125,7 @@ public final class NoRestartOtelFixture {
       }
       result.put("pid", ManagementFactory.getRuntimeMXBean().getName().split("@")[0]);
       System.out.println("RESULT " + new Gson().toJson(result));
+      }
     } finally { try { NoRestartSqlState.close(); } finally { server.stop(0); provider.close(); } }
   }
 

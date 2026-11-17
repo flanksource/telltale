@@ -124,6 +124,7 @@ func newJavaDeployCommand(use, short, route string) *cobra.Command {
 	f.BoolVar(&flags.install.AllowMutation, "allow-mutation", false, "Enable JVM mutation operations; each call also requires opt-in")
 	f.StringVar(&flags.install.ExtensionsDir, "extensions-dir", "", "Absolute extension storage directory on the target JVM")
 	f.BoolVar(&flags.install.DryRun, "dry-run", false, "Deployer: list the pods the selector picks; single attach: preview the artifact. Neither changes anything")
+	f.BoolVar(&flags.install.Upgrade, "upgrade", false, "Replace an idle attached agent runtime without restarting its JVM")
 
 	f.StringVar(&flags.issuer, "issuer", "", "connection:// reference holding the signingKey secret: builds a Deployer from these flags")
 	f.StringVar(&flags.name, "name", "", "Name of the built Deployer, part of its target ids (default: --service)")
@@ -361,7 +362,7 @@ func runJavaDeployer(cmd *cobra.Command, flags javaDeployFlags, mode javaDeployM
 	if err != nil {
 		return fmt.Errorf("kubernetes client: %w", err)
 	}
-	options := deploy.Options{Kubernetes: client, Cluster: cluster, DryRun: flags.install.DryRun}
+	options := deploy.Options{Kubernetes: client, Cluster: cluster, DryRun: flags.install.DryRun, Upgrade: flags.install.Upgrade}
 	if !options.DryRun {
 		if options.Issuer, err = deploy.NewIssuer(ctx, deployer.Spec.Auth); err != nil {
 			return fmt.Errorf("deployer %s: %w", deployer.Name, err)

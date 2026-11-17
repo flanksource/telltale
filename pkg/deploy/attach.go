@@ -102,11 +102,17 @@ func (a *attach) Deploy(ctx dbcontext.Context, target Target, provision Provisio
 	found, health, _ := inspect(ctx, client, target, resolved, config["configDigest"])
 	switch found {
 	case current:
-		return TargetStatus{State: StateDeployed, AgentAPIVersion: health.APIVersion, Endpoint: endpoint}
+		if !provision.Upgrade {
+			return TargetStatus{State: StateDeployed, AgentAPIVersion: health.APIVersion, Endpoint: endpoint}
+		}
 	case outdated:
-		return outdatedStatus(endpoint, health)
+		if !provision.Upgrade {
+			return outdatedStatus(endpoint, health)
+		}
 	case stale:
-		return failed(endpoint, errors.New("an agent attached with another provision answers; an attached agent cannot be replaced, restart the JVM to re-provision it"))
+		if !provision.Upgrade {
+			return failed(endpoint, errors.New("an agent attached with another provision answers; use --upgrade to replace its runtime"))
+		}
 	}
 	if err := a.install(ctx, target, config, provision); err != nil {
 		return failed(endpoint, err)
@@ -120,7 +126,7 @@ func (a *attach) install(ctx dbcontext.Context, target Target, config map[string
 	listener := agentinstall.HTTPListener{Bind: a.spec.Bind, Port: a.spec.Port, Issuer: config["issuer"], Audience: config["audience"], JWKS: json.RawMessage(config["jwks"]), JWKSURL: config["jwksUrl"], ConfigDigest: config["configDigest"]}
 	destination := agentinstall.Destination{Kind: "kubernetes", Namespace: target.Pod.Namespace, Pod: target.Pod.Name, Container: target.Container.Name}
 	installer := agentinstall.Installer{Runtime: agentinstall.Java{}, Transport: provision.Exec(target)}
-	_, err := installer.Install(ctx, agentinstall.Options{Destination: destination, PID: a.spec.PID, Directory: a.spec.Directory, Service: a.spec.Service, AllowMutation: a.spec.AllowMutation, ExtensionsDir: a.spec.ExtensionsDir, JavaHome: a.spec.JavaHome, HTTP: &listener})
+	_, err := installer.Install(ctx, agentinstall.Options{Destination: destination, PID: a.spec.PID, Directory: a.spec.Directory, Service: a.spec.Service, AllowMutation: a.spec.AllowMutation, ExtensionsDir: a.spec.ExtensionsDir, JavaHome: a.spec.JavaHome, HTTP: &listener, Upgrade: provision.Upgrade})
 	if err != nil {
 		return fmt.Errorf("attach agent to pid %d in %s: %w", a.spec.PID, target.ID, err)
 	}

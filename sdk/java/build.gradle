@@ -155,7 +155,7 @@ shadowJar {
         exclude(dependency('org.reactivestreams:reactive-streams:.*'))
         exclude(dependency('io.projectreactor:reactor-core:.*'))
     }
-    manifest { attributes('Premain-Class':'com.flanksource.telltale.Agent', 'Agent-Class':'com.flanksource.telltale.Agent', 'Main-Class':'com.flanksource.telltale.Attach', 'Implementation-Version':project.version, 'Can-Redefine-Classes':'true', 'Can-Retransform-Classes':'true') }
+    manifest { attributes('Premain-Class':'com.flanksource.telltale.bootstrap.AgentBootstrap', 'Agent-Class':'com.flanksource.telltale.bootstrap.AgentBootstrap', 'Main-Class':'com.flanksource.telltale.Attach', 'Implementation-Version':project.version, 'Can-Redefine-Classes':'true', 'Can-Retransform-Classes':'true') }
 }
 // The agent the Go deployer embeds (gitignored assets dir). A plain Jar over the runtime shadow
 // jar, so the diag agent and observer bootstrap jars nested in it stay whole: shadow would unpack

@@ -25,5 +25,5 @@ func (Java) Attach(a Attachment) []string {
 		classpath += ":" + a.JavaHome + "/lib/tools.jar"
 	}
 	return []string{"env", "-u", "JAVA_TOOL_OPTIONS", "-u", "_JAVA_OPTIONS", "-u", "JDK_JAVA_OPTIONS",
-		launcher, "-cp", classpath, "com.flanksource.telltale.Attach", strconv.Itoa(a.PID), a.Artifact, a.Config}
+		launcher, "-cp", classpath, "com.flanksource.telltale.Attach", strconv.Itoa(a.PID), a.Artifact, a.Config, strconv.FormatBool(a.Upgrade)}
 }

@@ -56,8 +56,10 @@ func DialHTTP(ctx context.Context, endpoint HTTPEndpoint) (*Agent, error) {
 	if poll == 0 {
 		poll = DefaultPoll
 	}
-	resource := maps.Clone(endpoint.Resource)
-	agent := &Agent{done: make(chan struct{}), Hello: protocol.Hello{AgentID: endpoint.ID, Service: resource["service.name"], Protocol: hello.Protocol, Started: hello.Started, Runtime: hello.Runtime, Resource: resource, Probes: hello.Probes, Ops: hello.Ops}}
+	resource := make(map[string]string, len(endpoint.Resource)+len(hello.Resource))
+	maps.Copy(resource, endpoint.Resource)
+	maps.Copy(resource, hello.Resource)
+	agent := &Agent{done: make(chan struct{}), Hello: protocol.Hello{AgentID: endpoint.ID, Service: resource["service.name"], SDKVersion: hello.SDKVersion, Protocol: hello.Protocol, Started: hello.Started, Runtime: hello.Runtime, Resource: resource, Probes: hello.Probes, Ops: hello.Ops}}
 	agent.transport = &httpTransport{agent: agent, client: client, poll: poll, ops: hello.Ops, captures: make(map[*Session]*httpCapture)}
 	return agent, nil
 }
@@ -146,6 +148,7 @@ func (t *httpTransport) arm(ctx context.Context, s *Session, request ArmRequest)
 	if err != nil {
 		return err
 	}
+	s.ID = capture.ID
 	c := &httpCapture{Capture: capture, scope: scope, stop: make(chan struct{}), maxBytes: request.Limits.MaxBytes}
 	t.mu.Lock()
 	t.captures[s] = c

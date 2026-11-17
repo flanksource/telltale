@@ -180,7 +180,22 @@ A `Deployer` (`crds/telltale.flanksource.com_deployers.yaml`, Go package `pkg/de
   - Agents are provisioned with the public JWKS only.
   - `spec.auth.jwksUrl` names where the issuer runtime serves its JWKS (`auth.Issuer` is an `http.Handler`), so a rotated key is picked up on its first unknown `kid`.
 
-Deploying is idempotent. The deployer reads each target's `/health`, and a target already running agent API `1` with the same provision digest is left alone. A different provision is redeployed with `tomcat`. With `attach` it is an error, because an attached agent cannot be replaced without a JVM restart.
+Deploying is idempotent. The deployer reads each target's `/health`, and a target already running agent API `1` with the same provision digest is left alone. A different provision is redeployed with `tomcat`. An attached runtime is replaced only when `--upgrade` is given.
+
+### Upgrade an attached runtime
+
+After building and installing the new CLI, stop the target's captures and restore its bytecode patches, then deploy with `--upgrade`:
+
+```bash
+telltale jvm deploy --upgrade --file "$HOME/.config/telltale/deployers/api.yaml"
+telltale agents install java --upgrade --pid 1234 --directory /home/example/telltale/agent --service orders --allow-mutation --extensions-dir /home/example/telltale/extensions
+```
+
+The launcher loads the replacement artifact in an isolated classloader, validates it, and waits up to ten seconds for diagnostic calls to finish. Active captures or patches refuse the upgrade before the running runtime is stopped. An idle runtime releases its transports, observer and patch transformers, and extension resources before the replacement starts. Clients reconnect to the new runtime; the application PID and JVM source identity stay the same. If activation fails, the launcher attempts to restore the previous artifact and configuration and reports whether recovery succeeded.
+
+The attached listener's `/health` reports `runtimeVersion`, `upgradeApiVersion` and the configured `artifactSHA256`; `/hello` also reports the runtime's `sdkVersion`. The same `upgrade` boolean is available through both deployment RPC routes. `--upgrade --dry-run` previews the selected targets without replacing anything. This flag applies to `attach` deployers and single-PID attachments.
+
+An agent installed before the upgrade-capable launcher requires one JVM restart to adopt it. Later runtime upgrades can change class structure without restarting the application. The small system-loader probe bridge remains versioned separately: a replacement requiring an incompatible bridge API is rejected before shutdown and requires a JVM restart.
 
 Each target reports `{target, namespace, pod, container, state, agentAPIVersion, endpoint, error}`, where `state` is `deployed`, `outdated` or `failed`. `outdated` means the JVM still runs another agent API after the deploy; restart the JVM to replace it.
 

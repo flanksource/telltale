@@ -15,7 +15,7 @@ public final class RuntimeService implements DynamicMBean {
   private static final String[] ACTIONS = {
     "configure", "describe", "catalog", "call", "http", "registerAdapter", "closeOwner",
     "captureOpen", "captureDump", "captureComplete", "captureDropped", "captureReport",
-    "captureFinish", "captureRenew", "captureClose"
+    "captureFinish", "captureRenew", "captureClose", "prepareUpgrade", "stopRuntime"
   };
 
   /** The protocol captures served by the observer runtime rather than by a probe or recording. */
@@ -33,6 +33,8 @@ public final class RuntimeService implements DynamicMBean {
   private final Map<String, Scope> captureScopes = new HashMap<>();
   private final Map<String, JwtVerifier> verifiers = new HashMap<>();
   private final RuntimeHttp http = new RuntimeHttp(this);
+  private final java.util.concurrent.locks.ReentrantReadWriteLock lifecycle = new java.util.concurrent.locks.ReentrantReadWriteLock(true);
+  private volatile boolean upgrading;
 
   private RuntimeService(Map<String, Object> config) throws Exception {
     configuration = configuration(config);
@@ -98,10 +100,45 @@ public final class RuntimeService implements DynamicMBean {
   public Object invoke(String action, Object[] values, String[] signature)
       throws MBeanException, ReflectionException {
     try {
-      return dispatch(action, (Map<String, Object>) values[0]);
+      if (action.equals("prepareUpgrade")) { prepareUpgrade(); return null; }
+      if (action.equals("stopRuntime")) { stopRuntime(); return null; }
+      lifecycle.readLock().lock();
+      try {
+        if (upgrading && !action.equals("closeOwner") && !action.equals("describe"))
+          throw new IllegalStateException("agent runtime is upgrading");
+        return dispatch(action, (Map<String, Object>) values[0]);
+      } finally { lifecycle.readLock().unlock(); }
     } catch (Exception error) {
       throw new MBeanException(error, error.toString());
     }
+  }
+
+  private void prepareUpgrade() throws Exception {
+    if (!lifecycle.writeLock().tryLock(10, java.util.concurrent.TimeUnit.SECONDS))
+      throw new IllegalStateException("agent has active diagnostic calls; retry the upgrade when they finish");
+    try {
+      synchronized (captures) {
+        if (!captures.isEmpty()) throw new IllegalStateException("agent has active captures; stop them before upgrading");
+      }
+      if (!com.flanksource.telltale.diag.agent.DiagAgent.ORIGINAL_BYTES.isEmpty())
+        throw new IllegalStateException("agent has active patches; restore them before upgrading");
+      if (!com.flanksource.telltale.diag.hotpatch.AgentBridge.probeKeys().isEmpty())
+        throw new IllegalStateException("agent has active probes; stop them before upgrading");
+      upgrading = true;
+    } finally { lifecycle.writeLock().unlock(); }
+  }
+
+  private void stopRuntime() throws Exception {
+    lifecycle.writeLock().lock();
+    try {
+      if (!upgrading) throw new IllegalStateException("prepare the agent upgrade before stopping its runtime");
+      com.flanksource.telltale.observer.ObserverRuntime.shutdown();
+      com.flanksource.telltale.diag.hotpatch.ProbeTransformations.shutdown();
+      com.flanksource.telltale.diag.hotpatch.SourceTransformations.shutdown();
+      com.flanksource.telltale.diag.agent.DiagAgent.RESTORER = null;
+      diagnostics.close();
+      ManagementFactory.getPlatformMBeanServer().unregisterMBean(new ObjectName(NAME));
+    } finally { lifecycle.writeLock().unlock(); }
   }
 
   @SuppressWarnings("unchecked")
@@ -137,9 +174,12 @@ public final class RuntimeService implements DynamicMBean {
     }
   }
 
-  private static Map<String, Object> describe() {
+  private Map<String, Object> describe() {
     Map<String, Object> result = new LinkedHashMap<>();
     result.put("apiVersion", API_VERSION);
+    result.put("upgradeApiVersion", 1);
+    result.put("runtimeVersion", RuntimeService.class.getPackage().getImplementationVersion());
+    result.put("artifactSHA256", resource.get("telltale.artifact.sha256"));
     result.put("probeApiVersion", com.flanksource.telltale.diag.agent.DiagAgent.PROBE_API_VERSION);
     return result;
   }

@@ -8,9 +8,9 @@ import reactor.core.publisher.Mono;
 /** Application SQL objects are created and exercised before Telltale is attached. */
 public final class NoRestartSqlState {
   static java.sql.Connection jdbcConnection;
-  static PreparedStatement jdbc;
+  public static PreparedStatement jdbc;
   static io.r2dbc.spi.Connection reactiveConnection;
-  static io.r2dbc.spi.Statement reactive;
+  public static io.r2dbc.spi.Statement reactive;
   private NoRestartSqlState() {}
 
   public static void open() throws Exception {

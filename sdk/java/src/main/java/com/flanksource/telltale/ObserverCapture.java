@@ -23,7 +23,7 @@ final class ObserverCapture implements Capture {
     interval = ObserverOptions.positiveInt(params, "pollIntervalMs", 5000, 3600000);
     resource.putAll(configuredResource);
     java.lang.instrument.Instrumentation instrumentation = com.flanksource.telltale.diag.hotpatch.InstrumentationService.instrumentation();
-    Class<?> owner = Class.forName("com.flanksource.telltale.observer.ObserverRuntime", true, ClassLoader.getSystemClassLoader());
+    Class<?> owner = Class.forName("com.flanksource.telltale.observer.ObserverRuntime", true, RuntimeOwner.loader());
     owner.getMethod("install", java.lang.instrument.Instrumentation.class).invoke(null, instrumentation);
     source = (String) owner.getField("SOURCE").get(null);
     resource.put("telltale.source.instance", source);

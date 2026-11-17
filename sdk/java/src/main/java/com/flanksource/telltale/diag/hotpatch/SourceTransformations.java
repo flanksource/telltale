@@ -10,6 +10,7 @@ import org.objectweb.asm.tree.*;
 public final class SourceTransformations implements ClassFileTransformer {
   private static final Map<Class<?>, Patch> PATCHES = Collections.synchronizedMap(new WeakHashMap<>());
   private static Instrumentation instrumentation;
+  private static SourceTransformations transformer;
 
   public static synchronized void install(Instrumentation installed) {
     if (!TransformOwner.owns(SourceTransformations.class)) {
@@ -17,8 +18,17 @@ public final class SourceTransformations implements ClassFileTransformer {
     }
     if (instrumentation != null) return;
     if (!installed.isRetransformClassesSupported()) throw new IllegalStateException("source patches require class retransformation");
-    installed.addTransformer(new SourceTransformations(), true);
+    transformer = new SourceTransformations();
+    installed.addTransformer(transformer, true);
     instrumentation = installed;
+  }
+
+  public static synchronized void shutdown() {
+    if (!PATCHES.isEmpty()) throw new IllegalStateException("source patches are still active");
+    if (transformer != null && !instrumentation.removeTransformer(transformer))
+      throw new IllegalStateException("source transformer was not registered");
+    transformer = null;
+    instrumentation = null;
   }
 
   static synchronized void apply(Instrumentation installed, List<ClassDefinition> definitions) {

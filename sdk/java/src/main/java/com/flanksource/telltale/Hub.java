@@ -40,12 +40,13 @@ final class Hub extends WebSocketClient {
     failure = error;
   }
 
-  static void start(Agent agent, String address) {
+  static Thread start(Agent agent, String address) {
     Thread thread =
         new Thread(
             () -> {
               int delay = 1;
-              while (true) {
+              while (!agent.closed) {
+                Session session = null;
                 try {
                   URI base = URI.create(address);
                   String scheme =
@@ -62,16 +63,20 @@ final class Hub extends WebSocketClient {
                           null,
                           null);
                   Hub hub = new Hub(uri, agent.config.get("token").getAsString());
+                  agent.hub = hub;
                   if (!hub.connectBlocking(10, TimeUnit.SECONDS))
                     throw new IllegalStateException("Hub connection timed out");
-                  try (Session session = new Session(agent, hub.wire(), true)) {
-                    session.run();
+                  try (Session active = new Session(agent, hub.wire(), true)) {
+                    session = active;
+                    active.run();
                   } finally {
                     hub.close();
                   }
                 } catch (Exception error) {
-                  System.err.println("telltale hub: " + error.getClass().getSimpleName());
+                  if (!agent.closed) System.err.println("telltale hub: " + error.getClass().getSimpleName());
+                  else if (session != null && !session.stopped()) agent.stopFailure.compareAndSet(null, error);
                 }
+                if (agent.closed) return;
                 try {
                   Thread.sleep(delay * 1000L);
                 } catch (InterruptedException stop) {
@@ -84,6 +89,7 @@ final class Hub extends WebSocketClient {
             "telltale-hub");
     thread.setDaemon(true);
     thread.start();
+    return thread;
   }
 
   private Wire wire() {

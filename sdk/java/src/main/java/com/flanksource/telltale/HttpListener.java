@@ -68,6 +68,17 @@ final class HttpListener implements AutoCloseable {
     return new HttpListener(config);
   }
 
+  static void validate(Map<String, Object> config) throws Exception {
+    for (String key : config.keySet())
+      if (!KEYS.contains(key)) throw new IllegalArgumentException("unknown http option " + key);
+    address(config);
+    portFile(config);
+    new com.flanksource.telltale.auth.JwtVerifier(
+        Diagnostics.required(config, "issuer"), Diagnostics.required(config, "audience"),
+        config.containsKey("jwks") ? Agent.JSON.toJson(config.get("jwks")) : null,
+        Diagnostics.text(config, "jwksUrl", null));
+  }
+
   int port() {
     return server.getAddress().getPort();
   }
@@ -154,11 +165,14 @@ final class HttpListener implements AutoCloseable {
     return reply;
   }
 
-  private Map<String, Object> health() {
+  private Map<String, Object> health() throws Exception {
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("status", "ok");
     body.put("apiVersion", RuntimeService.API_VERSION);
     body.put("configDigest", configDigest);
+    Map<?, ?> runtime = (Map<?, ?>) RuntimeClient.request("describe", Collections.emptyMap());
+    for (String key : new String[] {"upgradeApiVersion", "runtimeVersion", "artifactSHA256"})
+      body.put(key, runtime.get(key));
     return jsonReply(200, body);
   }
 
@@ -217,6 +231,8 @@ final class HttpListener implements AutoCloseable {
   public void close() throws Exception {
     if (started) server.stop(0);
     executor.shutdownNow();
+    if (!executor.awaitTermination(5, TimeUnit.SECONDS))
+      throw new IllegalStateException("HTTP workers did not stop for upgrade");
     if (registered)
       RuntimeClient.request("closeOwner", Collections.singletonMap("owner", owner));
   }

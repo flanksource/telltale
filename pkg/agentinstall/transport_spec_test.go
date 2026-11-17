@@ -47,6 +47,6 @@ var _ = Describe("installation target validation", func() {
 		// The helper JVM must not load the javaagents JAVA_TOOL_OPTIONS gives the
 		// target, such as a jmx-exporter whose port the target already holds.
 		Expect(args).To(Equal([]string{"env", "-u", "JAVA_TOOL_OPTIONS", "-u", "_JAVA_OPTIONS", "-u", "JDK_JAVA_OPTIONS",
-			"/opt/jdk8/bin/java", "-cp", "/opt/agent.jar:/opt/jdk8/lib/tools.jar", "com.flanksource.telltale.Attach", "123", "/opt/agent.jar", "/opt/config.json"}))
+			"/opt/jdk8/bin/java", "-cp", "/opt/agent.jar:/opt/jdk8/lib/tools.jar", "com.flanksource.telltale.Attach", "123", "/opt/agent.jar", "/opt/config.json", "false"}))
 	})
 })

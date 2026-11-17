@@ -43,6 +43,7 @@ func (r *recordingTokens) Token(_ context.Context, audience, scope string) (stri
 type fakeAgent struct {
 	apiVersion    int
 	completeAfter int
+	resource      map[string]string
 	// report, when set, rides every dump and the final reading as X-Telltale-Report.
 	report   string
 	mu       sync.Mutex
@@ -65,8 +66,9 @@ func (f *fakeAgent) handler() http.Handler {
 	}
 	mux.HandleFunc("GET /hello", scoped("jvm:read", func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]any{"apiVersion": f.apiVersion, "protocol": 1, "started": "2026-01-02T03:04:05Z", "runtime": map[string]string{"lang": "java"},
-			"probes": []map[string]any{{"name": "jvm_trace", "checkpoints": true, "mutates": true, "reverts": true, "scope": "jvm:trace"}},
-			"ops":    []map[string]any{{"name": "jvm.groovy.eval", "mutates": true, "scope": "jvm:eval"}}})
+			"resource": f.resource,
+			"probes":   []map[string]any{{"name": "jvm_trace", "checkpoints": true, "mutates": true, "reverts": true, "scope": "jvm:trace"}},
+			"ops":      []map[string]any{{"name": "jvm.groovy.eval", "mutates": true, "scope": "jvm:eval"}}})
 	}))
 	mux.HandleFunc("GET /catalog", scoped("jvm:read", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = io.WriteString(w, `[{"name":"jvm.groovy.eval","mutates":true,"scope":"jvm:eval"}]`)
@@ -121,6 +123,22 @@ func dialFake(fake *fakeAgent, tokens agentclient.TokenSource) (*agentclient.Age
 }
 
 var _ = Describe("Direct HTTP agents", func() {
+	DescribeTable("preserves the live JVM resource alongside discovery attributes", func(discovered map[string]string) {
+		live := map[string]string{"service.name": "orders-live", "process.pid": "712", "telltale.source.instance": "jvm-instance", "deployment.environment.name": "integration"}
+		server := httptest.NewServer((&fakeAgent{apiVersion: agentclient.AgentAPIVersion, resource: live}).handler())
+		DeferCleanup(server.Close)
+		agent, err := agentclient.DialHTTP(context.Background(), agentclient.HTTPEndpoint{ID: directTarget, URL: server.URL, Client: server.Client(), Tokens: &recordingTokens{}, Resource: discovered})
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(agent.Close)
+		expected := map[string]string{"service.name": "orders-live", "process.pid": "712", "telltale.source.instance": "jvm-instance", "deployment.environment.name": "integration"}
+		if discovered != nil {
+			expected["telltale.deployer"] = "orders"
+			Expect(discovered).To(Equal(map[string]string{"telltale.deployer": "orders", "service.name": "orders-discovered", "telltale.source.instance": "stale-instance"}))
+		}
+		Expect(agent.Hello.Resource).To(Equal(expected))
+		Expect(agent.Hello.Service).To(Equal("orders-live"))
+	}, Entry("without discovery attributes", nil), Entry("with discovery attributes and stale runtime values", map[string]string{"telltale.deployer": "orders", "service.name": "orders-discovered", "telltale.source.instance": "stale-instance"}))
+
 	It("identifies a deployed agent by its target and asks each call for the scope the agent names", func() {
 		tokens := &recordingTokens{}
 		agent, err := dialFake(&fakeAgent{apiVersion: agentclient.AgentAPIVersion}, tokens)
@@ -149,6 +167,7 @@ var _ = Describe("Direct HTTP agents", func() {
 		DeferCleanup(agent.Close)
 		session, err := agent.Arm(context.Background(), agentclient.ArmRequest{Probe: "jvm_trace", Params: json.RawMessage(`{}`), Mutates: true, AllowMutation: true})
 		Expect(err).ToNot(HaveOccurred())
+		Expect(session.ID).To(Equal("c1"), "the session must use the authenticated capture identity returned by the agent")
 		var blob agentclient.Blob
 		Eventually(session.Blobs, 2*time.Second).Should(Receive(&blob))
 		Expect(blob.Info).To(And(HaveField("Name", "trace.json"), HaveField("ContentType", "application/json"), HaveField("Session", session.ID)))

@@ -40,7 +40,7 @@ public class JmsOtelCompositionTest {
           + directory.resolve("discovery.json") + "\"}").getBytes(StandardCharsets.UTF_8));
       Path attachLog = directory.resolve("attach.log");
       Process attach = new ProcessBuilder(java, "-cp", required("telltale.gate.agent"), "com.flanksource.telltale.Attach",
-          pid, required("telltale.gate.agent"), config.toString()).redirectErrorStream(true).redirectOutput(attachLog.toFile()).start();
+          pid, required("telltale.gate.agent"), config.toString(), "false").redirectErrorStream(true).redirectOutput(attachLog.toFile()).start();
       try {
         assertTrue("Attach timed out", attach.waitFor(45, TimeUnit.SECONDS));
         assertEquals(read(attachLog), 0, attach.exitValue());
