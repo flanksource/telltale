@@ -139,7 +139,7 @@ func (r *Result) Zip() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	files := make(map[string][]byte, len(r.Files)+1)
+	files := make(map[string][]byte, len(r.Files))
 	for name, data := range r.Files {
 		files[name] = data
 	}

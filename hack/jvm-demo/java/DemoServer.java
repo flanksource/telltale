@@ -7,6 +7,8 @@ import org.apache.catalina.Wrapper;
 import org.apache.catalina.startup.Tomcat;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -71,9 +73,10 @@ final class DemoServer implements AutoCloseable {
       return operations.state();
     }
 
-    @GetMapping("/demo/{id}") public String demo(@PathVariable("id") String id) throws Exception {
+    @GetMapping("/demo/{id}") public ResponseEntity<String> demo(@PathVariable("id") String id) throws Exception {
       operations.holdHttp(id);
-      return "demo-" + id;
+      return ResponseEntity.ok().contentType(MediaType.TEXT_PLAIN)
+          .header("X-Content-Type-Options", "nosniff").body("demo-" + id);
     }
 
     @GetMapping("/control/state") public Map<String, Object> state() {

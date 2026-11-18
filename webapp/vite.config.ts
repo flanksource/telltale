@@ -20,8 +20,9 @@ function clickyAliases(uiDirectory: string) {
     const entry = key === "." ? "@flanksource/clicky-ui" : `@flanksource/clicky-ui${key.slice(1)}`;
     const pattern = entry.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     if (key.includes("*")) {
-      const source = resolve(packageRoot, target.replace("*", "$1"));
-      if (!existsSync(dirname(source))) throw new Error(`Missing local Clicky UI assets ${dirname(source)}; build the local package first`);
+      const assetDirectory = resolve(packageRoot, dirname(target.replace(/\*.*$/, "*")));
+      if (!existsSync(assetDirectory)) throw new Error(`Missing local Clicky UI assets ${assetDirectory}; build the local package first`);
+      const source = resolve(packageRoot, target.replaceAll("*", "$1"));
       return [{ find: new RegExp(`^${pattern.replace("\\*", "(.+)")}$`), replacement: source }];
     }
     const cssSource: Record<string, string> = { "./dist/styles.css": "styles/full.css", "./dist/mdx-editor.css": "styles/mdx-editor.css" };
