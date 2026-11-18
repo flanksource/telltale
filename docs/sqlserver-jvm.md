@@ -59,6 +59,8 @@ SSH uses native SSH configuration, batch authentication, and optionally `--ssh-c
 
 Start remote captures in the connected hub's browser, selecting the agent seam and an agent ID or resource selector such as `service.name=orders`. Remote agent identities are namespaced and cannot be confused with a controller's local PID. A JVM disconnect releases its recordings; the dial-out connection retries with bounded backoff. Recording blobs are limited to 64 MiB.
 
+`telltale agents list` prints tables of locally discovered and connected agents plus saved, successfully deployed targets, grouped by namespace, cloud, or host. The tables show runtime, connection state, deployment state, and endpoint. Use `--format json` for structured output. Connected entries have `connected: true` and their live handshake details. Targets awaiting a connection have `connected: false` and a `known` record with their runtime language, names, last deployment state, and endpoint. Listing these records uses saved metadata; it does not open port-forwards or contact every target. `telltale agents get <id>` also shows these saved details. Use a JVM command such as `telltale jvm status --agent orders` to connect and inspect a target. With `--server`, listing reads the selected server's inventory from `GET /api/agents`. The browser's Agents page uses this same inventory and grouping, including saved targets and their JVM diagnostics link.
+
 ## HTTP API and browser
 
 `GET /api/traces/start` includes schemas and defaults for all three kinds. `POST /api/traces` accepts `pid`, `duration`, and `every`; `command` is optional for connection or agent captures. For example:
