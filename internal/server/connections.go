@@ -19,7 +19,7 @@ import (
 )
 
 // managedProvider is the connection store's provider with the connections
-// telltale manages in its data dir, such as the managed Prometheus of the
+// telltale manages in its data dir, such as the VictoriaMetrics instance of the
 // prometheus trace kind, listed and resolved as virtual, read-only
 // connections the service refuses to edit. Writes go to the store.
 type managedProvider struct {

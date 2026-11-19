@@ -17,8 +17,8 @@ var _ = Describe("capture coverage", func() {
 		_, err := validateCoverage([]string{"exec", "terminal"}, map[string][]query.Row{"exec": {{"exitCode": 0, "name": "git"}}})
 		Expect(err).To(MatchError(ContainSubstring("terminal")))
 	})
-	It("requires meaningful records instead of counting failed operations", func() {
-		_, err := validateCoverage([]string{"prometheus"}, map[string][]query.Row{"prometheus": {{"health": "down", "samples": 0, "error": "connection refused"}}})
+	It("requires a stored metric sample as evidence for the Prometheus capture", func() {
+		_, err := validateCoverage([]string{"prometheus"}, map[string][]query.Row{})
 		Expect(err).To(MatchError(ContainSubstring("prometheus")))
 	})
 	It("accepts genuine successful captures and reports their complete coverage", func() {
@@ -38,11 +38,12 @@ var _ = Describe("capture coverage", func() {
 		Expect(err).To(HaveOccurred())
 	})
 	It("recognizes native JFR stacks and windowed Prometheus query rows", func() {
-		_, err := validateCoverage([]string{"jvm_jfr", "query"}, map[string][]query.Row{
+		coverage, err := validateCoverage([]string{"jvm_jfr", "prometheus", "query"}, map[string][]query.Row{
 			"jvm_jfr": {{"stack": "DemoWorkload.compute", "value": 2}},
 			"query":   {{"provider": "prometheus", "row": map[string]any{"__name__": "demo_requests_total", "value": 3}}},
 		})
 		Expect(err).NotTo(HaveOccurred())
+		Expect(coverage).To(ContainElement(evidence{Kind: "prometheus", Meaningful: true}))
 	})
 	It("validates parameters for every registered kind before starting workloads", func() {
 		specs, err := demoSpecs("http://127.0.0.1:43210", "telltale_demo_test", 12345)

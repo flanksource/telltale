@@ -9,12 +9,11 @@ import (
 func init() {
 	MustRegister(Registration{
 		Name: prometheus.Kind, Title: "Prometheus metrics", Seams: []target.Seam{target.Host}, DefaultSeam: target.Host,
-		Summary: "Scrape Prometheus metrics endpoints into a Prometheus telltale manages",
-		Description: "Hands each endpoint to the data dir's managed Prometheus " + prometheus.Version + " as a file_sd target of job " + prometheus.Job +
-			", scraped every --interval, and records one row per completed scrape: its endpoint, health, duration, error and sample count. " +
-			"The first capture downloads and starts that Prometheus through deps (state and TSDB under <data-dir>/services/prometheus) as telltale's sub-process: the run's captures share it, it stops when the run ends, and the next run starts it again on the same TSDB and port. " +
-			"The samples stay in its TSDB, labelled telltale_run, telltale_stream and telltale_endpoint plus --labels: query them with PromQL at the URL the run shows, or as the read-only " +
-			prometheus.ConnectionName + " connection of telltale serve. Ending the capture stops the scraping, not the samples. " +
+		Summary: "Scrape Prometheus metrics endpoints into VictoriaMetrics",
+		Description: "Adds endpoints to the data directory's managed VictoriaMetrics " + prometheus.Version + ", which scrapes them at --interval and stores samples for 15 days. " +
+			"Captures report target health and emit zero scrape records. Run telltale serve --prometheus first to keep the instance available between runs using the same data directory. " +
+			"Query samples with PromQL using the URL shown by the capture or the read-only " + prometheus.ConnectionName +
+			" connection. Samples have telltale_run, telltale_stream and telltale_endpoint labels plus --labels. " +
 			"Inline Kubernetes endpoints use Telltale's Kubernetes identity. Replace the example service, namespace and port with yours. portforward:// and port-forward:// are equivalent.",
 		Examples: []Example{
 			{Args: "--endpoints http://localhost:8080/metrics --interval 5s --duration 1m", Says: "scrape one endpoint every 5 seconds for a minute"},

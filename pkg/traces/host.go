@@ -148,7 +148,7 @@ func Open(options OpenOptions) (*Host, error) {
 	if err != nil {
 		return nil, err
 	}
-	// A run that queries the managed Prometheus holds it as its scraping
+	// A run that queries VictoriaMetrics holds it as its scraping
 	// captures do, so it is up for every read and stops once no run holds it.
 	managed := prometheus.NewManaged(options.DataDir)
 	releases = append(releases, managed.Release)
@@ -369,7 +369,7 @@ func (h *Host) Summarize(ctx context.Context, ref tracing.TraceRef) (map[string]
 }
 
 // Close stops every capture still running, releases what the run's kinds
-// hold, such as the managed Prometheus, and closes the store, which stays on
+// hold, such as VictoriaMetrics, and closes the store, which stays on
 // disk for the run's snapshot to reopen.
 func (h *Host) Close(ctx context.Context) error {
 	errs := []error{h.runtime.Sessions.StopAll(ctx)}

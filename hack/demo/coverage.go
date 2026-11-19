@@ -28,6 +28,9 @@ func validateCoverage(kinds []string, rows map[string][]query.Row) ([]evidence, 
 	var failures []error
 	for _, kind := range kinds {
 		item := evidence{Kind: kind, Count: len(rows[kind])}
+		if kind == "prometheus" {
+			item.Meaningful = slices.ContainsFunc(rows["query"], func(row query.Row) bool { return meaningful("query", row) })
+		}
 		for _, row := range rows[kind] {
 			item.Meaningful = item.Meaningful || meaningful(kind, row)
 			if err := captureLoss(map[string]any(row)); err != nil {
@@ -58,8 +61,6 @@ func meaningful(kind string, row query.Row) bool {
 		return text(row["frames"]) != "" && text(row["frames"]) != "[]"
 	case "jvm_jfr":
 		return strings.Contains(text(row["stack"]), "DemoWorkload") && number(row["value"]) > 0
-	case "prometheus":
-		return row["health"] == "up" && number(row["samples"]) > 0
 	case "sql_plancache":
 		return number(row["executions"]) > 0
 	case "sql_top":
@@ -177,6 +178,9 @@ func verifyStored(ctx context.Context, v verification) error {
 	var kinds []string
 	for _, registration := range demoRegistrations() {
 		kinds = append(kinds, registration.Name)
+		if registration.Name == "prometheus" {
+			continue
+		}
 		selected, err := read.Resolve(registration.Name, read.Scope{DataDir: dataDir, Run: runID})
 		if err != nil {
 			r.Errors = append(r.Errors, err.Error())

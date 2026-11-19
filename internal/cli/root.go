@@ -44,6 +44,7 @@ func NewRoot(version string) *cobra.Command {
 	serve.Flags().StringVar(&options.RulesFile, "rules", "", "Continuously observe resource rules from this YAML file")
 	serve.Flags().BoolVar(&options.EnforceRules, "enforce-rules", false, "Execute resource rule hooks (default: observation only)")
 	serve.Flags().BoolVar(&options.OTLP.Enabled, "otlp", false, "Continuously receive OTLP traces and Profiles into local storage")
+	serve.Flags().BoolVar(&options.Prometheus, "prometheus", false, "Keep VictoriaMetrics available for Prometheus scrape captures in this data directory")
 	serve.Flags().BoolVar(&options.SelfTrace, "self-trace", false, "Trace HTTP requests to the local OTLP receiver (enables --otlp)")
 	serve.Flags().StringVar(&options.OTLP.GRPCListen, "otlp-grpc-listen", options.OTLP.GRPCListen, "OTLP gRPC listen address")
 	serve.Flags().DurationVar(&options.OTLP.Retention, "otlp-retention", options.OTLP.Retention, "Received telemetry retention from ingestion time")

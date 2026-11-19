@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
 import { connect } from "node:net";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -31,11 +32,11 @@ function command(executable: string, args: string[]): Command {
   return running;
 }
 
-async function ready(running: Command): Promise<string> {
+async function ready(running: Command, timeout = 10000): Promise<string> {
   await expect.poll(() => {
     if (running.child.exitCode !== null) throw new Error(running.output());
     return /http:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):\d+/.exec(running.output())?.[0];
-  }, { timeout: 10000 }).toBeDefined();
+  }, { timeout }).toBeDefined();
   return /http:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):\d+/.exec(running.output())![0];
 }
 
@@ -117,6 +118,84 @@ describe.sequential("command shutdown", () => {
     running.child.kill("SIGTERM");
     expect(await running.exited).toEqual({ code: 0, signal: null });
   });
+
+  it("reports a VictoriaMetrics startup failure before announcing the API", async () => {
+    const state = join(directory, "services", "victoriametrics");
+    await mkdir(state, { recursive: true });
+    await writeFile(join(state, "state.json"), `{"port":0}`);
+    const serving = command(".bin/telltale", ["serve", "--prometheus", "--port", "0", "--data-dir", directory]);
+    expect(await serving.exited).toEqual({ code: 1, signal: null });
+    expect(serving.output()).toContain("invalid VictoriaMetrics process identity");
+    expect(serving.output()).not.toContain("Telltale API:");
+  });
+
+  it.skipIf(!process.env.TELLTALE_PROMETHEUS_LIVE)("reuses the server's VictoriaMetrics across a separate run and a server restart", async () => {
+    const exporter = createServer((_req, res) => res.end("# TYPE telltale_api_gauge gauge\ntelltale_api_gauge 42\n"));
+    const servers: Command[] = [];
+    await new Promise<void>((resolveListen, reject) => {
+      exporter.once("error", reject);
+      exporter.listen(0, "127.0.0.1", resolveListen);
+    });
+    try {
+      const address = exporter.address();
+      if (address === null || typeof address === "string") throw new Error("expected a TCP exporter address");
+      const startServer = () => {
+        const server = command(".bin/telltale", ["serve", "--prometheus", "--port", "0", "--data-dir", directory]);
+        servers.push(server);
+        return server;
+      };
+      const statePath = join(directory, "services", "victoriametrics", "state.json");
+      const serving = startServer();
+      const url = await ready(serving, 60000);
+      const state = await readFile(statePath, "utf8");
+      const { port } = JSON.parse(state) as { port: number };
+      const list = await fetch(`${url}/api/v1/connection?type=prometheus`);
+      expect(list.status).toBe(200);
+      const connections = await list.json() as { id: string; name: string; read_only: boolean }[];
+      expect(connections).toMatchObject([{ name: "telltale-prometheus", read_only: true }]);
+      const id = connections[0]!.id;
+      const info = await fetch(`${url}/api/v1/connection/${id}/info`);
+      expect(await info.json()).toMatchObject({
+        connection: { resolvedEndpoint: `http://127.0.0.1:${port}` },
+        server: { product: "VictoriaMetrics", version: expect.stringMatching(/^v?1\.156\.0$/) },
+      });
+
+      const start = new Date(Math.floor(Date.now() / 1000) * 1000).toISOString();
+      const capture = command(".bin/telltale", ["run", "prometheus", "--data-dir", directory, "--endpoints",
+        `http://127.0.0.1:${address.port}/metrics`, "--interval", "1s", "--duration", "5s"]);
+      expect(await capture.exited, capture.output()).toEqual({ code: 0, signal: null });
+      expect(await readFile(statePath, "utf8")).toBe(state);
+      expect(await readdir(join(directory, "victoriametrics", "targets"))).toEqual([]);
+      const end = new Date(Math.ceil(Date.now() / 1000) * 1000).toISOString();
+
+      async function checkSamples(base: string) {
+        await expect.poll(async () => {
+          const response = await fetch(`${base}/api/v1/connection/${id}/browser/query`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query: "telltale_api_gauge", options: { range: { start, end, step: "1s" } } }),
+          });
+          const body: unknown = await response.json();
+          expect(response.status, JSON.stringify(body)).toBe(200);
+          return body;
+        }, { timeout: 15000 }).toMatchObject({ rows: expect.arrayContaining([expect.objectContaining({ value: 42 })]) });
+      }
+      await checkSamples(url);
+      serving.child.kill("SIGTERM");
+      expect(await serving.exited).toEqual({ code: 0, signal: null });
+      await expect(fetch(`http://127.0.0.1:${port}/health`)).rejects.toThrow();
+
+      const restarted = startServer();
+      await checkSamples(await ready(restarted, 60000));
+      restarted.child.kill("SIGTERM");
+      expect(await restarted.exited).toEqual({ code: 0, signal: null });
+    } finally {
+      for (const server of servers) {
+        if (server.child.exitCode === null && server.child.signalCode === null) server.child.kill("SIGTERM");
+      }
+      await Promise.all(servers.map(server => server.exited));
+      await new Promise<void>((resolveClose, reject) => exporter.close(err => err ? reject(err) : resolveClose()));
+    }
+  }, 150000);
 
   it("forces exit on a second Ctrl+C while HTTP shutdown is waiting for a connection", async () => {
     const running = command(".bin/telltale", ["serve", "--port", "0", "--data-dir", directory]);

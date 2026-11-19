@@ -11,7 +11,6 @@ import (
 
 	"github.com/flanksource/commons-db/connection/store"
 	"github.com/flanksource/commons-db/models"
-	"github.com/flanksource/deps/start/state"
 	"github.com/flanksource/telltale/internal/server"
 	"github.com/flanksource/telltale/pkg/tracing/prometheus"
 	. "github.com/onsi/ginkgo/v2"
@@ -71,14 +70,15 @@ var _ = Describe("Connection workspace API", func() {
 		Expect(request("GET", "/api/v1/connection/"+connection.ID, "").Code).To(Equal(404))
 	})
 
-	It("lists the data dir's managed Prometheus as a read-only connection and refuses to edit it", func() {
+	It("lists the data dir's managed VictoriaMetrics as a read-only connection and refuses to edit it", func() {
 		dir := GinkgoT().TempDir()
 		connections, err := store.New(store.Layer{Name: store.LayerCWD, Dir: filepath.Join(dir, ".connections")})
 		Expect(err).NotTo(HaveOccurred())
-		managed := &state.State{Name: "prometheus", Runtime: "binary", Connection: models.Connection{Name: "prometheus", Type: models.ConnectionTypePrometheus, URL: "http://localhost:19090"}}
 		paths, err := prometheus.Paths(dir)
 		Expect(err).NotTo(HaveOccurred())
-		Expect(managed.Save(paths.State)).To(Succeed())
+		stateDir := filepath.Join(paths.State, "victoriametrics")
+		Expect(os.MkdirAll(stateDir, 0o700)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(stateDir, "state.json"), []byte(`{"port":19090,"pid":1234,"startedAt":"2026-11-19T00:00:00Z"}`), 0o600)).To(Succeed())
 		handler, err := server.NewHandler(server.HandlerOptions{
 			Root: &cobra.Command{Use: "telltale"}, Connections: connections, DataDir: dir,
 			Assets: fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("ok")}},

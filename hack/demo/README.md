@@ -49,7 +49,7 @@ After `make build`, view the saved records using the local binary:
 | `stacks`, `goprof` | Periodic native stack and heap readings of the demo process while it holds allocations |
 | `process`, `process/metrics`, `process/facets` | Native process identities, numeric observations, and resource events during the workloads |
 | `jvm_jfr` | A child JVM allocating, computing, parking, and contending while Flight Recorder samples it |
-| `prometheus`, `query` | Managed Prometheus scraping the demo's request counter and a windowed query reading those samples |
+| `prometheus`, `query` | VictoriaMetrics scraping the demo's request counter and a windowed PromQL query reading those samples |
 | `sql_xevent`, `sql_plancache`, `sql_deadlock` | Lab database statements, execution deltas, and two transactions updating rows in opposite order to produce a deadlock |
 | `sql_top` | The lab query's one-second `WAITFOR`, seen running by a 200ms poll |
 | `llm` | One observed Captain API request and its actual response/token usage |

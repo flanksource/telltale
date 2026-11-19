@@ -153,7 +153,7 @@ telltale run --definition ./logs-and-queries.yaml --duration 5m   # no command o
 
 ### Prometheus metrics
 
-`telltale run prometheus` scrapes Prometheus metrics endpoints into a Prometheus that telltale manages, one per data dir. Run alone it needs no command and scrapes until Ctrl+C or `--duration`:
+`telltale run prometheus` configures VictoriaMetrics to scrape Prometheus exporters. Each data directory has its own instance. Run alone it needs no command and scrapes until Ctrl+C or `--duration`.
 
 ```sh
 telltale run prometheus --endpoints http://localhost:8080/metrics --interval 5s --duration 1m
@@ -162,15 +162,15 @@ telltale run prometheus --endpoints port-forward://metrics-exporter.monitoring:9
 telltale run prometheus --endpoints proxy://metrics-exporter.monitoring:9100/metrics --duration 1m
 ```
 
-The first capture downloads Prometheus 3.5.0 through deps and starts it on a free loopback port, with its state and TSDB under `<data-dir>/services/prometheus`. Each capture writes its endpoints as a file_sd file (`<data-dir>/prometheus/targets/<stream>.json`) that the `file_sd` job reads. Every endpoint is one target with its own `--interval` (at least 1s, default 15s) and `--timeout` (at most the interval, default the shorter of 10s and the interval). Endpoints can be direct HTTP(S) URLs, Kubernetes port-forwards (`portforward://` or `port-forward://`), or Kubernetes API proxies (`proxy://`). Use URLs without embedded credentials or fragments. Telltale uses its Kubernetes identity for the inline endpoints and passes exporter query parameters along with each scrape. The capture records one row per completed scrape: the endpoint, its health, duration, error and the number of samples scraped. A failed scrape is a row with its error. A Prometheus that stops answering fails the capture.
+The first capture installs VictoriaMetrics and starts it on a free loopback port. Every endpoint has its own `--interval` (at least 1s, default 15s) and `--timeout` (at most the interval, default the shorter of 10s and the interval). Endpoints can be direct HTTP(S) URLs, Kubernetes port-forwards (`portforward://` or `port-forward://`), or Kubernetes API proxies (`proxy://`). Use URLs without embedded credentials or fragments. Telltale uses its Kubernetes identity for the inline endpoints and passes exporter query parameters along with each scrape. The capture reports target health, and VictoriaMetrics stores the samples directly for 15 days. An unreachable VictoriaMetrics instance fails the capture.
 
-The samples stay in the TSDB after the capture ends, labelled `telltale_run`, `telltale_stream` and `telltale_endpoint` plus `--labels`. The run shows the Prometheus URL and the PromQL selector of its series. `telltale serve` lists that Prometheus as the read-only `telltale-prometheus` connection, so the Query page can run PromQL against it without a connection file:
+Samples carry `telltale_run`, `telltale_stream`, and `telltale_endpoint` plus `--labels`. The run shows the VictoriaMetrics URL and the PromQL selector for its series. The Query page exposes the read-only `telltale-prometheus` connection. You can also query the printed VictoriaMetrics URL directly.
 
 ```sh
 curl -sG http://localhost:<port>/api/v1/query --data-urlencode 'query={telltale_run="run-2026-10-31T10-00-00Z"}'
 ```
 
-The Prometheus is telltale's sub-process. The run's captures share it, and it stops when the run ends. The next run starts it again on the same TSDB and port, so earlier runs' samples are queryable again while a capture runs. A Prometheus that another telltale process already supervises in that data dir is reused and left to that process.
+To keep samples queryable between captures, start `telltale serve --prometheus` first and use the same `--data-dir` for both commands. Each run removes its own targets when it ends. Stopping `serve` shuts down the instance it started. A standalone run starts and stops its own instance when needed. Both modes reopen the same VictoriaMetrics database on restart. On upgrade, VictoriaMetrics starts with new samples and the previous Prometheus database stays under `services/prometheus`.
 
 ### Process groups: `telltale top`
 
@@ -269,8 +269,8 @@ Telltale never stores anything relative to the working directory. Trace data liv
 | `otel/spans/records.sqlite` | the OTLP receiver's spans, read as the run `receiver` |
 | `otel/receiver.lock` | the lock the writing receiver holds |
 | `monitor/events.sqlite` | the rule event journal of `serve --rules` |
-| `services/prometheus` | the managed Prometheus of the `prometheus` kind: its deps state, config, log and TSDB |
-| `prometheus/targets` | the file_sd target files of the running `prometheus` captures |
+| `services/victoriametrics` | the managed VictoriaMetrics installation, state, configuration, and TSDB |
+| `victoriametrics/targets` | the file discovery targets of running `prometheus` captures |
 
 Config is read from the working directory's `.telltale`, then the global config dir, `$XDG_CONFIG_HOME/telltale` or `~/.config/telltale`; the first that has a file wins. That covers `groups.yaml` and the hub tokens in `agent-tokens/`. `telltale agents token create` writes to the global config dir. `telltale serve` prints every path it uses when it starts. Data under an older `./.telltale/traces`, `./.telltale/otel` or `./.telltale/monitor` is not read or migrated; delete it once it is no longer needed.
 

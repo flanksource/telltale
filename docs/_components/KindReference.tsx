@@ -24,7 +24,6 @@ const examples: Record<string, Record<string, unknown>> = {
   llm: { phase: 'completed', model: 'example-model', backend: 'example', durationMs: 1200, cost: 0.001 },
   logs: { firstObserved: '2026-01-01T10:00:00Z', count: 1, severity: 'INFO', message: 'Server started', source: 'application' },
   process: { key: '1234@1767261600', pid: 1234, ppid: 1200, name: 'server', command: './server', startedAt: '2026-01-01T10:00:00Z', cwd: '/work/checkout', tags: { owner: 'example' } },
-  prometheus: { takenAt: '2026-01-01T10:00:00Z', endpoint: 'http://localhost:8080/metrics', health: 'up', durationMs: 12, samples: 45 },
   query: { time: '2026-01-01T10:00:00Z', profile: 'pod-cpu-by-pod', provider: 'prometheus', row: { pod: 'api-0', value: 0.2 } },
   spans: { traceId: '0123456789abcdef0123456789abcdef', spanId: '0123456789abcdef', service: 'checkout', operation: 'GET /orders', durationMs: 34, status: 'ok' },
   sql: { startedAt: '2026-01-01T10:00:00Z', connection: 'proxy', op: 'SELECT', sql: 'SELECT id FROM orders', durationMs: 8, rows: 2 },
