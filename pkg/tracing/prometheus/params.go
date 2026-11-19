@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"net"
 	"net/url"
 	"regexp"
 	"slices"
@@ -12,6 +11,7 @@ import (
 	"time"
 
 	"github.com/flanksource/telltale/pkg/tracing/target"
+	"k8s.io/apimachinery/pkg/util/validation"
 )
 
 // DefaultInterval is how often an endpoint is scraped unless asked otherwise,
@@ -21,6 +21,11 @@ const DefaultInterval = 15 * time.Second
 // defaultTimeout is Prometheus's default scrape timeout; a shorter interval
 // caps it.
 const defaultTimeout = 10 * time.Second
+
+const (
+	portForwardScheme = "portforward"
+	proxyScheme       = "proxy"
+)
 
 // The labels telltale gives every target it scrapes, which params may not set.
 const (
@@ -34,7 +39,7 @@ var labelName = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 // Options choose the endpoints a capture scrapes, how often, and the labels
 // their samples are stored with.
 type Options struct {
-	Endpoints []string          `json:"endpoints" clicky:"title=Endpoints,desc=Prometheus metrics URLs to scrape such as http://localhost:8080/metrics"`
+	Endpoints []string          `json:"endpoints" clicky:"title=Endpoints,desc=Metrics URLs using http:// or https:// or Kubernetes portforward:// (also port-forward://) or proxy://"`
 	Interval  string            `json:"interval,omitempty" clicky:"title=Interval,desc=How often each endpoint is scraped such as 15s (at least 1s)"`
 	Timeout   string            `json:"timeout,omitempty" clicky:"title=Timeout,desc=How long one scrape may take such as 5s (at most the interval; default the shorter of 10s and the interval)"`
 	Labels    map[string]string `json:"labels,omitempty" clicky:"title=Labels,desc=Extra labels every scraped sample is stored with such as env=dev"`
@@ -115,42 +120,45 @@ func parseMillis(name, value string) (time.Duration, error) {
 // promDuration is d as Prometheus reads a duration.
 func promDuration(d time.Duration) string { return fmt.Sprintf("%dms", d.Milliseconds()) }
 
-// endpoint is a metrics URL as a scrape target: its scheme, host:port, path
-// and query params.
-type endpoint struct {
-	url, scheme, address, path string
-	params                     map[string]string
-}
-
-func parseEndpoint(raw string) (endpoint, error) {
+func parseEndpoint(raw string) (*url.URL, error) {
 	parsed, err := url.Parse(raw)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" {
-		return endpoint{}, fmt.Errorf("endpoint %q: want an absolute http(s) URL such as http://localhost:8080/metrics", raw)
+	if err != nil {
+		return nil, fmt.Errorf("endpoint %q: %w", raw, err)
+	}
+	if parsed.Scheme == "port-forward" {
+		parsed.Scheme = portForwardScheme
+	}
+	workload := parsed.Scheme == portForwardScheme || parsed.Scheme == proxyScheme
+	if !workload && ((parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "") {
+		return nil, fmt.Errorf("endpoint %q: want an absolute http(s) URL or a Kubernetes portforward:// or proxy:// URL", raw)
 	}
 	if parsed.User != nil {
-		return endpoint{}, fmt.Errorf("endpoint %q carries credentials, which a scrape target cannot", raw)
+		return nil, fmt.Errorf("endpoint %q carries credentials, which a scrape target cannot", raw)
 	}
 	if parsed.Fragment != "" {
-		return endpoint{}, fmt.Errorf("endpoint %q has a fragment, which a scrape never sends", raw)
+		return nil, fmt.Errorf("endpoint %q has a fragment, which a scrape never sends", raw)
 	}
 	query, err := url.ParseQuery(parsed.RawQuery)
 	if err != nil {
-		return endpoint{}, fmt.Errorf("endpoint %q query: %w", raw, err)
+		return nil, fmt.Errorf("endpoint %q query: %w", raw, err)
 	}
-	params := map[string]string{}
 	for name, values := range query {
 		if len(values) > 1 {
-			return endpoint{}, fmt.Errorf("endpoint %q: query param %q is given more than once, which a scrape target cannot carry", raw, name)
+			return nil, fmt.Errorf("endpoint %q: query param %q is given more than once, which a scrape target cannot carry", raw, name)
 		}
-		params[name] = values[0]
 	}
-	port := parsed.Port()
-	if port == "" {
-		port = map[string]string{"http": "80", "https": "443"}[parsed.Scheme]
+	if workload && (parsed.Opaque != "" || (parsed.Hostname() == "" && query.Get("selector") == "")) {
+		return nil, fmt.Errorf("endpoint %q: a Kubernetes workload name or selector is required", raw)
 	}
-	path := parsed.EscapedPath()
-	if path == "" {
-		path = "/"
+	if parsed.Scheme == proxyScheme {
+		for segment := range strings.SplitSeq(parsed.Path, "/") {
+			if segment == "." || segment == ".." {
+				return nil, fmt.Errorf("endpoint %q: a Kubernetes proxy path cannot contain a dot segment", raw)
+			}
+		}
+		if port := query.Get("port"); port != "" && len(validation.IsDNS1123Label(port)) != 0 {
+			return nil, fmt.Errorf("endpoint %q: invalid port %q", raw, port)
+		}
 	}
-	return endpoint{url: raw, scheme: parsed.Scheme, address: net.JoinHostPort(parsed.Hostname(), port), path: path, params: params}, nil
+	return parsed, nil
 }

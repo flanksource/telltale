@@ -95,6 +95,14 @@ var _ = Describe("telltale run <kind>", func() {
 		Expect(page).ToNot(ContainSubstring("\x1b["), "help written to a buffer is plain")
 	})
 
+	It("shows Kubernetes and direct URL examples for Prometheus", func() {
+		Expect(help("run", "prometheus")).To(SatisfyAll(
+			ContainSubstring("--endpoints port-forward://metrics-exporter.monitoring:9100/metrics"),
+			ContainSubstring("--endpoints proxy://metrics-exporter.monitoring:9100/metrics"),
+			ContainSubstring("--endpoints https://metrics.example.com/metrics"),
+		))
+	})
+
 	DescribeTable("refuses what it cannot run before making a run store",
 		func(kind string, args []string, refusal string) {
 			dataDir := GinkgoT().TempDir()

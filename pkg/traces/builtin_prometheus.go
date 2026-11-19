@@ -14,10 +14,14 @@ func init() {
 			", scraped every --interval, and records one row per completed scrape: its endpoint, health, duration, error and sample count. " +
 			"The first capture downloads and starts that Prometheus through deps (state and TSDB under <data-dir>/services/prometheus) as telltale's sub-process: the run's captures share it, it stops when the run ends, and the next run starts it again on the same TSDB and port. " +
 			"The samples stay in its TSDB, labelled telltale_run, telltale_stream and telltale_endpoint plus --labels: query them with PromQL at the URL the run shows, or as the read-only " +
-			prometheus.ConnectionName + " connection of telltale serve. Ending the capture stops the scraping, not the samples.",
+			prometheus.ConnectionName + " connection of telltale serve. Ending the capture stops the scraping, not the samples. " +
+			"Inline Kubernetes endpoints use Telltale's Kubernetes identity. Replace the example service, namespace and port with yours. portforward:// and port-forward:// are equivalent.",
 		Examples: []Example{
 			{Args: "--endpoints http://localhost:8080/metrics --interval 5s --duration 1m", Says: "scrape one endpoint every 5 seconds for a minute"},
 			{Args: "--endpoints http://localhost:9100/metrics,http://localhost:9090/metrics --labels env=dev", Says: "scrape two exporters every 15 seconds, labelled env=dev, until Ctrl+C"},
+			{Args: "--endpoints port-forward://metrics-exporter.monitoring:9100/metrics --duration 1m", Says: "scrape a Kubernetes Service through a port-forward managed by Telltale"},
+			{Args: "--endpoints proxy://metrics-exporter.monitoring:9100/metrics --duration 1m", Says: "scrape a Kubernetes Service through the API server proxy"},
+			{Args: "--endpoints https://metrics.example.com/metrics --duration 1m", Says: "scrape an exporter reachable over HTTPS"},
 		},
 		New: func(deps KindDeps) tracing.TracePlugin {
 			managed := prometheus.NewManaged(deps.DataDir)

@@ -1377,8 +1377,9 @@ spec:
                         items:
                           properties:
                             endpoints:
-                              description: Prometheus metrics URLs to scrape such
-                                as http://localhost:8080/metrics
+                              description: Metrics URLs using http:// or https://
+                                or Kubernetes portforward:// (also port-forward://)
+                                or proxy://
                               items:
                                 type: string
                               title: Endpoints

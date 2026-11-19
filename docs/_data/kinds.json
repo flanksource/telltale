@@ -2593,7 +2593,7 @@
         "endpoints": {
           "type": "array",
           "title": "Endpoints",
-          "description": "Prometheus metrics URLs to scrape such as http://localhost:8080/metrics",
+          "description": "Metrics URLs using http:// or https:// or Kubernetes portforward:// (also port-forward://) or proxy://",
           "items": {
             "type": "string"
           }
@@ -2727,7 +2727,7 @@
       {
         "name": "endpoints",
         "type": "stringSlice",
-        "description": "Prometheus metrics URLs to scrape such as http://localhost:8080/metrics",
+        "description": "Metrics URLs using http:// or https:// or Kubernetes portforward:// (also port-forward://) or proxy://",
         "default": "[]",
         "required": false
       },

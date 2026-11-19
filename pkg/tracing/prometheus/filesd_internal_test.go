@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
+	dbcontext "github.com/flanksource/commons-db/context"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -14,7 +15,10 @@ var _ = Describe("file_sd target groups", func() {
 			Endpoints: []string{"http://localhost:8080/metrics", "https://exporter.example.com:9115/probe?module=http_2xx"},
 			Interval:  "5s", Timeout: "2s", Labels: map[string]string{"env": "dev"},
 		}}
-		rendered, err := targetGroups(params, session{run: "run-2026-10-31T10-00-00Z", stream: "STREAM1"})
+		endpoints, release, err := resolveEndpoints(dbcontext.New(), params.Endpoints)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(release)
+		rendered, err := targetGroups(params, session{run: "run-2026-10-31T10-00-00Z", stream: "STREAM1"}, endpoints)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(string(rendered)).To(Equal(`[
   {
@@ -53,7 +57,11 @@ var _ = Describe("file_sd target groups", func() {
 	})
 
 	It("defaults the port by scheme, the path to /, and the timeout to the shorter of 10s and the interval", func() {
-		rendered, err := targetGroups(Params{Options: Options{Endpoints: []string{"https://example.com"}, Interval: "3s"}}, session{run: "run-1", stream: "S"})
+		params := Params{Options: Options{Endpoints: []string{"https://example.com"}, Interval: "3s"}}
+		endpoints, release, err := resolveEndpoints(dbcontext.New(), params.Endpoints)
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(release)
+		rendered, err := targetGroups(params, session{run: "run-1", stream: "S"}, endpoints)
 		Expect(err).ToNot(HaveOccurred())
 		Expect(string(rendered)).To(ContainSubstring(`"example.com:443"`))
 		Expect(string(rendered)).To(ContainSubstring(`"__metrics_path__": "/"`))

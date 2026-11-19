@@ -58,6 +58,19 @@ function put(resourceVersion: string, definition: object): Promise<Response> {
 }
 
 describe("trace definitions", () => {
+  it("validates mixed Prometheus endpoint schemes without connecting to Kubernetes", async () => {
+    const response = await fetch(`${apiURL}/api/traces/definitions/validate`, {
+      method: "POST", headers: json,
+      body: JSON.stringify({ definition: { ...probe, spec: { collect: { prometheus: { scrape: [{ endpoints: [
+        "port-forward://metrics-exporter.monitoring:9100/metrics",
+        "proxy://metrics-exporter.monitoring:9100/metrics",
+        "https://metrics.example.com/metrics",
+      ] }] } } } } }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ errors: [], entries: [expect.objectContaining({ kind: "prometheus" })] });
+  });
+
   it("publishes JVM protocol entries and validates agent SQL top without a database connection", async () => {
     const protocols = {
       http: [{ agent: { id: "java/checkout" }, features: ["http"] }],

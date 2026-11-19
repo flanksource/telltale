@@ -73,11 +73,21 @@ type clientKey struct{}
 // Prepare hands the session's endpoints to Prometheus and waits until it
 // scrapes them, refusing the start when Prometheus is not ready or never
 // discovers them.
-func (k kind) Prepare(ctx dbcontext.Context, params Params, out tracing.Emitter[Scrape]) (dbcontext.Context, func() error, error) {
+func (k kind) Prepare(ctx dbcontext.Context, params Params, out tracing.Emitter[Scrape]) (_ dbcontext.Context, _ func() error, err error) {
 	if k.options.RunID == "" || k.options.Server == nil {
 		return ctx, nil, errors.New("a prometheus capture records into a telltale run, which gives it its run id and data dir")
 	}
 	stream := tracing.StreamOf(ctx)
+	endpoints, closeEndpoints, err := resolveEndpoints(ctx, params.Endpoints)
+	if err != nil {
+		return ctx, nil, err
+	}
+	release := closeEndpoints
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, release())
+		}
+	}()
 	server, err := k.options.Server(ctx)
 	if err != nil {
 		return ctx, nil, fmt.Errorf("start the managed prometheus: %w", err)
@@ -86,7 +96,7 @@ func (k kind) Prepare(ctx dbcontext.Context, params Params, out tracing.Emitter[
 	if err := c.ready(ctx, readyWait); err != nil {
 		return ctx, nil, err
 	}
-	groups, err := targetGroups(params, session{run: k.options.RunID, stream: stream})
+	groups, err := targetGroups(params, session{run: k.options.RunID, stream: stream}, endpoints)
 	if err != nil {
 		return ctx, nil, err
 	}
@@ -94,9 +104,9 @@ func (k kind) Prepare(ctx dbcontext.Context, params Params, out tracing.Emitter[
 	if err != nil {
 		return ctx, nil, err
 	}
-	release := func() error { return os.Remove(path) }
-	if err := awaitTargets(ctx, c, stream, len(params.Endpoints)); err != nil {
-		return ctx, nil, errors.Join(err, release())
+	release = func() error { return errors.Join(os.Remove(path), closeEndpoints()) }
+	if err := awaitTargets(ctx, c, stream, len(endpoints)); err != nil {
+		return ctx, nil, err
 	}
 	out.Describe(server.URL,
 		query.SessionMetadata{Name: "job", Label: "Job", Value: server.Job},
