@@ -1,10 +1,12 @@
 package prometheus
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
+	"net"
 	"os"
 	"path/filepath"
 )
@@ -22,30 +24,28 @@ type targetGroup struct {
 // endpoint, carrying its scheme, path, query params, scrape interval and
 // timeout as the labels Prometheus reads them from, then the params' labels
 // and telltale's own.
-func targetGroups(params Params, s session) ([]byte, error) {
+func targetGroups(params Params, s session, endpoints []endpoint) ([]byte, error) {
 	interval, timeout, err := params.timing()
 	if err != nil {
 		return nil, err
 	}
-	groups := make([]targetGroup, 0, len(params.Endpoints))
-	for _, raw := range params.Endpoints {
-		e, err := parseEndpoint(raw)
-		if err != nil {
-			return nil, err
-		}
+	groups := make([]targetGroup, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		u := endpoint.url
+		port := cmp.Or(u.Port(), map[string]string{"http": "80", "https": "443"}[u.Scheme])
 		labels := maps.Clone(params.Labels)
 		if labels == nil {
 			labels = map[string]string{}
 		}
 		maps.Copy(labels, map[string]string{
-			"__scheme__": e.scheme, "__metrics_path__": e.path,
+			"__scheme__": u.Scheme, "__metrics_path__": cmp.Or(u.EscapedPath(), "/"),
 			"__scrape_interval__": promDuration(interval), "__scrape_timeout__": promDuration(timeout),
-			LabelEndpoint: e.url, LabelRun: s.run, LabelStream: s.stream,
+			LabelEndpoint: endpoint.original, LabelRun: s.run, LabelStream: s.stream,
 		})
-		for name, value := range e.params {
-			labels["__param_"+name] = value
+		for name, values := range u.Query() {
+			labels["__param_"+name] = values[0]
 		}
-		groups = append(groups, targetGroup{Targets: []string{e.address}, Labels: labels})
+		groups = append(groups, targetGroup{Targets: []string{net.JoinHostPort(u.Hostname(), port)}, Labels: labels})
 	}
 	rendered, err := json.MarshalIndent(groups, "", "  ")
 	if err != nil {

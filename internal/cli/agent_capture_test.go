@@ -106,6 +106,8 @@ var _ = Describe("CLI agent captures", func() {
 		close(stop)
 		<-done
 		Expect(runErr).NotTo(HaveOccurred(), stderr)
+		Expect(stderr).To(ContainSubstring(expected), "live records must reach stderr without --follow")
+		Expect(stderr).NotTo(ContainSubstring(secret))
 		result := manifest(dataDir)
 		Expect(result.Captures).To(HaveLen(1))
 		Expect(result.Captures[0].Kind).To(Equal(kind))

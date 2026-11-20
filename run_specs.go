@@ -174,6 +174,9 @@ func (r *Run) checkpoint(ctx context.Context, reason string) {
 		if err == nil {
 			err = capture.Checkpoint(ctx, params)
 		}
+		if reason == "interval" && ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+			return
+		}
 		// The command leaves its tree only by exiting: a read that found it gone
 		// raced the exit that ends the run, and is no failure once the command exits.
 		if ofCommand && errors.Is(err, tracing.ErrCheckpointParams) && r.exitsWithin(commandExitGrace) {
@@ -212,10 +215,12 @@ func (r *Run) checkpointEvery() {
 	defer ticker.Stop()
 	for {
 		select {
+		case <-r.checkpointCtx.Done():
+			return
 		case <-r.exited:
 			return
 		case <-ticker.C:
-			r.checkpoint(context.Background(), "interval")
+			r.checkpoint(r.checkpointCtx, "interval")
 		}
 	}
 }

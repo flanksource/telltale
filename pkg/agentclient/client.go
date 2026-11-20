@@ -1,7 +1,6 @@
 package agentclient
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -17,19 +16,26 @@ import (
 	"github.com/flanksource/telltale/sdk/protocol"
 )
 
-// Agent is an authenticated connection to a local agent.
+// Agent is an authenticated connection to an agent, over the frame protocol
+// (a local socket or the WebSocket hub) or direct HTTP to a deployed agent.
 type Agent struct {
-	Hello    protocol.Hello
-	localPID int
-	stream   net.Conn
-	conn     *protocol.Conn
-	mu       sync.Mutex
-	sessions map[string]*Session
-	calls    map[string]chan protocol.Result
-	callSeen map[string]bool
-	done     chan struct{}
-	pong     chan struct{}
-	failure  error
+	Hello     protocol.Hello
+	localPID  int
+	transport transport
+	mu        sync.Mutex
+	done      chan struct{}
+	doneOnce  sync.Once
+	failure   error
+}
+
+// transport carries one agent's captures and calls. Session state that every
+// transport shares (its channels, its end) stays on Session.
+type transport interface {
+	arm(ctx context.Context, s *Session, request ArmRequest) error
+	checkpoint(ctx context.Context, s *Session, params json.RawMessage) (CheckpointResult, error)
+	disarm(ctx context.Context, s *Session) error
+	call(ctx context.Context, request CallRequest) (json.RawMessage, error)
+	close() error
 }
 
 // ArmRequest selects a probe and its session settings.
@@ -106,14 +112,7 @@ func Connect(ctx context.Context, stream net.Conn, token string) (*Agent, error)
 		_ = stream.Close()
 		return nil, fmt.Errorf("clear agent deadline: %w", err)
 	}
-	return newAgent(&protocol.Client{Stream: stream, Conn: conn, Hello: hello}), nil
-}
-
-func newAgent(client *protocol.Client) *Agent {
-	agent := &Agent{Hello: client.Hello, stream: client.Stream, conn: client.Conn, sessions: make(map[string]*Session), calls: make(map[string]chan protocol.Result), callSeen: make(map[string]bool), done: make(chan struct{}), pong: make(chan struct{}, 1)}
-	go agent.read()
-	go agent.heartbeat()
-	return agent
+	return newWireAgent(&protocol.Client{Stream: stream, Conn: conn, Hello: hello}), nil
 }
 
 // Dial connects to a local discovery endpoint and verifies its identity.
@@ -130,42 +129,25 @@ func Dial(ctx context.Context, endpoint Endpoint) (*Agent, error) {
 		_ = client.Close()
 		return nil, fmt.Errorf("%w: agent identity mismatch", protocol.ErrStaleEndpoint)
 	}
-	return newAgent(client), nil
+	return newWireAgent(client), nil
 }
 
-func (a *Agent) heartbeat() {
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			if err := write(a.conn, "ping", protocol.Ping{}); err != nil {
-				_ = a.stream.Close()
-				return
-			}
-			timer := time.NewTimer(10 * time.Second)
-			select {
-			case <-a.pong:
-				timer.Stop()
-			case <-timer.C:
-				_ = a.stream.Close()
-				return
-			case <-a.done:
-				timer.Stop()
-				return
-			}
-		case <-a.done:
-			return
-		}
-	}
+// fail ends the connection once with cause; every later caller sees cause.
+func (a *Agent) fail(cause error) {
+	a.doneOnce.Do(func() {
+		a.mu.Lock()
+		a.failure = cause
+		a.mu.Unlock()
+		close(a.done)
+	})
 }
 
-func write(conn *protocol.Conn, kind string, body any) error {
-	data, err := json.Marshal(body)
-	if err != nil {
-		return err
+func newSession(agent *Agent) (*Session, error) {
+	var id [16]byte
+	if _, err := rand.Read(id[:]); err != nil {
+		return nil, err
 	}
-	return conn.Write(protocol.Envelope{Type: kind, Body: data}, nil)
+	return &Session{agent: agent, ID: hex.EncodeToString(id[:]), pending: make(map[string]*checkpointCall), seenCheckpoints: make(map[string]struct{}), Records: make(chan protocol.Records, 64), Blobs: make(chan Blob, 64), Reports: make(chan protocol.Report, 64), Warns: make(chan protocol.Warn, 64), Ended: make(chan protocol.Ended, 1), armed: make(chan protocol.Armed, 1), finished: make(chan struct{})}, nil
 }
 
 // Arm waits for the agent to accept a capture.
@@ -176,42 +158,14 @@ func (a *Agent) Arm(ctx context.Context, request ArmRequest) (*Session, error) {
 	if err := a.validateArm(request); err != nil {
 		return nil, err
 	}
-	var id [16]byte
-	if _, err := rand.Read(id[:]); err != nil {
+	session, err := newSession(a)
+	if err != nil {
 		return nil, err
 	}
-	s := &Session{agent: a, ID: hex.EncodeToString(id[:]), pending: make(map[string]*checkpointCall), seenCheckpoints: make(map[string]struct{}), Records: make(chan protocol.Records, 64), Blobs: make(chan Blob, 64), Reports: make(chan protocol.Report, 64), Warns: make(chan protocol.Warn, 64), Ended: make(chan protocol.Ended, 1), armed: make(chan protocol.Armed, 1), finished: make(chan struct{})}
-	a.mu.Lock()
-	a.sessions[s.ID] = s
-	a.mu.Unlock()
-	if err := write(a.conn, "arm", protocol.Arm{Session: s.ID, Probe: request.Probe, Params: request.Params, AllowMutation: request.AllowMutation, StopAt: request.StopAt, Limits: request.Limits}); err != nil {
-		a.mu.Lock()
-		delete(a.sessions, s.ID)
-		a.mu.Unlock()
+	if err := a.transport.arm(ctx, session, request); err != nil {
 		return nil, err
 	}
-	select {
-	case reply := <-s.armed:
-		if reply.Error != "" {
-			a.mu.Lock()
-			delete(a.sessions, s.ID)
-			a.mu.Unlock()
-			return nil, errors.New(reply.Error)
-		}
-		return s, nil
-	case <-ctx.Done():
-		a.mu.Lock()
-		delete(a.sessions, s.ID)
-		a.mu.Unlock()
-		go func() {
-			if err := write(a.conn, protocol.TypeDisarm, protocol.Disarm{Session: s.ID}); err != nil {
-				_ = a.stream.Close()
-			}
-		}()
-		return nil, ctx.Err()
-	case <-a.done:
-		return nil, fmt.Errorf("arm: %w", a.connectionError())
-	}
+	return session, nil
 }
 
 func (a *Agent) validateArm(request ArmRequest) error {
@@ -229,40 +183,7 @@ func (a *Agent) validateArm(request ArmRequest) error {
 
 // Checkpoint requests an on-demand reading.
 func (s *Session) Checkpoint(ctx context.Context, params json.RawMessage) (CheckpointResult, error) {
-	var random [16]byte
-	if _, err := rand.Read(random[:]); err != nil {
-		return CheckpointResult{}, err
-	}
-	id := hex.EncodeToString(random[:])
-	call := &checkpointCall{done: make(chan protocol.Checkpointed, 1), params: bytes.Clone(params)}
-	s.mu.Lock()
-	s.pending[id] = call
-	s.mu.Unlock()
-	defer func() { s.mu.Lock(); delete(s.pending, id); s.mu.Unlock() }()
-	if err := write(s.agent.conn, "checkpoint", protocol.Checkpoint{Session: s.ID, ID: id, Params: params}); err != nil {
-		return CheckpointResult{}, fmt.Errorf("checkpoint: %w", err)
-	}
-	select {
-	case done := <-call.done:
-		if done.Error != "" {
-			return call.result, fmt.Errorf("agent checkpoint: %s", done.Error)
-		}
-		return call.result, nil
-	case <-s.finished:
-		select {
-		case done := <-call.done:
-			if done.Error != "" {
-				return call.result, fmt.Errorf("agent checkpoint: %s", done.Error)
-			}
-			return call.result, nil
-		default:
-		}
-		return CheckpointResult{}, s.endError()
-	case <-s.agent.done:
-		return CheckpointResult{}, fmt.Errorf("checkpoint: %w", s.agent.connectionError())
-	case <-ctx.Done():
-		return CheckpointResult{}, ctx.Err()
-	}
+	return s.agent.transport.checkpoint(ctx, s, params)
 }
 
 // Disarm releases the capture.
@@ -272,9 +193,11 @@ func (s *Session) Disarm(ctx context.Context) error {
 		return s.releaseError()
 	default:
 	}
-	if err := write(s.agent.conn, "disarm", protocol.Disarm{Session: s.ID}); err != nil {
-		return fmt.Errorf("disarm: %w", err)
-	}
+	return s.agent.transport.disarm(ctx, s)
+}
+
+// awaitRelease waits for a requested disarm to end the session.
+func (s *Session) awaitRelease(ctx context.Context) error {
 	select {
 	case <-s.finished:
 		return s.releaseError()
@@ -301,30 +224,7 @@ func (a *Agent) Call(ctx context.Context, request CallRequest) (json.RawMessage,
 			return nil, fmt.Errorf("operation %s: caller mutation disabled", request.Op)
 		}
 	}
-	var id [16]byte
-	if _, err := rand.Read(id[:]); err != nil {
-		return nil, err
-	}
-	callID := hex.EncodeToString(id[:])
-	response := make(chan protocol.Result, 1)
-	a.mu.Lock()
-	a.calls[callID] = response
-	a.mu.Unlock()
-	defer func() { a.mu.Lock(); delete(a.calls, callID); a.mu.Unlock() }()
-	if err := write(a.conn, "call", protocol.Call{CallID: callID, Op: request.Op, Params: request.Params, AllowMutation: request.AllowMutation}); err != nil {
-		return nil, fmt.Errorf("agent call: %w", err)
-	}
-	select {
-	case result := <-response:
-		if result.Error != "" {
-			return nil, fmt.Errorf("agent call %s: %s", request.Op, result.Error)
-		}
-		return result.Value, nil
-	case <-a.done:
-		return nil, fmt.Errorf("call: %w", a.connectionError())
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	}
+	return a.transport.call(ctx, request)
 }
 
 func (s *Session) endError() error {
@@ -357,9 +257,7 @@ func (s *Session) finish(value protocol.Ended) {
 }
 
 // Close closes the connection and all its captures.
-func (a *Agent) Close() error { return a.stream.Close() }
-
-func (a *Agent) read() { a.readLoop() }
+func (a *Agent) Close() error { return a.transport.close() }
 
 func deliver[T any](channel chan<- T, value T) bool {
 	select {

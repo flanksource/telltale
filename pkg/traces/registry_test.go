@@ -21,7 +21,7 @@ func registrationNames() []string {
 }
 
 var _ = Describe("the trace kind registry", func() {
-	builtins := []string{"goprof", "http", "process_samples", "process_tree", "sql", "stacks", "terminal"}
+	builtins := []string{"goprof", "http", "http_proxy", "pg_proxy", "process", "sql", "stacks", "terminal"}
 	valid := func(name string) traces.Registration {
 		return traces.Registration{
 			Name: name, Title: "Registered for a test", Summary: "Records nothing", Seams: []target.Seam{target.Self}, DefaultSeam: target.Self,
@@ -43,13 +43,16 @@ var _ = Describe("the trace kind registry", func() {
 
 	It("registers the supported seam and default for each builtin", func() {
 		for kind, seam := range map[string]target.Seam{
-			"process_tree": target.Process, "process_samples": target.Process,
-			"stacks": target.Process, "goprof": target.Process,
-			"process_groups": target.Host, "http": target.Self, "sql": target.Self, "terminal": target.Self,
+			"process": target.Process,
+			"stacks":  target.Process, "goprof": target.Process,
+			"http": target.Self, "sql": target.Self, "terminal": target.Self,
 		} {
 			registration, err := traces.Registered(kind)
 			Expect(err).NotTo(HaveOccurred())
 			seams := []target.Seam{seam}
+			if kind == "process" {
+				seams = append(seams, target.Host)
+			}
 			if kind == "stacks" || kind == "goprof" {
 				seams = append(seams, target.Agent, target.Self)
 			}
@@ -60,10 +63,32 @@ var _ = Describe("the trace kind registry", func() {
 			Expect(registration.DefaultSeam).To(Equal(seam), kind)
 		}
 	})
+	It("serves http_proxy and pg_proxy as their base kinds armed only on the proxy seam", func() {
+		kinds, err := traces.Kinds()
+		Expect(err).NotTo(HaveOccurred())
+		infos, err := kinds.List()
+		Expect(err).NotTo(HaveOccurred())
+		columns := map[string]any{}
+		for _, info := range infos {
+			columns[info.Name] = info.Columns
+		}
+		for preset, base := range map[string]string{"http_proxy": "http", "pg_proxy": "sql"} {
+			registration, err := traces.Registered(preset)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(registration.Base).To(Equal(base), preset)
+			Expect(registration.Seams).To(Equal([]target.Seam{target.Proxy}), preset)
+			Expect(registration.DefaultSeam).To(Equal(target.Proxy), preset)
+			Expect(registration.Armable).To(BeTrue(), preset)
+			Expect(columns[preset]).To(Equal(columns[base]), preset)
+			Expect(traces.Validate(kinds, preset, []byte(`{}`))).To(Succeed(), preset)
+			Expect(traces.Validate(kinds, preset, []byte(`{"target":{"seam":"self"}}`))).To(MatchError(ContainSubstring(`arms seam "proxy"`)), preset)
+		}
+	})
+
 	It("rejects an unsupported seam before starting a capture", func() {
 		kinds, err := traces.Kinds()
 		Expect(err).NotTo(HaveOccurred())
-		err = traces.Validate(kinds, "process_tree", []byte(`{"target":{"seam":"proxy"}}`))
+		err = traces.Validate(kinds, "process", []byte(`{"target":{"seam":"proxy"}}`))
 		Expect(err).To(MatchError(ContainSubstring("unsupported seam")))
 		Expect(err).To(MatchError(ContainSubstring("process")))
 	})
@@ -94,6 +119,9 @@ var _ = Describe("the trace kind registry", func() {
 		Entry("no plugin", func(r *traces.Registration) { r.New = nil }, "a New func is required"),
 		Entry("an unknown seam", func(r *traces.Registration) { r.Seams = []target.Seam{"elsewhere"} }, `unknown seam "elsewhere"`),
 		Entry("no summary", func(r *traces.Registration) { r.Summary = "" }, "a title and a summary are required"),
+		Entry("a preset arming more than one seam", func(r *traces.Registration) {
+			r.Base, r.Seams = "http", []target.Seam{target.Self, target.Proxy}
+		}, `a preset of "http" arms exactly one seam`),
 		Entry("a builtin's name", func(r *traces.Registration) { r.Name = "http" }, `"http": it is registered twice`),
 	)
 

@@ -2,9 +2,14 @@
   "type": "object",
   "properties": {
     "connection": {
-      "type": "string",
+      "description": "SQL Server connection reference",
       "title": "Connection",
-      "description": "SQL Server connection reference"
+      "type": "string",
+      "x-clicky-lookup": {
+        "filter": "connection",
+        "searchParam": "__lookup_q",
+        "url": "/api/v1/connection?types=sql_server"
+      }
     },
     "databases": {
       "type": "array",

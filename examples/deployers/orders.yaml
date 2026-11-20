@@ -1,0 +1,52 @@
+# Deployers put telltale's JVM agent into the pods a selector picks. Install
+# crds/telltale.flanksource.com_deployers.yaml first. The issuer connection
+# holds the RSA signing key as its `signingKey` named secret; agents get only
+# its public JWKS, never a shared token.
+apiVersion: telltale.flanksource.com/v1alpha1
+kind: Deployer
+metadata:
+  name: orders
+  namespace: orders
+spec:
+  selector:
+    kind: StatefulSet
+    namespace: orders
+    labels: {app: orders}
+    container: tomcat
+  javaContainer:
+    kind: tomcat
+    # The Tomcat base URL the deploy uses per pod: the manager upload and
+    # /health. The apiserver proxy deletes Authorization, so the manager login
+    # needs a port-forward (or a direct URL); proxy:// is refused here.
+    url: 'portforward://{{.Pod.Name}}.{{.Pod.Namespace}}:{{.Port "http"}}?kind=pod'
+    # Executions may go through the apiserver proxy: their token travels in
+    # X-Telltale-Authorization. The WAR's context path (default
+    # /telltale-diag) is appended to both URLs.
+    executionUrl: 'proxy://{{.Pod.Name}}.{{.Pod.Namespace}}:{{.Port "http"}}?kind=pod'
+    connection: connection://orders/tomcat-manager
+    runtimeDir: /usr/local/tomcat/temp/telltale-diag
+  auth:
+    issuer: connection://orders/telltale-signing
+    jwksUrl: https://telltale.example/.well-known/jwks.json
+---
+apiVersion: telltale.flanksource.com/v1alpha1
+kind: Deployer
+metadata:
+  name: orders-batch
+  namespace: orders
+spec:
+  selector:
+    kind: Deployment
+    namespace: orders
+    labels: {app: orders-batch}
+    container: batch
+  javaContainer:
+    kind: attach
+    url: 'portforward://{{.Pod.Name}}.{{.Pod.Namespace}}:7070?kind=pod'
+    pid: 1
+    directory: /tmp/telltale
+    bind: 0.0.0.0
+    port: 7070
+    service: orders-batch
+  auth:
+    issuer: connection://orders/telltale-signing

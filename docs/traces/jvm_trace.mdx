@@ -1,0 +1,27 @@
+# jvm_trace
+
+import { KindReference } from '../_components/KindReference';
+
+Watch arguments, return values and exceptions, or trace nested method calls in a connected Java agent. Select one to eight methods and use a loader hash when a class name is ambiguous.
+
+```sh
+telltale run jvm_trace --agent 1234 --allow-mutation --duration 10s --targets '[{"class":"example.Worker","method":"compute"}]' --args --return --exception --calls
+```
+
+## Keeping only the calls you want
+
+A hot method fills the event budget with calls nobody is looking at. Root-call filters keep only the outermost calls that qualify, each with everything nested in it, and count the rest as `filtered` in the capture report:
+
+- `minCost` keeps calls that ran at least this long, such as `250ms`.
+- `exceptionsOnly` keeps calls that threw.
+- `match` keeps calls whose rendered argument (`on: arg`, `index`) or return value (`on: return`) passes every predicate. `path` names a value inside it by dotted child labels, and `op` is `equals`, `contains` or `regex` (a Java regular expression found anywhere in the value). A match needs `--args` or `--return` to be recording that value.
+
+```sh
+telltale run jvm_trace --agent 1234 --allow-mutation --duration 5m --targets '[{"class":"example.Dispatcher","method":"send"}]' --args --calls --min-cost 250ms --match '[{"on":"arg","index":0,"op":"contains","value":"SubmitTask"}]'
+```
+
+The agent holds each call on its own thread until it ends. A held call is bounded by the event limit and the probe's byte budget; one that outgrows them keeps its first events and its closing events, and its last event carries `omitted` with the count left out between them. Filters need probe API v10, which the agent advertises on its `jvm_trace` probe: an older agent attached to the JVM is refused before anything is instrumented, because it would ignore the filters and return every call.
+
+The agent must be installed with mutation enabled. Captures restore original bytecode when stopped, disconnected, expired or completed at their event limit. The JVM also owns a renewable lease for abandoned captures. See [JVM diagnostics](/jvm-diagnostics-port) for installation, leases and the standalone WAR.
+
+<KindReference kind="jvm_trace" />

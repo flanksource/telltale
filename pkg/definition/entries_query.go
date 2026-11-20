@@ -4,7 +4,7 @@ import (
 	"github.com/flanksource/commons-db/models"
 	"github.com/flanksource/commons-db/query/providers"
 	"github.com/flanksource/commons-db/query/providers/sqlite"
-	tracequery "github.com/flanksource/commons-db/tracing/query"
+	tracequery "github.com/flanksource/telltale/pkg/tracing/query"
 )
 
 // Window is when and how often a query entry reads, and how many rows one

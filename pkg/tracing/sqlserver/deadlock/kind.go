@@ -10,6 +10,7 @@ import (
 
 	"github.com/flanksource/clicky"
 	dbcontext "github.com/flanksource/commons-db/context"
+	"github.com/flanksource/commons-db/models"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
 	"github.com/flanksource/commons/collections"
 	"github.com/flanksource/telltale/pkg/tracing"
@@ -91,6 +92,8 @@ type captureKey struct{}
 type handler struct{}
 
 func (handler) Params() Params { return Params{Options: Options{Poll: "30s"}} }
+
+func (handler) ConnectionTypes() []string { return []string{models.ConnectionTypeSQLServer} }
 func (handler) Schema() recordresults.ResultType[history.Row] {
 	return recordresults.ResultType[history.Row]{Title: "SQL Server deadlocks", TimeColumn: "timestamp", Follow: true, SearchColumns: []string{"statements", "signature"}}
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 
 	"github.com/flanksource/telltale/pkg/tracing/groups"
+	"github.com/flanksource/telltale/pkg/tracing/processcapture"
 )
 
 // Source reads the frames a Model shows.
@@ -38,13 +39,15 @@ func (l Live) Close() { l.Top.Close() }
 
 // Recorded follows a recording's committed frames, which keep no processes.
 type Recorded struct {
-	Follower *groups.Follower
+	Follower *processcapture.Follower
 }
 
 func (r Recorded) Next(ctx context.Context) (groups.Frame, bool, error) {
 	return r.Follower.Frame(ctx)
 }
 
-func (Recorded) Processes(groups.ProcessFilter) ([]groups.ProcessSample, bool) { return nil, false }
+func (r Recorded) Processes(filter groups.ProcessFilter) ([]groups.ProcessSample, bool) {
+	return r.Follower.Processes(filter), true
+}
 
 func (Recorded) Close() {}

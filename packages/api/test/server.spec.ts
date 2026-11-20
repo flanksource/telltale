@@ -41,11 +41,18 @@ describe("standalone API and embedded UI", () => {
     expect(await response.json()).toMatchObject({ info: { title: "Telltale" }, openapi: expect.stringMatching(/^3\./) });
   });
 
+  it("includes explain in the generated command catalog", async () => {
+    const response = await fetch(`${apiURL}/api/openapi.json`);
+    expect(response.status).toBe(200);
+    const spec = await response.json() as { paths: Record<string, unknown> };
+    expect(Object.keys(spec.paths).some((path) => path.startsWith('/api/v1/explain'))).toBe(true);
+  });
+
   it("derives run arguments and checkpoint choices from kind schemas", async () => {
     const response = await fetch(`${apiURL}/api/openapi.json`);
     expect(response.status).toBe(200);
     const spec = await response.json() as { paths: Record<string, { post?: { requestBody?: { content: Record<string, { schema: { properties: Record<string, unknown> } }> } } }> };
-    const http = spec.paths["/api/v1/run/{flags}/http"].post?.requestBody?.content["application/json"].schema.properties;
+    const http = spec.paths["/api/v1/run/http"].post?.requestBody?.content["application/json"].schema.properties;
     expect(http).toMatchObject({
       mode: { type: "string", enum: ["connect", "mitm"], default: "connect" },
       seam: { type: "string", enum: ["self", "agent", "proxy"], default: "self" },
@@ -53,7 +60,7 @@ describe("standalone API and embedded UI", () => {
       pid: { type: "integer" },
     });
     expect(http).not.toHaveProperty("format");
-    const checkpoint = spec.paths["/api/v1/run/{flags}/goprof"].post?.requestBody?.content["application/json"].schema.properties;
+    const checkpoint = spec.paths["/api/v1/run/goprof"].post?.requestBody?.content["application/json"].schema.properties;
     expect(checkpoint).toMatchObject({
       profile: { type: "string", enum: ["cpu", "heap", "allocs", "mutex", "block", "goroutine"], default: "heap" },
       source: { type: "string", enum: ["pprof", "gops", "file"], default: "gops" },

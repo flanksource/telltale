@@ -1,6 +1,7 @@
 package groups
 
 import (
+	"strings"
 	"time"
 )
 
@@ -15,8 +16,11 @@ type PerSecond struct {
 
 // Reading is one process's use at one tick.
 type Reading struct {
-	CPUPercent *float64
-	RSSBytes   uint64
+	CPUPercent                 *float64
+	RSSBytes                   uint64
+	SwapBytes, CompressedBytes *uint64
+	Hogs                       Hogs
+	MemoryError                string
 	PerSecond
 	Sockets, Connections *int
 }
@@ -24,9 +28,13 @@ type Reading struct {
 // Usage is what a set of processes use at one tick: the sums of what is
 // known of them, nil where nothing is.
 type Usage struct {
-	Processes  int      `json:"processes"`
-	CPUPercent *float64 `json:"cpuPercent,omitempty" pretty:"label=CPU %"`
-	RSSBytes   uint64   `json:"rssBytes" pretty:"label=RSS,type=bytes"`
+	Processes       int      `json:"processes"`
+	CPUPercent      *float64 `json:"cpuPercent,omitempty" pretty:"label=CPU %"`
+	RSSBytes        uint64   `json:"rssBytes" pretty:"label=RSS,type=bytes"`
+	SwapBytes       *uint64  `json:"swapBytes,omitempty" pretty:"label=Swap,type=bytes"`
+	CompressedBytes *uint64  `json:"compressedBytes,omitempty" pretty:"label=Compressed,type=bytes"`
+	Hogs            Hogs     `json:"hogs,omitempty"`
+	MemoryError     string   `json:"memoryError,omitempty"`
 	PerSecond
 	Sockets     *int `json:"sockets,omitempty"`
 	Connections *int `json:"connections,omitempty"`
@@ -36,6 +44,10 @@ func (u *Usage) add(r Reading) {
 	u.Processes++
 	u.CPUPercent = sum(u.CPUPercent, r.CPUPercent)
 	u.RSSBytes += r.RSSBytes
+	u.SwapBytes = sumBytes(u.SwapBytes, r.SwapBytes)
+	u.CompressedBytes = sumBytes(u.CompressedBytes, r.CompressedBytes)
+	u.Hogs = u.Hogs.merge(r.Hogs)
+	u.MemoryError = strings.TrimSpace(u.MemoryError + " " + r.MemoryError)
 	u.PerSecond = u.PerSecond.add(r.PerSecond)
 	u.Sockets, u.Connections = sumInt(u.Sockets, r.Sockets), sumInt(u.Connections, r.Connections)
 }
@@ -44,6 +56,10 @@ func (u *Usage) merge(other Usage) {
 	u.Processes += other.Processes
 	u.CPUPercent = sum(u.CPUPercent, other.CPUPercent)
 	u.RSSBytes += other.RSSBytes
+	u.SwapBytes = sumBytes(u.SwapBytes, other.SwapBytes)
+	u.CompressedBytes = sumBytes(u.CompressedBytes, other.CompressedBytes)
+	u.Hogs = u.Hogs.merge(other.Hogs)
+	u.MemoryError = strings.TrimSpace(u.MemoryError + " " + other.MemoryError)
 	u.PerSecond = u.PerSecond.add(other.PerSecond)
 	u.Sockets, u.Connections = sumInt(u.Sockets, other.Sockets), sumInt(u.Connections, other.Connections)
 }
@@ -71,6 +87,17 @@ func sumInt(a, b *int) *int {
 		if a == nil {
 			return clone(b)
 		}
+		return a
+	}
+	total := *a + *b
+	return &total
+}
+
+func sumBytes(a, b *uint64) *uint64 {
+	if a == nil {
+		return clone(b)
+	}
+	if b == nil {
 		return a
 	}
 	total := *a + *b

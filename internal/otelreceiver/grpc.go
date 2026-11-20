@@ -3,6 +3,7 @@ package otelreceiver
 import (
 	"context"
 
+	"go.opentelemetry.io/collector/pdata/pprofile/pprofileotlp"
 	"go.opentelemetry.io/collector/pdata/ptrace/ptraceotlp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -26,5 +27,6 @@ func (r *Receiver) GRPCServer(requireAuth bool) *grpc.Server {
 		return handler(ctx, request)
 	}))
 	ptraceotlp.RegisterGRPCServer(server, r)
+	pprofileotlp.RegisterGRPCServer(server, &profilesGRPC{receiver: r})
 	return server
 }

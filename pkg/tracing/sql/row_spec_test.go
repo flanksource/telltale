@@ -55,12 +55,19 @@ var _ = Describe("a statement row", func() {
 		Expect(order).To(Equal([]string{
 			"startedAt", "sql", "op", "tables", "durationMs", "rows",
 			"connection", "driver", "error", "args", "repeatKey", "truncated",
+			"operationId", "traceId", "spanId", "api", "batchSize", "sqlUnavailableReason",
+			"phase", "incomplete", "completion",
+			"database", "engine",
 		}))
 		Expect(shapes).To(Equal(map[string]shape{
 			"startedAt": {Label: "Time"}, "sql": {Label: "Statement"}, "op": {Label: "Op"},
 			"tables": {Label: "Tables"}, "durationMs": {Label: "Duration"}, "rows": {Label: "Rows"},
 			"connection": {Label: "Connection", DefaultHidden: true}, "driver": {Label: "Driver", DefaultHidden: true},
 			"error": {Hidden: true}, "args": {Hidden: true}, "repeatKey": {Hidden: true}, "truncated": {Hidden: true},
+			"operationId": {Hidden: true}, "traceId": {Hidden: true}, "spanId": {Hidden: true},
+			"api": {DefaultHidden: true}, "batchSize": {DefaultHidden: true}, "sqlUnavailableReason": {DefaultHidden: true},
+			"phase": {DefaultHidden: true}, "incomplete": {DefaultHidden: true}, "completion": {DefaultHidden: true},
+			"database": {DefaultHidden: true}, "engine": {DefaultHidden: true},
 		}))
 	})
 

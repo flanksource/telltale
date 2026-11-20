@@ -1,6 +1,7 @@
 package telltale
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,7 +22,8 @@ const enabledKey = "enabled"
 // StartRequest is a run as a client asks for it: what to run (a shell
 // command, a pid, or neither for a host run) and what to trace, either a
 // stored trace definition by name or, per kind, whether to arm it and its
-// params (the shape StartSchema describes), never both.
+// params (the shape StartSchema describes) or an array of such objects, each
+// its own capture, never both.
 type StartRequest struct {
 	// Definition names the stored trace definition whose captures the run
 	// arms.
@@ -69,6 +71,9 @@ type Definitions interface {
 // RequestedCapture is one enabled capture of a StartRequest's traces.
 type RequestedCapture struct {
 	Kind string
+	// Pointer is the capture's JSON pointer in the request: /traces/<kind>,
+	// or /traces/<kind>/<index> for an element of a kind's array.
+	Pointer string
 	// Params are the kind's params as the request gives them, without the
 	// enabled switch and the target.
 	Params map[string]any
@@ -78,24 +83,57 @@ type RequestedCapture struct {
 	Seam target.Seam
 }
 
-// Captures are the request's enabled captures by kind, and the fields of
-// those it cannot read.
+// Captures are the request's enabled captures by kind, a kind's object or
+// each element of its array, and the fields of those it cannot read.
 func (r StartRequest) Captures() ([]RequestedCapture, []FieldError) {
 	var captures []RequestedCapture
 	var fields []FieldError
 	for _, kind := range slices.Sorted(maps.Keys(r.Traces)) {
-		capture, enabled, err := requestedCapture(kind, r.Traces[kind])
+		elements, err := captureElements("/traces/"+kind, r.Traces[kind])
 		if err != nil {
 			fields = append(fields, FieldError{InstancePath: "/traces/" + kind, Message: err.Error()})
-		} else if enabled {
-			captures = append(captures, capture)
+			continue
+		}
+		for _, element := range elements {
+			capture, enabled, err := requestedCapture(kind, element.pointer, element.raw)
+			if err != nil {
+				fields = append(fields, FieldError{InstancePath: element.pointer, Message: err.Error()})
+			} else if enabled {
+				captures = append(captures, capture)
+			}
 		}
 	}
 	return captures, fields
 }
 
-func requestedCapture(kind string, raw json.RawMessage) (RequestedCapture, bool, error) {
-	capture := RequestedCapture{Kind: kind}
+// captureElement is one capture's raw object at its request pointer.
+type captureElement struct {
+	pointer string
+	raw     json.RawMessage
+}
+
+// captureElements are a kind's captures in request order: its one object at
+// pointer, or each element of its array at pointer/<index>.
+func captureElements(pointer string, raw json.RawMessage) ([]captureElement, error) {
+	if trimmed := bytes.TrimSpace(raw); len(trimmed) == 0 || trimmed[0] != '[' {
+		return []captureElement{{pointer: pointer, raw: raw}}, nil
+	}
+	var list []json.RawMessage
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return nil, fmt.Errorf("want an object or an array of objects: %w", err)
+	}
+	if len(list) == 0 {
+		return nil, errors.New("want an object or a non-empty array of objects")
+	}
+	elements := make([]captureElement, len(list))
+	for index, element := range list {
+		elements[index] = captureElement{pointer: fmt.Sprintf("%s/%d", pointer, index), raw: element}
+	}
+	return elements, nil
+}
+
+func requestedCapture(kind, pointer string, raw json.RawMessage) (RequestedCapture, bool, error) {
+	capture := RequestedCapture{Kind: kind, Pointer: pointer}
 	if err := json.Unmarshal(raw, &capture.Params); err != nil || capture.Params == nil {
 		return capture, false, fmt.Errorf("want an object: %v", err)
 	}

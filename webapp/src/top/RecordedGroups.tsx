@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@flanksource/clicky-ui/components";
-import { followTraceRecords, type CaptureResult, type RunTraces, type TraceRecord } from "../traces/api";
-import { framesFromRecords, PROCESS_GROUPS_KIND, type Frame } from "./api";
+import { failure, type CaptureResult, type RunTraces } from "../traces/api";
+import { PROCESS_GROUPS_KIND, type Frame } from "./api";
 import { CpuChart } from "./charts";
 import { GroupsFilterBar, GroupsTable } from "./GroupsTable";
 import { viewGroups, type GroupsView } from "./groups";
@@ -13,33 +13,39 @@ export function processGroupsCapture(run: RunTraces): CaptureResult | undefined 
 
 interface Loaded {
   seq: number;
-  rows: TraceRecord[];
   frames: Frame[];
 }
 
 /** Replay and follow the capture, retaining received rows across retries. */
 function useRecordedFrames(run: RunTraces, capture: CaptureResult) {
   const { ref } = capture;
-  const loaded = useRef<Loaded>({ seq: ref.afterSeq ?? 0, rows: [], frames: [] });
+  const loaded = useRef<Loaded>({ seq: 0, frames: [] });
   const [state, setState] = useState<{ data: Frame[]; pending: boolean; ended: boolean; error?: Error }>({ data: [], pending: true, ended: false });
   const [attempt, setAttempt] = useState(0);
-  const { kind, stream, afterSeq, toSeq } = ref;
+  const { stream } = ref;
   useEffect(() => {
     setState(previous => ({ ...previous, pending: true, error: undefined }));
-    return followTraceRecords({
-      mount: run.mount,
-      ref: { kind, stream, afterSeq: Math.max(afterSeq ?? 0, loaded.current.seq), ...(toSeq ? { toSeq } : {}) },
-      onOpen: () => setState(previous => ({ ...previous, pending: false, error: undefined })),
-      onRow: row => {
-        const rows = [...loaded.current.rows, row];
-        const frames = framesFromRecords(rows);
-        loaded.current = { seq: row.seq as number, rows, frames };
-        setState({ data: frames, pending: false, ended: false });
-      },
-      onError: error => setState(previous => ({ ...previous, pending: false, error })),
-      onEnd: () => setState(previous => ({ ...previous, pending: false, ended: true, error: undefined })),
-    });
-  }, [run.mount, kind, stream, afterSeq, toSeq, attempt]);
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const load = async () => {
+      try {
+        const params = new URLSearchParams({ stream, afterSeq: String(loaded.current.seq) });
+        const response = await fetch(`${run.mount}/process/groups?${params}`, { signal: controller.signal });
+        if (!response.ok) throw await failure(response, "Read recorded process groups");
+        const page = await response.json() as { highSeq: number; frames: Frame[] };
+		if (!Number.isSafeInteger(page.highSeq) || page.highSeq < loaded.current.seq || !Array.isArray(page.frames) || page.frames.some(frame => !Number.isSafeInteger(frame.tick) || frame.tick <= 0 || !Array.isArray(frame.groups))) throw new Error("Invalid process group frames or sequence");
+        if (controller.signal.aborted) return;
+        const frames = [...loaded.current.frames, ...page.frames];
+        loaded.current = { seq: page.highSeq, frames };
+        setState({ data: frames, pending: false, ended: run.status !== "running" });
+        if (run.status === "running") timer = setTimeout(() => void load(), 1000);
+      } catch (error) {
+        if (!controller.signal.aborted) setState(previous => ({ ...previous, pending: false, error: error instanceof Error ? error : new Error(String(error)) }));
+      }
+    };
+    void load();
+    return () => { controller.abort(); if (timer) clearTimeout(timer); };
+  }, [run.mount, run.status, stream, attempt]);
   return { ...state, refetch: () => setAttempt(previous => previous + 1) };
 }
 
@@ -61,11 +67,7 @@ export function RecordedGroups({ run, view, onViewChange }: RecordedGroupsProps)
 function RecordedFrames({ run, capture, view, onViewChange }: RecordedGroupsProps & { capture: CaptureResult }) {
   const query = useRecordedFrames(run, capture);
   const [picked, setPicked] = useState<number | null>(null);
-  // While the run records, rows of the newest tick are still arriving: its frame is whole once a later tick has begun.
-  const frames = useMemo(() => {
-    const read = query.data;
-    return run.status === "running" && !query.ended && read.length > 1 ? read.slice(0, -1) : read;
-  }, [query.data, query.ended, run.status]);
+  const frames = query.data;
   const index = picked === null ? frames.length - 1 : Math.min(picked, frames.length - 1);
   const frame = frames[index];
   return (

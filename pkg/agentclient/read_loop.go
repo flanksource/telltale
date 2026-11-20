@@ -10,42 +10,41 @@ import (
 
 var ErrProtocol = errors.New("agent protocol error")
 
-func (a *Agent) readLoop() {
+func (w *wireTransport) readLoop() {
 	var cause error
 	defer func() {
-		_ = a.stream.Close()
-		a.mu.Lock()
-		a.failure = cause
-		sessions := make([]*Session, 0, len(a.sessions))
-		for _, session := range a.sessions {
+		_ = w.stream.Close()
+		w.mu.Lock()
+		sessions := make([]*Session, 0, len(w.sessions))
+		for _, session := range w.sessions {
 			sessions = append(sessions, session)
 		}
-		a.mu.Unlock()
+		w.mu.Unlock()
 		for _, session := range sessions {
 			session.finish(protocol.Ended{Session: session.ID, Error: cause.Error()})
 		}
-		close(a.done)
+		w.agent.fail(cause)
 	}()
 	for {
-		frame, data, err := a.conn.Read()
+		frame, data, err := w.conn.Read()
 		if err != nil {
 			cause = fmt.Errorf("agent connection closed: %w", err)
 			return
 		}
-		if err := a.dispatchFrame(frame, data); err != nil {
+		if err := w.dispatchFrame(frame, data); err != nil {
 			cause = err
 			return
 		}
 	}
 }
 
-func (a *Agent) dispatchFrame(frame protocol.Envelope, data []byte) error {
+func (w *wireTransport) dispatchFrame(frame protocol.Envelope, data []byte) error {
 	if frame.Type == protocol.TypeResult {
-		return a.dispatchResult(frame.Body)
+		return w.dispatchResult(frame.Body)
 	}
 	if frame.Type == protocol.TypePong {
 		select {
-		case a.pong <- struct{}{}:
+		case w.pong <- struct{}{}:
 		default:
 		}
 		return nil
@@ -59,35 +58,35 @@ func (a *Agent) dispatchFrame(frame protocol.Envelope, data []byte) error {
 	if frame.Type == protocol.TypeArmed && event.Session == "" {
 		return fmt.Errorf("%w: armed frame has no session", ErrProtocol)
 	}
-	a.mu.Lock()
-	session := a.sessions[event.Session]
-	a.mu.Unlock()
+	w.mu.Lock()
+	session := w.sessions[event.Session]
+	w.mu.Unlock()
 	if session == nil {
 		return nil
 	}
-	return a.dispatchSession(session, frame, data)
+	return w.dispatchSession(session, frame, data)
 }
 
-func (a *Agent) dispatchResult(raw json.RawMessage) error {
+func (w *wireTransport) dispatchResult(raw json.RawMessage) error {
 	var result protocol.Result
 	if err := json.Unmarshal(raw, &result); err != nil {
 		return fmt.Errorf("%w: decode result: %w", ErrProtocol, err)
 	}
-	a.mu.Lock()
-	call := a.calls[result.CallID]
-	if a.callSeen[result.CallID] {
-		a.mu.Unlock()
+	w.mu.Lock()
+	call := w.calls[result.CallID]
+	if w.callSeen[result.CallID] {
+		w.mu.Unlock()
 		return fmt.Errorf("%w: duplicate result %q", ErrProtocol, result.CallID)
 	}
-	a.callSeen[result.CallID] = true
-	a.mu.Unlock()
+	w.callSeen[result.CallID] = true
+	w.mu.Unlock()
 	if call != nil && !deliver(call, result) {
 		return fmt.Errorf("%w: duplicate result %q", ErrProtocol, result.CallID)
 	}
 	return nil
 }
 
-func (a *Agent) dispatchSession(s *Session, frame protocol.Envelope, data []byte) error {
+func (w *wireTransport) dispatchSession(s *Session, frame protocol.Envelope, data []byte) error {
 	switch frame.Type {
 	case protocol.TypeArmed:
 		return s.receiveArmed(frame.Body)
@@ -119,9 +118,7 @@ func (a *Agent) dispatchSession(s *Session, frame protocol.Envelope, data []byte
 			return fmt.Errorf("%w: decode ended: %w", ErrProtocol, err)
 		}
 		s.finish(value)
-		a.mu.Lock()
-		delete(a.sessions, s.ID)
-		a.mu.Unlock()
+		w.forget(s)
 	default:
 		return fmt.Errorf("%w: unexpected frame %q", ErrProtocol, frame.Type)
 	}

@@ -4,7 +4,7 @@
 
 ## SQL Server
 
-Configure a SQL Server connection using the [connection configuration](../README.md) and pass its `connection://name` reference. These captures need neither a local PID nor a command. An empty database filter selects the connection's database; `--databases '*'` selects all databases. Filters accept exact names, `*` wildcards, and `!` exclusions.
+Configure a SQL Server connection using the [connection configuration](https://github.com/flanksource/telltale#connections) and pass its `connection://name` reference. These captures need neither a local PID nor a command. An empty database filter selects the connection's database; `--databases '*'` selects all databases. Filters accept exact names, `*` wildcards, and `!` exclusions.
 
 ```sh
 telltale run sql_xevent --connection connection://orders --session-name diagnostic --min-duration 10ms --duration 30s
@@ -41,7 +41,7 @@ telltale agents install java --pid 1234 --directory /home/example/.local/share/t
 telltale run jvm_jfr --seam agent --pid 1234 --duration 30s --every 10s
 ```
 
-Installation stages a versioned artifact under the chosen absolute directory, verifies its SHA-256 on the destination, rechecks process identity, and invokes the Java Attach helper. Local discovery files and staged credentials are private. Repeating a compatible local install reuses the authenticated agent; an incompatible agent requires restarting the JVM. `--dry-run` returns the destination and artifact hash without copying or attaching.
+Installation stages a versioned artifact under the chosen absolute directory, verifies its SHA-256 on the destination, rechecks process identity, and invokes the Java Attach helper. Local discovery files and staged credentials are private. Repeating a compatible local install reuses the authenticated agent. Add `--upgrade` to replace an idle attached runtime without restarting its JVM; stop captures and restore patches first. Agents installed before the upgrade-capable launcher need one JVM restart to adopt it. `--dry-run` returns the destination and artifact hash without copying or attaching. See [runtime upgrades](jvm-diagnostics-port.md#upgrade-an-attached-runtime).
 
 Remote agents dial out to a Telltale server. Create an agent-scope token as the user that runs the hub (it is minted into the global config dir, `~/.config/telltale/agent-tokens`), save the printed value in a private file, and give that file to the installer with `--token-file`. The token value is never a command argument. The hub URL must use HTTP or HTTPS and be reachable both from the target JVM and the installer. Use HTTPS outside a trusted development network. If the hub protects its agent-list API, provide an API-scope token through `TELLTALE_API_TOKEN` to verify readiness.
 
@@ -53,9 +53,13 @@ telltale agents install java --destination kubernetes --context development --na
 telltale agents list --server https://telltale.example.com
 ```
 
-SSH uses native SSH configuration, batch authentication, and optionally `--ssh-config`. Kubernetes uses native kubeconfig and requires explicit namespace, pod, and container. Destinations require POSIX `ps`, `install`, `dd`, `mv`, `rm`, `uname`, and `sha256sum` (or `shasum` on macOS). The installer copies and attaches the agent; profiling then uses the agent protocol.
+SSH uses native SSH configuration, batch authentication, and optionally `--ssh-config`. Kubernetes uses native kubeconfig, or `--kubeconfig` and `--context`, and requires explicit namespace, pod, and container.
+
+`telltale agents install java` is the same command as `telltale jvm deploy`. Instead of a hub, a Kubernetes JVM can verify short-lived tokens itself: name a target (`telltale agents install java --namespace shop sts/orders`), or add `--issuer connection://<ns>/<name>`, and the command deploys a Deployer built from the flags, signed by `connection://telltale/issuer` unless you name another, reached later as `--agent deployer/<name>/<namespace>/<pod>` over a port-forward. Neither a hub nor a token file is needed. See [Deployers](jvm-diagnostics-port.md#deployers). Destinations require POSIX `ps`, `install`, `dd`, `mv`, `rm`, `uname`, and `sha256sum` (or `shasum` on macOS). The installer copies and attaches the agent; profiling then uses the agent protocol.
 
 Start remote captures in the connected hub's browser, selecting the agent seam and an agent ID or resource selector such as `service.name=orders`. Remote agent identities are namespaced and cannot be confused with a controller's local PID. A JVM disconnect releases its recordings; the dial-out connection retries with bounded backoff. Recording blobs are limited to 64 MiB.
+
+`telltale agents list` prints tables of locally discovered and connected agents plus saved, successfully deployed targets, grouped by namespace, cloud, or host. The tables show runtime, connection state, deployment state, and endpoint. Use `--format json` for structured output. Connected entries have `connected: true` and their live handshake details. Targets awaiting a connection have `connected: false` and a `known` record with their runtime language, names, last deployment state, and endpoint. Listing these records uses saved metadata; it does not open port-forwards or contact every target. `telltale agents get <id>` also shows these saved details. Use a JVM command such as `telltale jvm status --agent orders` to connect and inspect a target. With `--server`, listing reads the selected server's inventory from `GET /api/agents`. The browser's Agents page uses this same inventory and grouping, including saved targets and their JVM diagnostics link.
 
 ## HTTP API and browser
 
@@ -67,6 +71,12 @@ Start remote captures in the connected hub's browser, selecting the agent seam a
 
 ```json
 {"traces":{"sql_deadlock":{"enabled":true,"connection":"connection://orders","from":"2026-10-28T08:00:00Z","to":"2026-10-28T09:00:00Z"}}}
+```
+
+A kind may instead be an array of such objects, each its own capture with its own target and params; refusals of an element are reported at `/traces/<kind>/<index>`:
+
+```json
+{"traces":{"sql_deadlock":[{"enabled":true,"connection":"connection://orders"},{"enabled":true,"connection":"connection://billing"}]}}
 ```
 
 Use the run's existing result/export routes to read stored rows and the checkpoint route for JFR. The generated `/api/openapi.json` also exposes `agents install java` and the single-kind run commands. Installer API calls execute on the server and therefore use its filesystem, SSH configuration, and kubeconfig.

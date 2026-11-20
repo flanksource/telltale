@@ -45,22 +45,25 @@ const (
 	// ScopeAPI authorizes the HTTP API.
 	ScopeAPI   Scope = "api"
 	ScopeAgent Scope = "agent"
+	ScopeProxy Scope = "proxy"
 )
 
 // ParseScope validates a scope selector, naming the alternatives.
 func ParseScope(value string) (Scope, error) {
 	switch scope := Scope(strings.ToLower(strings.TrimSpace(value))); scope {
-	case ScopeGit, ScopeAPI, ScopeAgent:
+	case ScopeGit, ScopeAPI, ScopeAgent, ScopeProxy:
 		return scope, nil
 	case "":
-		return "", fmt.Errorf("a token scope is required; want one of: %s, %s, %s", ScopeGit, ScopeAPI, ScopeAgent)
+		return "", fmt.Errorf("a token scope is required; want one of: %s, %s, %s, %s", ScopeGit, ScopeAPI, ScopeAgent, ScopeProxy)
 	default:
-		return "", fmt.Errorf("invalid token scope %q; want one of: %s, %s, %s", value, ScopeGit, ScopeAPI, ScopeAgent)
+		return "", fmt.Errorf("invalid token scope %q; want one of: %s, %s, %s, %s", value, ScopeGit, ScopeAPI, ScopeAgent, ScopeProxy)
 	}
 }
 
 // Valid reports whether s names a scope.
-func (s Scope) Valid() bool { return s == ScopeGit || s == ScopeAPI || s == ScopeAgent }
+func (s Scope) Valid() bool {
+	return s == ScopeGit || s == ScopeAPI || s == ScopeAgent || s == ScopeProxy
+}
 
 // nameRe is the shape a token name must take. It is the §3.2 ref-segment shape
 // deliberately, not by coincidence: a git-scoped token's name becomes an agent

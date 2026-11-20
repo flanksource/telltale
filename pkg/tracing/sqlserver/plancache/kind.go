@@ -132,5 +132,5 @@ func (handler) Checkpoint(ctx dbcontext.Context, _ Params, out tracing.Emitter[S
 }
 
 func Kind() *tracing.Handler[Params, Sample] {
-	return tracing.NewHandler[Params, Sample](handler{}, tracing.Capabilities{Follow: true}, target.Connection)
+	return tracing.NewHandler[Params, Sample](handler{}, tracing.Capabilities{Follow: true}, target.Connection).WithTop(topSpec())
 }

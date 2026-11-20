@@ -12,7 +12,6 @@ import (
 
 	"github.com/flanksource/telltale/pkg/definition"
 	"github.com/flanksource/telltale/pkg/traces"
-	"github.com/flanksource/telltale/pkg/tracing/process"
 )
 
 // path is a list's path, section.group.type.
@@ -40,14 +39,17 @@ var kindProviders = []string{"recordstore", "sqlserver-xevent", "legacy-trace"}
 var _ = Describe("the typed lists", func() {
 	lists := definition.Lists()
 
-	It("map every registered kind to a list", func() {
-		// collect.process.tree configures the run-wide process tree, which
-		// every command or pid run records, rather than arming a capture.
-		covered := map[string]bool{process.TreeKind: true}
+	It("map every registered kind to a list, a seam preset to one of its base kind on its seam", func() {
+		covered := map[string]bool{}
 		for _, at := range lists {
 			covered[at.Kind] = true
+			covered[at.Kind+"@"+string(at.Seam)] = true
 		}
 		for _, registration := range traces.Registrations() {
+			if registration.Base != "" {
+				Expect(covered).To(HaveKey(registration.Base+"@"+string(registration.DefaultSeam)), "no list compiles to %s, the base of preset %s, on seam %s", registration.Base, registration.Name, registration.DefaultSeam)
+				continue
+			}
 			Expect(covered).To(HaveKey(registration.Name), "no list compiles to %s", registration.Name)
 		}
 	})

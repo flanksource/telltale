@@ -59,16 +59,18 @@ type source struct {
 	// page budget for one sample. capacity never exceeds it.
 	drainLimit int
 
-	mu      sync.Mutex
-	space   chan struct{}
-	rows    []recordstore.Row
-	sizes   []int
-	bytes   int
-	base    int64
-	running bool
-	frozen  bool
-	summary Summary
-	err     error
+	mu        sync.Mutex
+	space     chan struct{}
+	rows      []recordstore.Row
+	sizes     []int
+	bytes     int
+	base      int64
+	sampleEnd int64
+	sampling  bool
+	running   bool
+	frozen    bool
+	summary   Summary
+	err       error
 
 	// warnings are the kind's, which the session ends with; handle and
 	// metadata are what it described its session with.
@@ -310,6 +312,10 @@ func (s *source) Read(_ context.Context, cursor probe.Cursor) (probe.Batch, erro
 		return probe.Batch{}, fmt.Errorf("trace capture %s: cursor %d is before the committed %d", s.generation, cursor.Next, s.base)
 	}
 	write := s.base + int64(len(s.rows))
+	if !s.sampling {
+		s.sampleEnd, s.sampling = write, true
+	}
+	write = s.sampleEnd
 	next := min(write, cursor.Next+pageRows)
 	return probe.Batch{
 		Generation: s.generation, Next: next, Write: write, More: next < write, Active: s.running,
@@ -346,6 +352,9 @@ func (s *source) distinct(page []recordstore.Row) []recordstore.Row {
 func (s *source) Commit(_ context.Context, batch probe.Batch) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if !batch.More && batch.Next == s.sampleEnd {
+		s.sampling = false
+	}
 	if batch.Next <= s.base {
 		return nil
 	}
@@ -368,7 +377,13 @@ func (s *source) Freeze(ctx context.Context) error {
 	s.frozen = true
 	s.signalSpaceLocked()
 	s.mu.Unlock()
-	return s.wait(ctx)
+	if err := s.wait(ctx); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.sampling = false
+	s.mu.Unlock()
+	return nil
 }
 
 func (s *source) Finalize(context.Context) (probe.Final, error) {

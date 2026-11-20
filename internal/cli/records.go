@@ -19,6 +19,7 @@ func newRecordsCommand() *cobra.Command {
 	var since, from, until, groupBy, view string
 	var cols []string
 	var follow bool
+	var frame, source, metric string
 	cmd := &cobra.Command{
 		Use: "records <kind>", Short: "Read, follow, or aggregate a run's stored records", Args: cobra.ExactArgs(1),
 		Long: `Read stored trace records through the kind's query profile. By default, select the newest run containing the kind and return up to 100 rows in profile order.
@@ -27,12 +28,12 @@ func newRecordsCommand() *cobra.Command {
 
 --filter uses profile column grammar, e.g. pid=123 or rssBytes=>=1048576. --where uses CEL with a row binding, e.g. row.cpuPercent != null && row.cpuPercent > 10. --limit applies after CEL; --all reads every matching row. A continuation cursor is printed to stderr when more rows remain.
 
---stats aggregates all matching rows unless --limit is explicitly set. Nulls are skipped. Percentiles use nearest rank, exact through 8192 values per column/group, then an 8192-value reservoir; approximate=true identifies sampling. At most 1024 groups, 64 columns, and 1024 column/group pairs are allowed (64 MiB of reservoir values). --group-by alone counts rows. --view runs a named kind view over the seq window; row filters and time bounds require --stats instead.`,
-		Example: `  telltale records process_samples --json
-  telltale records process_samples --since 2h --filter 'rssBytes=>=1048576' --where 'row.cpuPercent > 10' --all
-  telltale records process_samples --run run-2026-10-28T09-00-00Z --follow --format ndjson
-  telltale records process_samples --stats cpuPercent,rssBytes --group-by pid
-  telltale records process_samples --group-by pid --format csv
+--stats aggregates all matching rows unless --limit is explicitly set. Nulls are skipped. Percentiles use nearest rank, exact through 8192 values per column/group, then an 8192-value reservoir; approximate=true identifies sampling. At most 1024 groups, 64 columns, and 1024 column/group pairs are allowed (64 MiB of reservoir values). --group-by alone counts rows. --view top reads one completed sample, supports native filters, CEL, metric ordering and paging; --frame selects a historical sample. Other named views read the seq window; row filters and time bounds require --stats instead.`,
+		Example: `  telltale records process --json
+  telltale records process --result metrics --since 2h --filter 'rssBytes=>=1048576' --where 'row.cpuPercent > 10' --all
+  telltale records process --result facets --run <run-id> --follow --format ndjson
+  telltale records process --result metrics --stats cpuPercent,rssBytes --group-by entity
+  telltale records process --result metrics --group-by entity --format csv
   telltale records spans --run receiver --filter service=checkout --limit 5
   telltale records spans --run receiver --stats durationMs --group-by operation
   telltale records spans --run receiver --follow
@@ -47,6 +48,24 @@ func newRecordsCommand() *cobra.Command {
 				return err
 			}
 			defer func() { err = errors.Join(err, selected.Close()) }()
+			if aggregate.View == "top" {
+				if len(selected.Refs) != 1 {
+					return fmt.Errorf("top requires exactly one capture; select --run and its kind")
+				}
+				result, err := read.Top(cmd.Context(), selected.Refs[0], read.TopQuery{Frame: frame, Source: source, Metric: metric, Query: q})
+				if err != nil {
+					return err
+				}
+				if result.NextCursor != "" {
+					_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Next cursor:", result.NextCursor)
+				}
+				switch clicky.Flags.ResolveFormat() {
+				case "json", "ndjson", "yaml", "csv":
+					return printRecords(cmd, result.Rows)
+				default:
+					return printRecords(cmd, result.Display)
+				}
+			}
 			if aggregate.Follow {
 				return read.FollowSelection(cmd.Context(), selected.Refs, q, recordPrinter(cmd))
 			}
@@ -102,6 +121,7 @@ func newRecordsCommand() *cobra.Command {
 	f := cmd.Flags()
 	bindDataDir(f, &scope.DataDir)
 	f.StringVar(&scope.Run, "run", "", "Run id (default: newest containing the kind)")
+	f.StringVar(&scope.Result, "result", "", "Named result table, e.g. process --result metrics or --result facets")
 	f.StringSliceVar(&scope.Runs, "runs", nil, "Comma-separated run ids")
 	f.StringVar(&since, "since", "", "Run-start cutoff and default row-time start: duration or RFC3339")
 	f.StringVar(&from, "from", "", "Inclusive row-time start (RFC3339); overrides --since's row window")
@@ -118,6 +138,11 @@ func newRecordsCommand() *cobra.Command {
 	f.StringSliceVar(&cols, "stats", nil, "Numeric columns to aggregate, comma-separated")
 	f.StringVar(&groupBy, "group-by", "", "Group aggregates by this column; alone counts rows")
 	f.StringVar(&view, "view", "", "Named ResultView to run over the selected seq window")
+	f.StringVar(&frame, "frame", "", "Completed sample id for --view top (default: latest)")
+	f.StringVar(&source, "source", "", "Sample source for --view top")
+	f.StringVar(&metric, "metric", "", "Profile measurement for --view top")
+	f.StringVar(&q.Sort, "sort", "", "Native profile column sort key")
+	f.BoolVar(&q.Desc, "desc", false, "Sort descending")
 	return cmd
 }
 

@@ -34,6 +34,41 @@ spec:
       pprof:
         - profile: mutex
     jvm:
+      http:
+        - agent: {selector: {service.name: example}}
+          features: [http]
+      httpTop:
+        - agent: {selector: {service.name: example}}
+          direction: both
+      sql:
+        - agent: {selector: {service.name: example}}
+      sqlTop:
+        - agent: {selector: {service.name: example}}
+          poll: 5s
+      jms:
+        - agent: {selector: {service.name: example}}
+          direction: both
+      jmsTop:
+        - agent: {selector: {service.name: example}}
+          poll: 1s
+          destinations: [orders]
+      spans:
+        - agent: {selector: {service.name: example}}
+      notifications:
+        - agent: {selector: {service.name: example}}
+          mbean: 'java.lang:type=GarbageCollector,*'
+      expressions:
+        - agent: {selector: {service.name: example}}
+          expression: '@java.lang.Runtime@getRuntime().freeMemory()'
+          intervalMs: 1000
+      methods:
+        - agent: {selector: {service.name: example}}
+          targets: [{class: example.Worker, method: compute}]
+      redefine:
+        - agent: {selector: {service.name: example}}
+          class: example.Worker
+          method: compute
+          source: 'public int compute() { return 7; }'
       flightRecorder:
         - settings: profile
       asyncProfiler:
@@ -61,6 +96,22 @@ spec:
         - minLevel: warn
       spans:
         - {}
+    clicky:
+      exec:
+        - executable: git
+      entity:
+        - entity: widget
+          errorsOnly: true
+      task:
+        - taskName: "deploy *"
+          progressIntervalMs: 5000
+      http:
+        - features: [http]
+      logs:
+        - minLevel: warn
+      pprof:
+        - source: pprof
+          profile: goroutine
     process:
       tree:
         facets: true
@@ -69,7 +120,7 @@ spec:
         - {}
       resources:
         - interval: 1s
-          facets: [ports]
+          facets: [sockets]
     logs:
       kubernetes:
         - namespace: checkout
@@ -125,8 +176,8 @@ spec:
           params: {namespace: checkout}
           every: 30s
     host:
-      processGroups:
-        - groups: [claude]
+      processes:
+        - facets: [files, sockets, connections]
     prometheus:
       scrape:
         - endpoints: [http://localhost:8080/metrics]
@@ -142,6 +193,13 @@ spec:
         - poll: 30s
       deadlockReport:
         - {}
+      top:
+        - minElapsed: 500ms
+          top: 20
+    postgres:
+      top:
+        - poll: 2s
+          idle: true
     telltale:
       http:
         - features: [http]

@@ -114,9 +114,12 @@ describe("OpenTelemetry search API", () => {
     expect(await (await fetch(`${apiURL}/api/otel/sources`)).json()).toEqual([
       { id: "records", name: "Recorded traces", type: "records" },
     ]);
-    expect(
-      await (await fetch(`${apiURL}/api/openapi.json`)).json(),
-    ).toHaveProperty("paths./api/otel");
+    const spec = await (await fetch(`${apiURL}/api/openapi.json`)).json();
+    expect(spec).toHaveProperty("paths./api/otel");
+    expect(spec).toHaveProperty("paths./v1/profiles.post.parameters", [
+      expect.objectContaining({ name: "OTLP-Profiles-Development-Version", in: "header", required: true }),
+    ]);
+    expect((await fetch(`${apiURL}/v1/profiles`, { method: "POST" })).status).toBe(404);
   });
   it.each([
     "limit=1001",

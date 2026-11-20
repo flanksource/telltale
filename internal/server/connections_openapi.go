@@ -5,9 +5,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/flanksource/clicky/entity"
 	"github.com/flanksource/clicky/rpc"
 	"github.com/flanksource/commons-db/models"
-	"github.com/flanksource/telltale/sdk/protocol"
+	"github.com/flanksource/telltale"
+	"github.com/flanksource/telltale/internal/jvm"
+	"github.com/flanksource/telltale/pkg/agentclient"
 )
 
 func addConnectionPaths(spec *rpc.OpenAPISpec) {
@@ -22,6 +25,9 @@ func addConnectionPaths(spec *rpc.OpenAPISpec) {
 		"/api/v1/connection/{id}/browser/query":          {"POST"},
 		"/api/v1/connection/{id}/browser/filters/values": {"POST"},
 		"/api/agents":                                    {"GET"},
+		"/api/agents/{agent}/catalog":                    {"GET"},
+		"/api/agents/{agent}/call":                       {"POST"},
+		"/api/traces":                                    {"GET", "POST"},
 		"/api/traces/{run}/traces/{kind}/records":        {"GET"},
 	} {
 		item := rpc.OpenAPIPath{}
@@ -29,7 +35,27 @@ func addConnectionPaths(spec *rpc.OpenAPISpec) {
 			status := http.StatusOK
 			response := &rpc.OpenAPISchema{Type: "object"}
 			if path == "/api/agents" {
-				response = &rpc.OpenAPISchema{Type: "array", Items: rpc.SchemaForStruct(protocol.Hello{})}
+				item := rpc.SchemaForStruct(agentclient.Info{})
+				item.Required = []string{"agentId", "resource", "connected", "group"}
+				response = &rpc.OpenAPISchema{Type: "array", Items: item}
+			}
+			if strings.HasSuffix(path, "/catalog") {
+				response = &rpc.OpenAPISchema{Type: "array", Items: &rpc.OpenAPISchema{Type: "object", AdditionalProperties: &rpc.OpenAPISchema{}}}
+			}
+			if path == "/api/agents/{agent}/call" {
+				response = &rpc.OpenAPISchema{}
+			}
+			if path == "/api/traces" {
+				response = rpc.SchemaForStruct(telltale.RunsList{})
+				if method == "POST" {
+					status = http.StatusCreated
+					response = rpc.SchemaForStruct(telltale.MountedRun{})
+				}
+			}
+			if path == "/api/v1/connection" && method == "GET" {
+				response = &rpc.OpenAPISchema{OneOf: []*rpc.OpenAPISchema{
+					{Type: "array", Items: rpc.SchemaForStruct(models.Connection{})}, rpc.SchemaForStruct(entity.LookupResponse{}),
+				}}
 			}
 			if path == "/api/v1/connection" && method == "POST" {
 				status = http.StatusCreated
@@ -41,7 +67,12 @@ func addConnectionPaths(spec *rpc.OpenAPISpec) {
 				strconv.Itoa(status): {Description: "Success", Content: map[string]rpc.OpenAPIMediaType{"application/json": {Schema: response}}},
 				"400":                {Description: "Invalid request"}, "404": {Description: "Resource not found"}, "405": {Description: "Read-only resource"},
 			}}
-			for _, name := range []string{"id", "run", "kind"} {
+			if path == "/api/v1/connection" && method == "GET" {
+				for _, name := range []string{"type", "types", "__lookup", "__lookup_filter", "__lookup_q"} {
+					op.Parameters = append(op.Parameters, rpc.OpenAPIParameter{Name: name, In: "query", Schema: &rpc.OpenAPISchema{Type: "string"}})
+				}
+			}
+			for _, name := range []string{"id", "run", "kind", "agent"} {
 				if strings.Contains(path, "{"+name+"}") {
 					op.Parameters = append(op.Parameters, rpc.OpenAPIParameter{Name: name, In: "path", Required: true, Schema: &rpc.OpenAPISchema{Type: "string"}})
 				}
@@ -50,6 +81,15 @@ func addConnectionPaths(spec *rpc.OpenAPISpec) {
 				body := &rpc.OpenAPISchema{Type: "object", AdditionalProperties: &rpc.OpenAPISchema{}}
 				if path == "/api/v1/connection" || path == "/api/v1/connection/{id}" {
 					body = rpc.SchemaForStruct(models.Connection{})
+				}
+				if path == "/api/agents/{agent}/call" {
+					body = rpc.SchemaForStruct(jvm.Request{})
+					delete(body.Properties, "agent")
+					body.Properties["params"] = &rpc.OpenAPISchema{Type: "object", AdditionalProperties: &rpc.OpenAPISchema{}}
+					body.Required = []string{"operation"}
+				}
+				if path == "/api/traces" {
+					body = rpc.SchemaForStruct(telltale.StartRequest{})
 				}
 				op.RequestBody = &rpc.OpenAPIRequestBody{Required: true, Content: map[string]rpc.OpenAPIMediaType{"application/json": {Schema: body}}}
 			}

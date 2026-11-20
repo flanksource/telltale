@@ -28,6 +28,8 @@ var _ = Describe("prometheus params", func() {
 		Entry("a reserved label", prometheus.Options{Endpoints: []string{endpoint}, Labels: map[string]string{"__address__": "x"}}, `label "__address__" is reserved`),
 		Entry("telltale's own label", prometheus.Options{Endpoints: []string{endpoint}, Labels: map[string]string{"telltale_stream": "x"}}, `label "telltale_stream" is reserved`),
 		Entry("an invalid label name", prometheus.Options{Endpoints: []string{endpoint}, Labels: map[string]string{"app-name": "x"}}, `label "app-name"`),
+		Entry("a proxy path that escapes the service", prometheus.Options{Endpoints: []string{"proxy://exporter.monitoring/%2e%2e/metrics"}}, "dot segment"),
+		Entry("a proxy port that inserts a path", prometheus.Options{Endpoints: []string{"proxy://exporter.monitoring/metrics?port=http%2Fproxy"}}, "invalid port"),
 	)
 
 	It("accepts endpoints with a query, an interval, a timeout within it and labels", func() {
@@ -35,5 +37,14 @@ var _ = Describe("prometheus params", func() {
 			Endpoints: []string{endpoint, "https://exporter.example.com:9115/probe?module=http_2xx"},
 			Interval:  "5s", Timeout: "5s", Labels: map[string]string{"env": "dev"},
 		}.Validate()).To(Succeed())
+	})
+
+	It("validates direct and inline Kubernetes endpoints together without contacting Kubernetes", func() {
+		Expect(prometheus.Options{Endpoints: []string{
+			endpoint,
+			"port-forward://exporter.monitoring:9100/metrics",
+			"portforward://exporter-0.monitoring:9100/metrics?kind=pod",
+			"proxy://exporter.monitoring/probe?port=http&module=http_2xx",
+		}}.Validate()).To(Succeed())
 	})
 })

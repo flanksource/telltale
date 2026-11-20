@@ -20,7 +20,7 @@ import (
 const sqliteRead = `{"provider":{"type":"sql","sql":{"type":"sqlite","url":":memory:"},"query":%q}}`
 
 // readTimeout bounds a read, long enough for one whose connection starts the
-// managed Prometheus.
+// managed VictoriaMetrics.
 const readTimeout = 30 * time.Second
 
 // readOnce runs a query capture with params in dataDir to its end and summarizes it.

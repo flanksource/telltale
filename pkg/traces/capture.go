@@ -9,6 +9,7 @@ import (
 
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/telltale/pkg/tracing"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 )
 
 // Capture is one running capture: a managed session committing to its own
@@ -17,10 +18,13 @@ type Capture struct {
 	host    *Host
 	kind    string
 	managed *query.ManagedSession
+	target  target.Target
 }
 
 // Kind is the trace kind the capture records.
 func (c *Capture) Kind() string { return c.kind }
+
+func (c *Capture) Target() target.Target { return c.target }
 
 func (c *Capture) Finished() bool {
 	select {

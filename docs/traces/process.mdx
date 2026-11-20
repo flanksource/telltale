@@ -1,0 +1,35 @@
+# process
+
+import { KindReference } from '../_components/KindReference';
+
+Capture a process tree or the host with one kind and three tables:
+
+| Result | Storage | Contents |
+| --- | --- | --- |
+| Primary | `process` | Stable PID/start identity, parent, startup command, CWD, selected masked environment and grouping tags; observed exit updates the same row. |
+| `facets` | `process_facets` | Timestamp, tick, process identity, facet, entity, `added`/`removed`, descriptor and direction evidence. |
+| `metrics` | `process_metrics` | One numeric column per metric, keyed by process identity, observation time and tick. Unavailable values are NULL; measured zero stays zero. |
+
+```sh
+telltale run process --pid 1234 --facets files,sockets,connections --duration 30s
+telltale run process --seam host --duration 1m
+telltale records process --run <run-id>
+telltale records process --run <run-id> --result metrics --stats cpuPercent,rssBytes --group-by entity
+telltale records process --run <run-id> --result facets --follow
+telltale trace replay <run-id> --tui
+```
+
+Files and receiving sockets can be selected independently. Receiving sockets include TCP listeners and bound UDP sockets. Connections count established TCP peers, collapsed across concurrent sockets to the same remote endpoint: the first adds a peer and closing the last removes it. Listener history supplies inbound inference; a newly observed peer without a listener supplies outbound inference after the initial observation. Other initial peers remain unknown. UDP sockets are not TCP connections. Polling can miss short-lived resources, and unreadable descriptor observations do not remove resources. Observed process exits remove held resources with `reason: observed_exit`.
+
+Each observation commits identities, deltas and metrics in one transaction. Failed writes leave the observation state unchanged for retry. Metric columns are seeded, grow for newly encountered numeric metrics, and have a bounded count. Group totals are derived from startup grouping information and metric rows; group snapshots and full descriptor lists are not repeated in storage.
+
+The storage benchmark uses 20 processes with 100 file descriptors each, changes one file per tick and writes 100 observations to SQLite. On an Apple M2 Pro, repeated snapshots used 168,346 bytes per tick and 6.71 ms per write; the unified tables used 33,260 bytes and 5.99 ms. This is about 80% less disk use for that workload. Allocated bytes were slightly higher for the unified writer. Process and descriptor polling are measured separately; delta storage does not reduce the cost of discovering resources, and savings depend on resource churn.
+
+```sh
+go test ./pkg/tracing/processcapture -run '^$' -bench BenchmarkProcessObservationStorage -benchtime=100x -benchmem
+go test ./pkg/tracing/processcapture -run '^$' -bench BenchmarkProcessCollection -benchtime=3x -benchmem
+```
+
+`process_tree`, `process_samples` and `process_groups` recordings require the build that recorded them. This build leaves those files untouched and reports their format as unsupported.
+
+<KindReference kind="process" />

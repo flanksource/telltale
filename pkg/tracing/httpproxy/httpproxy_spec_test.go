@@ -154,6 +154,30 @@ var _ = Describe("http_proxy trace kind", func() {
 		Expect(string(stored)).ToNot(ContainSubstring(secret))
 	})
 
+	It("records an exchange through the http_proxy preset started with no params", func() {
+		upstream := httptest.NewServer(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, _ *nethttp.Request) {
+			_, _ = io.WriteString(w, "ok")
+		}))
+		DeferCleanup(upstream.Close)
+		presets := tracingtest.NewEnv(map[string]tracing.TracePlugin{httpproxy.ProxyKind: httpproxy.UnifiedKind(nil).Preset(httpproxy.ProxyPreset())})
+		managed, err := presets.Runtime.Start(dbcontext.New(), tracing.StartRequest{Kind: httpproxy.ProxyKind})
+		Expect(err).ToNot(HaveOccurred())
+		tracingtest.Running(managed.Session())
+		Expect(managed.Status().Metadata).To(ContainElement(MatchFields(IgnoreExtras, Fields{"Name": Equal("mode"), "Value": Equal("connect")})))
+		proxied, _ := client(managed, nil)
+		Expect(read(proxied.Get(upstream.URL + "/preset"))).To(Equal("ok"))
+
+		managed.Session().Stop("spec")
+		info := tracingtest.Ended(managed.Session())
+		Expect(info.Error).To(BeEmpty())
+		var recorded []tracehttp.Exchange
+		Expect(tracing.ReadRecords(context.Background(), presets.Runtime, tracing.TraceRef{Kind: httpproxy.ProxyKind, Stream: info.Events.Stream}, func(exchange tracehttp.Exchange) error {
+			recorded = append(recorded, exchange)
+			return nil
+		})).To(Succeed())
+		Expect(recorded).To(ConsistOf(HaveField("URL", upstream.URL+"/preset")))
+	})
+
 	It("records only the hosts and paths its globs name, still proxying the rest", func() {
 		upstream := httptest.NewServer(nethttp.HandlerFunc(func(w nethttp.ResponseWriter, _ *nethttp.Request) {
 			_, _ = io.WriteString(w, "ok")

@@ -25,6 +25,8 @@ var targets = []struct {
 		"The command is started with the variables the capture exports. They cannot attach to a running process."},
 	{target.Process, "Kinds that observe a process tree",
 		"They observe telltale's own tree, which holds the command, or the process --pid attaches to."},
+	{target.Agent, "Kinds read through an agent",
+		"They arm a probe in a process that embeds a telltale agent: the process --pid names, or the connected agents --selector matches."},
 	{target.Self, "Kinds that record telltale itself",
 		"They record telltale's own sources while the run lasts, nothing of the command."},
 	{target.Host, "Kinds that observe the whole host",
@@ -74,7 +76,7 @@ func runHelp(cmd *cobra.Command) helpText {
 	}
 	return h.section("Examples").
 		command("telltale run http --seam proxy --mode mitm -- curl -sS https://example.com", "decrypt and record a request").
-		command("telltale run process_samples --pid 1234 --facets ports --duration 1m", "sample a running process for a minute").
+		command("telltale run process --pid 1234 --facets sockets --duration 1m", "sample a running process for a minute").
 		command("telltale run stacks --every 10s -- ./server", "dump a server's stacks every 10 seconds").
 		section("See also").
 		command("telltale run <kind> --help", "a kind's params, exports and examples").

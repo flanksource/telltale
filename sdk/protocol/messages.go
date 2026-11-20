@@ -63,12 +63,19 @@ type ProbeSpec struct {
 	Checkpoints  bool            `json:"checkpoints"`
 	Mutates      bool            `json:"mutates"`
 	Reverts      bool            `json:"reverts"`
+	// Scope is the token scope a direct-HTTP agent requires to arm the probe.
+	Scope string `json:"scope,omitempty"`
+	// Version is the generation of parameters the probe accepts; zero for a
+	// probe that does not version them, or an agent that predates versioning.
+	Version int `json:"version,omitempty"`
 }
 type OpSpec struct {
 	Name         string          `json:"name"`
 	ParamsSchema json.RawMessage `json:"paramsSchema,omitempty"`
 	ResultSchema json.RawMessage `json:"resultSchema,omitempty"`
 	Mutates      bool            `json:"mutates"`
+	// Scope is the token scope a direct-HTTP agent requires to call the operation.
+	Scope string `json:"scope,omitempty"`
 }
 type Limits struct {
 	MaxRecords int64   `json:"maxRecords,omitempty"`
@@ -146,9 +153,10 @@ type Disarm struct {
 	Session string `json:"session"`
 }
 type Ended struct {
-	Session string `json:"session"`
-	Error   string `json:"error,omitempty"`
-	Dropped uint64 `json:"dropped"`
+	Session  string `json:"session"`
+	Error    string `json:"error,omitempty"`
+	Dropped  uint64 `json:"dropped"`
+	Complete bool   `json:"complete,omitempty"`
 }
 type Call struct {
 	CallID        string          `json:"callId"`

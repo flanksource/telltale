@@ -1,0 +1,17 @@
+# prometheus
+
+import { KindReference } from '../_components/KindReference';
+
+Scrapes Prometheus exporters using a managed VictoriaMetrics process. Captures report target health and store the metric samples directly in VictoriaMetrics.
+
+```sh
+telltale run prometheus --endpoints http://localhost:8080/metrics --interval 5s --duration 1m
+telltale run prometheus --endpoints port-forward://metrics-exporter.monitoring:9100/metrics --duration 1m
+telltale run prometheus --endpoints proxy://metrics-exporter.monitoring:9100/metrics --duration 1m
+telltale run prometheus --endpoints https://metrics.example.com/metrics --duration 1m
+```
+
+Mix direct HTTP(S) URLs and Kubernetes URLs in a comma-separated `--endpoints` list. Inline Kubernetes URLs use the credentials of the Telltale process running the capture. Replace `metrics-exporter`, `monitoring`, and `9100` with the Service name, namespace, and Service port. `portforward://` and `port-forward://` both open a tunnel for the capture. `proxy://` uses the Kubernetes API server's service proxy. Use `?kind=pod` with a pod name and port to target a specific pod. Telltale keeps the input URL in the `telltale_endpoint` label.
+
+The first capture installs and starts VictoriaMetrics. `--endpoints` accepts multiple URLs, `--interval` defaults to 15 seconds, `--timeout` bounds a scrape, and `--labels` adds labels to samples. Query samples at the URL shown by the run or through the read-only `telltale-prometheus` connection. Start `telltale serve --prometheus` with the same `--data-dir` to reuse the instance and keep samples queryable between captures. Samples persist across restarts.
+<KindReference kind="prometheus" />

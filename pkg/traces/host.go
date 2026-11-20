@@ -29,6 +29,7 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing/process"
 	"github.com/flanksource/telltale/pkg/tracing/prometheus"
 	"github.com/flanksource/telltale/pkg/tracing/stacks"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 )
 
 // Dir is where a data dir keeps its runs' trace stores, one directory each.
@@ -59,23 +60,12 @@ type Host struct {
 	releases []func(context.Context) error
 }
 
-// RunPrefix and RunTimestampLayout name a run: run-<UTC start>, filesystem
-// safe (no colons) and chronologically sortable. A run's trace store and its
-// per-run snapshot (snapshots.SavePerRun) are both named so.
-const (
-	RunPrefix          = "run-"
-	RunTimestampLayout = "2006-01-02T15-04-05Z"
-)
-
-// RunID names a run started at started.
-func RunID(started time.Time) string {
-	return RunPrefix + started.UTC().Format(RunTimestampLayout)
-}
-
 // OpenOptions name the run a Host is opened for.
 type OpenOptions struct {
 	DataDir string
 	RunID   string
+	// MaxCaptures bounds simultaneous captures; zero uses the registry default.
+	MaxCaptures int
 	// Connections answer the connection references its captures name, such
 	// as sql_xevent's connection, before any connections table; nil answers
 	// none.
@@ -118,7 +108,7 @@ func runConnections(base *store.Store, dir string, defined []crd.Connection) (*s
 }
 
 // Open creates the run's store under DataDir/traces. A RunID already
-// taken by an earlier run in the same second gets a -2, -3, … suffix, so a
+// taken by an earlier run in the same second gets a _2, _3, … suffix, so a
 // run never writes into another's store; RunID reports the name used.
 func Open(options OpenOptions) (*Host, error) {
 	if options.DataDir == "" || options.RunID == "" {
@@ -148,7 +138,7 @@ func Open(options OpenOptions) (*Host, error) {
 	}
 	runtime.PollEvery = pollEvery
 	runtime.Sessions = query.NewSessionRegistry(query.RegistryOptions{
-		MaxDuration: maxDuration, BeforeRead: runtime.Results.Registry.BeforeRead,
+		MaxSessions: options.MaxCaptures, MaxDuration: maxDuration, BeforeRead: runtime.Results.Registry.BeforeRead,
 	})
 	ctx := dbcontext.New()
 	if connections != nil {
@@ -158,7 +148,7 @@ func Open(options OpenOptions) (*Host, error) {
 	if err != nil {
 		return nil, err
 	}
-	// A run that queries the managed Prometheus holds it as its scraping
+	// A run that queries VictoriaMetrics holds it as its scraping
 	// captures do, so it is up for every read and stops once no run holds it.
 	managed := prometheus.NewManaged(options.DataDir)
 	releases = append(releases, managed.Release)
@@ -237,7 +227,7 @@ func claimRunDir(root, runID string) (string, string, error) {
 	for i := 1; i < 1000; i++ {
 		name := runID
 		if i > 1 {
-			name = fmt.Sprintf("%s-%d", runID, i)
+			name = fmt.Sprintf("%s_%d", runID, i)
 		}
 		dir := filepath.Join(root, name)
 		err := os.Mkdir(dir, 0o755)
@@ -358,11 +348,19 @@ func (h *Host) Start(options StartOptions) (*Capture, error) {
 	if err := Validate(h.runtime.Kinds, options.Kind, options.Params); err != nil {
 		return nil, err
 	}
+	var selection struct {
+		Target target.Target `json:"target"`
+	}
+	if len(options.Params) > 0 {
+		if err := json.Unmarshal(options.Params, &selection); err != nil {
+			return nil, fmt.Errorf("read %s capture target: %w", options.Kind, err)
+		}
+	}
 	managed, err := h.runtime.Start(h.ctx, tracing.StartRequest{Kind: options.Kind, Params: options.Params, Labels: options.Labels})
 	if err != nil {
 		return nil, fmt.Errorf("start %s trace: %w", options.Kind, err)
 	}
-	return &Capture{host: h, kind: options.Kind, managed: managed}, nil
+	return &Capture{host: h, kind: options.Kind, managed: managed, target: selection.Target}, nil
 }
 
 // Summarize is the kind's summary of ref's window; it always has `count`.
@@ -371,7 +369,7 @@ func (h *Host) Summarize(ctx context.Context, ref tracing.TraceRef) (map[string]
 }
 
 // Close stops every capture still running, releases what the run's kinds
-// hold, such as the managed Prometheus, and closes the store, which stays on
+// hold, such as VictoriaMetrics, and closes the store, which stays on
 // disk for the run's snapshot to reopen.
 func (h *Host) Close(ctx context.Context) error {
 	errs := []error{h.runtime.Sessions.StopAll(ctx)}

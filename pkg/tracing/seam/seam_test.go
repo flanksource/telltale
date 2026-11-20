@@ -42,6 +42,16 @@ func (refusingProbe) Arm(context.Context, json.RawMessage, telltale.Sink) (func(
 	return nil, errors.New("mutation not allowed by agent")
 }
 
+type versionedProbe struct{ arms atomic.Int32 }
+
+func (*versionedProbe) Spec() protocol.ProbeSpec {
+	return protocol.ProbeSpec{Name: "versioned-arm", Version: 9}
+}
+func (p *versionedProbe) Arm(context.Context, json.RawMessage, telltale.Sink) (func() error, error) {
+	p.arms.Add(1)
+	return func() error { return nil }, nil
+}
+
 func testRegistry() *agentclient.Registry {
 	registry := agentclient.NewRegistry()
 	registry.Dir = GinkgoT().TempDir()
@@ -63,6 +73,25 @@ func (*emitter) Describe(string, ...query.SessionMetadata) {}
 func (*emitter) Export(string, string)                     {}
 
 var _ = Describe("agent seam", func() {
+	It("refuses params the agent's advertised probe version cannot honour, before arming", func() {
+		probe := &versionedProbe{}
+		telltale.RegisterProbe(probe)
+		registry := testRegistry()
+		server := telltale.Loopback()
+		a, err := agentclient.Connect(context.Background(), server.Connect(), "")
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() { _ = a.Close(); _ = server.Close() })
+		Expect(registry.Add(a)).To(Succeed())
+		var seen protocol.ProbeSpec
+		s := seam.AgentSeam[target.Target, string]{Probe: "versioned-arm", Registry: registry, Target: func(t target.Target) target.Target { return t }, Compatible: func(_ target.Target, spec protocol.ProbeSpec) error {
+			seen = spec
+			return errors.New("needs v10")
+		}}
+		_, _, err = s.Prepare(dbcontext.New(), target.Target{Seam: target.Agent, Agent: a.Hello.AgentID}, &emitter{})
+		Expect(err).To(MatchError(ContainSubstring("needs v10")))
+		Expect(seen.Version).To(Equal(9))
+		Expect(probe.arms.Load()).To(BeZero())
+	})
 	It("warns when one selector agent refuses to arm but another succeeds", func() {
 		telltale.RegisterProbe(&partialProbe{})
 		registry := testRegistry()
@@ -119,7 +148,9 @@ var _ = Describe("agent seam", func() {
 		DeferCleanup(func() { _ = a.Close(); _ = b.Close(); _ = first.Close(); _ = second.Close() })
 		Expect(registry.Add(a)).To(Succeed())
 		Expect(registry.Add(b)).To(Succeed())
-		s := seam.AgentSeam[target.Target, string]{Probe: "stacks", Registry: registry, Target: func(t target.Target) target.Target { return t }, DecodeBlob: func(_ agentclient.Blob, _ map[string]string) ([]string, error) { return []string{"stack"}, nil }}
+		s := seam.AgentSeam[target.Target, string]{Probe: "stacks", Registry: registry, Target: func(t target.Target) target.Target { return t }, DecodeBlob: func(_ agentclient.Blob, _ map[string]string) (seam.DecodedBlob[string], error) {
+			return seam.DecodedBlob[string]{Rows: []string{"stack"}}, nil
+		}}
 		params := target.Target{Seam: target.Agent, Selector: map[string]string{"process.pid": strconv.Itoa(os.Getpid())}}
 		e := &emitter{warnings: make(chan string, 2)}
 		base, cancel := context.WithCancel(context.Background())
@@ -161,7 +192,9 @@ var _ = Describe("agent seam", func() {
 		b.Hello.AgentID = "late-agent"
 		DeferCleanup(func() { Expect(a.Close()).To(Succeed()); Expect(b.Close()).To(Succeed()) })
 		Expect(registry.Add(a)).To(Succeed())
-		s := seam.AgentSeam[target.Target, string]{Probe: "stacks", Registry: registry, Target: func(t target.Target) target.Target { return t }, DecodeBlob: func(_ agentclient.Blob, _ map[string]string) ([]string, error) { return []string{"stack"}, nil }}
+		s := seam.AgentSeam[target.Target, string]{Probe: "stacks", Registry: registry, Target: func(t target.Target) target.Target { return t }, DecodeBlob: func(_ agentclient.Blob, _ map[string]string) (seam.DecodedBlob[string], error) {
+			return seam.DecodedBlob[string]{Rows: []string{"stack"}}, nil
+		}}
 		params := target.Target{Seam: target.Agent, Selector: map[string]string{"process.pid": strconv.Itoa(os.Getpid())}}
 		e := &emitter{}
 		base, cancel := context.WithCancel(context.Background())
@@ -204,7 +237,9 @@ var _ = Describe("agent seam", func() {
 	})
 	It("arms the self probe and decodes a checkpoint blob", func() {
 		e := &emitter{}
-		s := seam.AgentSeam[target.Target, string]{Probe: "stacks", Target: func(t target.Target) target.Target { return t }, DecodeBlob: func(_ agentclient.Blob, _ map[string]string) ([]string, error) { return []string{"stack"}, nil }}
+		s := seam.AgentSeam[target.Target, string]{Probe: "stacks", Target: func(t target.Target) target.Target { return t }, DecodeBlob: func(_ agentclient.Blob, _ map[string]string) (seam.DecodedBlob[string], error) {
+			return seam.DecodedBlob[string]{Rows: []string{"stack"}}, nil
+		}}
 		ctx, release, err := s.Prepare(dbcontext.New(), target.Target{Seam: target.Self}, e)
 		Expect(err).NotTo(HaveOccurred())
 		DeferCleanup(func() { Expect(release()).To(Succeed()) })

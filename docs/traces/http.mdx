@@ -1,0 +1,20 @@
+# http
+
+import { KindReference } from '../_components/KindReference';
+
+Records HTTP exchanges from Telltale, an instrumented agent, or a local proxy. The default seam is `self`; choose `proxy` to route a command through the capture.
+
+```sh
+telltale run http --seam proxy --mode mitm -- curl -sS https://example.com
+```
+
+`--mode connect` records HTTPS tunnels by host; `mitm` decrypts exchanges using an ephemeral CA exported to the command. `--hosts` and `--paths` filter traffic, `--bodies` limits retained body size, and `--redact` adds headers to redact. The proxy exports standard proxy and CA environment variables; the application must honor them. Run `telltale run http --help` for all options.
+
+For an attached JVM, `--direction incoming`, `outgoing`, or `both` selects servlet requests and HTTP client calls, including Spring MVC and WebFlux. Hooks observe subsequent operations on existing application instances without restarting the JVM. Asynchronous calls and streamed bodies complete when their body completes, closes, fails, or is cancelled. Body capture is bounded by `--bodies`, with header redaction applied before records leave the JVM.
+
+```sh
+telltale run http --agent java/checkout --allow-mutation --direction both --duration 1m
+```
+
+Use `instrument.jvm.http` in a TraceDefinition. For the current active operations without retained bodies, use [http_top](/traces/http_top).
+<KindReference kind="http" />

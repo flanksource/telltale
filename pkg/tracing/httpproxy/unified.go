@@ -19,8 +19,9 @@ import (
 
 type UnifiedParams struct {
 	Params
-	Features      []string `json:"features,omitempty" clicky:"title=Features,desc=HTTP features to observe"`
-	DedupWindow   string   `json:"dedupWindow,omitempty" clicky:"title=Dedup window,desc=Store identical exchanges only once within this duration"`
+	Direction     tracehttp.Direction `json:"direction,omitempty" clicky:"title=Direction,desc=Incoming requests outgoing clients or both"`
+	Features      []string            `json:"features,omitempty" clicky:"title=Features,desc=HTTP features to observe"`
+	DedupWindow   string              `json:"dedupWindow,omitempty" clicky:"title=Dedup window,desc=Store identical exchanges only once within this duration"`
 	dedupDuration time.Duration
 }
 
@@ -30,7 +31,7 @@ var (
 )
 
 func (p UnifiedParams) httpParams() tracehttp.Params {
-	return tracehttp.Params{Options: tracehttp.Options{Features: p.Features, DedupWindow: p.DedupWindow}, Target: p.Target}
+	return tracehttp.Params{Options: tracehttp.Options{Selection: tracehttp.Selection{Direction: p.Direction, Hosts: p.Hosts, Paths: p.Paths}, Bodies: p.Bodies, Redact: p.Redact, Features: p.Features, DedupWindow: p.DedupWindow}, Target: p.Target}
 }
 
 func (p *UnifiedParams) ValidateInput(raw json.RawMessage) error {
@@ -76,8 +77,22 @@ type unified struct {
 func (u unified) AgentAvailable(probe string, t target.Target) (bool, error) {
 	return u.self.AgentAvailable(probe, t)
 }
-func (unified) Params() UnifiedParams {
+func (unified) Params() UnifiedParams { return DefaultParams() }
+
+// ProxyKind is the `http` kind armed on its proxy seam (ProxyPreset).
+const ProxyKind = "http_proxy"
+
+// DefaultParams are the `http` kind's defaults: telltale's HTTP feature on
+// its self and agent seams, and the proxy's mode and body cap on its proxy
+// seam. A host adjusts a copy of them for Handler.WithDefaults.
+func DefaultParams() UnifiedParams {
 	return UnifiedParams{Params: proxy{}.Params(), Features: []string{httpx.Feature}}
+}
+
+// ProxyPreset arms the `http` kind only on its proxy seam, as ProxyKind,
+// without the features only its other seams observe.
+func ProxyPreset() tracing.PresetOptions[UnifiedParams] {
+	return tracing.PresetOptions[UnifiedParams]{Title: "HTTP proxy", Seam: target.Proxy, Defaults: func(p *UnifiedParams) { p.Features = nil }}
 }
 func (unified) Schema() recordresults.ResultType[tracehttp.Exchange] { return proxy{}.Schema() }
 func (u unified) Prepare(ctx dbcontext.Context, p UnifiedParams, out tracing.Emitter[tracehttp.Exchange]) (dbcontext.Context, func() error, error) {

@@ -12,11 +12,18 @@ import (
 	"time"
 
 	dbcontext "github.com/flanksource/commons-db/context"
+	"github.com/flanksource/commons-db/recordstore/sampleframe"
 	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/target"
 	telltale "github.com/flanksource/telltale/sdk"
+	"github.com/flanksource/telltale/sdk/protocol"
 )
+
+type DecodedBlob[R any] struct {
+	Rows  []R
+	Frame *sampleframe.Frame
+}
 
 type AgentSeam[P, R any] struct {
 	Probe        string
@@ -25,8 +32,13 @@ type AgentSeam[P, R any] struct {
 	Target       func(P) target.Target
 	ArmParams    func(P) (json.RawMessage, error)
 	Mutates      func(P) bool
+	// Compatible refuses params the agent's advertised probe cannot honour,
+	// before anything is armed; nil accepts every agent advertising the probe.
+	Compatible   func(P, protocol.ProbeSpec) error
 	DecodeRecord func(json.RawMessage) (R, error)
-	DecodeBlob   func(agentclient.Blob, map[string]string) ([]R, error)
+	DecodeBlob   func(agentclient.Blob, map[string]string) (DecodedBlob[R], error)
+	HandleBlob   func(context.Context, agentclient.Blob, map[string]string, tracing.Emitter[R]) error
+	CommitBlob   func(agentclient.Blob) error
 }
 
 type stateKey struct{}
@@ -64,6 +76,17 @@ func (s AgentSeam[P, R]) Available(probe string, selection target.Target) (bool,
 		agent := registry.ByID(selection.Agent)
 		if agent != nil && agent.HasProbe(probe) {
 			return true, nil
+		}
+		// A resolver connects a remote agent, such as a deployed target over
+		// a port-forward, which takes longer than finding a local socket.
+		resolveCtx, cancelResolve := context.WithTimeout(context.Background(), time.Minute)
+		defer cancelResolve()
+		if claimed, err := registry.Resolve(resolveCtx, selection.Agent); claimed {
+			if err != nil {
+				return false, err
+			}
+			agent := registry.ByID(selection.Agent)
+			return agent != nil && agent.HasProbe(probe), nil
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -157,7 +180,25 @@ func (s AgentSeam[P, R]) Prepare(ctx dbcontext.Context, params P, out tracing.Em
 	return ctx.WithValue(stateKey{}, state), func() error { return s.release(state) }, nil
 }
 
+func (s AgentSeam[P, R]) compatible(agent *agentclient.Agent, params P) error {
+	if s.Compatible == nil {
+		return nil
+	}
+	for _, spec := range agent.Hello.Probes {
+		if spec.Name == s.Probe {
+			if err := s.Compatible(params, spec); err != nil {
+				return fmt.Errorf("arm %s on %s: %w", s.Probe, agent.Hello.AgentID, err)
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("agent %s does not advertise probe %s", agent.Hello.AgentID, s.Probe)
+}
+
 func (s AgentSeam[P, R]) arm(ctx context.Context, state *capture, agent *agentclient.Agent, params P) error {
+	if err := s.compatible(agent, params); err != nil {
+		return err
+	}
 	data := json.RawMessage(`{}`)
 	var err error
 	if s.ArmParams != nil {
@@ -221,7 +262,7 @@ func (s AgentSeam[P, R]) Checkpoint(ctx context.Context, raw json.RawMessage, ou
 			}
 		}
 		for _, blob := range result.Blobs {
-			if err := s.blob(ctx, blob, agent.Hello.Resource, out); err != nil {
+			if err := s.blob(ctx, blob, sampleResource(agent), out); err != nil {
 				return err
 			}
 		}
@@ -246,7 +287,7 @@ func (s AgentSeam[P, R]) Window(ctx context.Context, params P, raw json.RawMessa
 		select {
 		case blob := <-session.Blobs:
 			blob.CheckpointParams = raw
-			err = s.blob(ctx, blob, agent.Hello.Resource, out)
+			err = s.blob(ctx, blob, sampleResource(agent), out)
 		case ended := <-session.Ended:
 			err = fmt.Errorf("agent profile ended: %s", ended.Error)
 		case <-ctx.Done():
@@ -263,19 +304,40 @@ func (s AgentSeam[P, R]) Window(ctx context.Context, params P, raw json.RawMessa
 }
 
 func (s AgentSeam[P, R]) blob(ctx context.Context, blob agentclient.Blob, resource map[string]string, out tracing.Emitter[R]) error {
+	if s.HandleBlob != nil {
+		return s.HandleBlob(ctx, blob, resource, out)
+	}
 	if s.DecodeBlob == nil {
 		return fmt.Errorf("probe %s has no blob decoder", s.Probe)
 	}
-	rows, err := s.DecodeBlob(blob, resource)
+	decoded, err := s.DecodeBlob(blob, resource)
 	if err != nil {
 		return err
 	}
-	for _, row := range rows {
+	if decoded.Frame != nil {
+		if err := tracing.PublishFrame(ctx, out, *decoded.Frame, decoded.Rows); err != nil {
+			return err
+		}
+		if s.CommitBlob != nil {
+			return s.CommitBlob(blob)
+		}
+		return nil
+	}
+	for _, row := range decoded.Rows {
 		if err := out.Emit(ctx, row); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func sampleResource(agent *agentclient.Agent) map[string]string {
+	resource := maps.Clone(agent.Hello.Resource)
+	if resource == nil {
+		resource = map[string]string{}
+	}
+	resource["telltale.agent.id"] = agent.Hello.AgentID + "/" + agent.Hello.Started.UTC().Format(time.RFC3339Nano)
+	return resource
 }
 
 func (s AgentSeam[P, R]) emit(ctx context.Context, raw json.RawMessage, resource map[string]string, out tracing.Emitter[R]) error {
@@ -374,6 +436,16 @@ func (s AgentSeam[P, R]) Handle(ctx dbcontext.Context, params P, out tracing.Emi
 				return fmt.Errorf("discover late agents: %w", err)
 			}
 		case failure := <-errs:
+			if failure.err == nil {
+				state.mu.Lock()
+				delete(state.sessions, failure.agent)
+				remaining := len(state.sessions)
+				state.mu.Unlock()
+				if remaining == 0 && len(s.Target(params).Selector) == 0 {
+					return nil
+				}
+				continue
+			}
 			if !failure.departed || len(s.Target(params).Selector) == 0 {
 				return failure.err
 			}
@@ -437,7 +509,7 @@ func (s AgentSeam[P, R]) read(ctx context.Context, state *capture, agent *agentc
 			}
 			state.reportDropped(agent, batch.Dropped, out.Report)
 		case blob := <-session.Blobs:
-			if err := s.blob(ctx, blob, agent.Hello.Resource, out); err != nil {
+			if err := s.blob(ctx, blob, sampleResource(agent), out); err != nil {
 				fail(err, false)
 				return
 			}
@@ -452,7 +524,7 @@ func (s AgentSeam[P, R]) read(ctx context.Context, state *capture, agent *agentc
 			for {
 				select {
 				case blob := <-session.Blobs:
-					if err := s.blob(ctx, blob, agent.Hello.Resource, out); err != nil {
+					if err := s.blob(ctx, blob, sampleResource(agent), out); err != nil {
 						fail(err, false)
 						return
 					}
@@ -464,6 +536,13 @@ func (s AgentSeam[P, R]) read(ctx context.Context, state *capture, agent *agentc
 						}
 					}
 					state.reportDropped(agent, batch.Dropped, out.Report)
+				case report := <-session.Reports:
+					// The agent reports after the blob it describes; one sent with
+					// the final blob is still queued when the capture ends.
+					if err := state.mergeReport(report.Summary, out.Report); err != nil {
+						fail(err, false)
+						return
+					}
 				default:
 					goto drained
 				}
@@ -472,6 +551,8 @@ func (s AgentSeam[P, R]) read(ctx context.Context, state *capture, agent *agentc
 			state.reportDropped(agent, end.Dropped, out.Report)
 			if end.Error != "" {
 				fail(fmt.Errorf("agent %s ended: %s", agent.Hello.AgentID, end.Error), true)
+			} else if end.Complete {
+				fail(nil, true)
 			} else {
 				fail(fmt.Errorf("agent %s ended unexpectedly", agent.Hello.AgentID), true)
 			}

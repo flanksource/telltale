@@ -2,13 +2,19 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/flanksource/clicky"
 	"github.com/flanksource/clicky/api"
+	"github.com/flanksource/clicky/rpc"
 	"github.com/flanksource/telltale"
+	"github.com/flanksource/telltale/internal/server"
 	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/traces/read"
 	"github.com/flanksource/telltale/pkg/tracing"
@@ -31,7 +37,7 @@ func (f *runFlags) bind(cmd *cobra.Command, checkpointed bool) {
 	if checkpointed {
 		cmd.Flags().DurationVar(&f.options.Every, "every", 0, "Read the checkpointed captures this often, e.g. 10s")
 	}
-	cmd.Flags().Bool("follow", false, "Print each capture's rows while recording")
+	bindFollow(cmd)
 }
 
 // newRunCommand is `run` with one subcommand per registered trace kind, each
@@ -68,12 +74,39 @@ func newRunCommand() *cobra.Command {
 		if err != nil {
 			panic(err)
 		}
-		run.AddCommand(newRunKindCommand(registration, plugin))
+		run.AddCommand(newRunKindCommand(registration, plugin, nil))
 	}
 	return run
 }
 
-func newRunKindCommand(registration traces.Registration, plugin tracing.TracePlugin) *cobra.Command {
+// newRunKindCommand is `run <kind>`, or, given a preset, the kind served as
+// the preset's own command with the preset's param defaults.
+// addKindCommands places every registered kind preset at its path below
+// root, such as jvm_trace's `jvm watch`.
+func addKindCommands(root *cobra.Command) {
+	kinds, err := traces.Kinds()
+	if err != nil {
+		panic(fmt.Sprintf("trace kind catalog: %v", err))
+	}
+	for _, registration := range traces.Registrations() {
+		for _, preset := range registration.Commands {
+			plugin, err := traces.Lookup(kinds, registration.Name)
+			if err != nil {
+				panic(err)
+			}
+			parent := commandAt(root, preset.Path[:len(preset.Path)-1])
+			name := preset.Path[len(preset.Path)-1]
+			for _, existing := range parent.Commands() {
+				if existing.Name() == name {
+					panic(fmt.Sprintf("trace kind %s command %v is already the %q command", registration.Name, preset.Path, existing.CommandPath()))
+				}
+			}
+			parent.AddCommand(newRunKindCommand(registration, plugin, &preset))
+		}
+	}
+}
+
+func newRunKindCommand(registration traces.Registration, plugin tracing.TracePlugin, preset *traces.KindCommand) *cobra.Command {
 	var flags runFlags
 	cmd := &cobra.Command{
 		Use:   registration.Name + " [flags] [-- command [args...]]",
@@ -86,9 +119,20 @@ func newRunKindCommand(registration traces.Registration, plugin tracing.TracePlu
 	if err != nil {
 		panic(fmt.Sprintf("trace kind %s params: %v", registration.Name, err))
 	}
+	if preset != nil {
+		cmd.Use = preset.Path[len(preset.Path)-1] + " [flags]"
+		cmd.Short = preset.Summary
+		cmd.Long = preset.Summary + ".\n\n" + registration.Description + "\n\nThe same capture as `telltale run " + registration.Name + "` with these defaults."
+		if schema, err = presetSchema(schema, preset.Defaults); err != nil {
+			panic(fmt.Sprintf("trace kind %s command %v: %v", registration.Name, preset.Path, err))
+		}
+	}
 	params, err := bindParamFlags(cmd.Flags(), schema)
 	if err != nil {
 		panic(fmt.Sprintf("trace kind %s: %v", registration.Name, err))
+	}
+	if err := bindConnectionCompletions(cmd, params); err != nil {
+		panic(err)
 	}
 	var checkpoint *profileCheckpointFlags
 	if defaults, ok := registration.Checkpoint.(goprof.CheckpointParams); ok {
@@ -100,9 +144,25 @@ func newRunKindCommand(registration traces.Registration, plugin tracing.TracePlu
 			return err
 		}
 		options := flags.options
+		if preset != nil {
+			// A run records into a data dir; over HTTP that is the server's,
+			// which only its run API knows, not one the caller names.
+			if _, remote := rpc.RequestFromContext(cmd.Context()); remote {
+				return fmt.Errorf("telltale %s records a run: start it over HTTP with POST /api/traces and kind %s", strings.Join(preset.Path, " "), registration.Name)
+			}
+			if raw, err = presetParams(preset.Defaults, raw); err != nil {
+				return err
+			}
+		}
 		if cmd.Flags().Lookup("pid") != nil {
 			options.PID, err = cmd.Flags().GetInt("pid")
 			if err != nil {
+				return err
+			}
+		}
+		// A run attached to a pid aims its agent captures at that process.
+		if options.PID == 0 {
+			if raw, err = withAgentTarget(cmd.Context(), registration, raw); err != nil {
 				return err
 			}
 		}
@@ -120,17 +180,80 @@ func newRunKindCommand(registration traces.Registration, plugin tracing.TracePlu
 			}
 		}
 		options.Traces = []telltale.TraceSpec{{Kind: registration.Name, Params: raw, Checkpoint: reading}}
-		return runTraced(cmd, options, telltale.Start)
+		return runTraced(cmd, options, startKindRun)
 	}
-	setHelp(cmd, func(cmd *cobra.Command) api.Text { return kindHelp(cmd, registration).Text })
+	if preset == nil {
+		setHelp(cmd, func(cmd *cobra.Command) api.Text { return kindHelp(cmd, registration).Text })
+	}
 	return cmd
+}
+
+// startKindRun starts the run a kind command arms; internal tests replace it
+// to read the trace spec a command builds.
+var startKindRun = telltale.Start
+
+// presetSchema is a kind's params schema with a preset's defaults over its
+// own, so help shows them and required params they give are satisfied.
+func presetSchema(schema *rpc.OpenAPISchema, defaults map[string]any) (*rpc.OpenAPISchema, error) {
+	base, err := objectDefaults(schema)
+	if err != nil {
+		return nil, err
+	}
+	merged := *schema
+	merged.Default = mergeParams(base, defaults)
+	return &merged, nil
+}
+
+// presetParams are a preset's defaults with the params its flags set over them.
+func presetParams(defaults map[string]any, raw json.RawMessage) (json.RawMessage, error) {
+	given := map[string]any{}
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &given); err != nil {
+			return nil, err
+		}
+	}
+	return json.Marshal(mergeParams(defaults, given))
+}
+
+// mergeParams is base with over's values over it, objects merged by key.
+func mergeParams(base, over map[string]any) map[string]any {
+	merged := maps.Clone(base)
+	if merged == nil {
+		merged = map[string]any{}
+	}
+	for key, value := range over {
+		nested, isObject := value.(map[string]any)
+		existing, wasObject := merged[key].(map[string]any)
+		if isObject && wasObject {
+			value = mergeParams(existing, nested)
+		}
+		merged[key] = value
+	}
+	return merged
 }
 
 // runTraced starts a run with start, waits for it and prints what it
 // recorded; a command that failed or a checkpoint that did is an error.
 func runTraced(cmd *cobra.Command, options telltale.StartOptions, start func(context.Context, telltale.StartOptions) (*telltale.Run, error)) error {
+	follow, tui, ui, sort, err := followOptions(cmd)
+	if err != nil {
+		return err
+	}
+	format := clicky.Flags.ResolveFormat()
+	if tui && format == "ndjson" {
+		return fmt.Errorf("--tui cannot combine with ndjson")
+	}
+	if follow && format != "ndjson" && format != "pretty" && format != "ansi" {
+		return fmt.Errorf("follow supports ndjson, ansi or pretty output")
+	}
 	if options.Stdin == nil && options.Stdout == nil && options.Stderr == nil && options.PID == 0 {
 		options.Stdin, options.Stdout, options.Stderr = cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr()
+		if format != "pretty" && format != "ansi" {
+			options.Stdout = cmd.ErrOrStderr()
+		}
+	}
+	if tui {
+		options.Stdin, options.Stdout, options.Stderr = nil, nil, nil
 	}
 	connections, err := telltale.OpenConnections()
 	if err != nil {
@@ -141,18 +264,61 @@ func runTraced(cmd *cobra.Command, options telltale.StartOptions, start func(con
 	if err != nil {
 		return err
 	}
+	var viewer *server.Viewer
+	if ui {
+		viewer, err = openRunViewer(cmd, server.ViewerOptions{DataDir: options.DataDir, RunIDs: []string{started.ID()}})
+		if err != nil {
+			return errors.Join(err, started.Stop())
+		}
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = viewer.Close(ctx)
+		}()
+	}
 	switch {
 	case options.PID != 0:
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Tracing pid %d into %s; Ctrl+C stops\n", options.PID, started.Dir()) // a lost notice loses nothing recorded
 	case len(options.Command) == 0:
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Recording the host into %s; Ctrl+C stops\n", started.Dir())
 	}
-	follow := cmd.Flags().Lookup("follow") != nil && cmd.Flags().Lookup("follow").Value.String() == "true"
-	result, err := read.Wait(cmd.Context(), started, follow, recordPrinter(cmd))
+	var result *telltale.Result
+	printer := newFeedPrinter(cmd.OutOrStdout())
+	human := newFeedPrinter(cmd.ErrOrStderr())
+	human.ndjson = false
+	if tui {
+		result, err = showTraceTUI(cmd.Context(), started, sort)
+	} else {
+		result, err = read.Wait(cmd.Context(), started, true, func(record read.Record) error {
+			if err := human.print(record); err != nil {
+				return err
+			}
+			if follow && format == "ndjson" {
+				return printer.print(record)
+			}
+			return nil
+		})
+	}
 	if err != nil {
 		return err
 	}
-	clicky.MustPrint(result)
+	if !tui {
+		if err := human.stats(cmd.ErrOrStderr()); err != nil {
+			return err
+		}
+	}
+	if follow {
+		if err := writeLine(cmd.ErrOrStderr(), result.Pretty()); err != nil {
+			return err
+		}
+	} else {
+		clicky.MustPrint(result)
+	}
+	if viewer != nil {
+		if err := waitViewer(cmd.Context(), viewer); err != nil {
+			return err
+		}
+	}
 	switch {
 	case result.ExitCode != 0:
 		return fmt.Errorf("%s exited with code %d", options.Command[0], result.ExitCode)

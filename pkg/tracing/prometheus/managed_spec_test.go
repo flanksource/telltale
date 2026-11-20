@@ -11,7 +11,7 @@ import (
 )
 
 var _ = Describe("managed prometheus paths", func() {
-	It("roots a relative data dir at the working directory, because deps takes only an absolute file_sd dir", func() {
+	It("roots the VictoriaMetrics service and target files under an absolute data directory", func() {
 		relative := filepath.Join(".tmp", "data")
 		cwd, err := os.Getwd()
 		Expect(err).NotTo(HaveOccurred())
@@ -21,7 +21,7 @@ var _ = Describe("managed prometheus paths", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(paths).To(Equal(prometheus.ManagedPaths{
 			State:  filepath.Join(cwd, relative, "services"),
-			FileSD: filepath.Join(cwd, relative, "prometheus", "targets"),
+			FileSD: filepath.Join(cwd, relative, "victoriametrics", "targets"),
 		}))
 	})
 })

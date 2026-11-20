@@ -19,6 +19,7 @@ import (
 	"github.com/flanksource/telltale/pkg/datadir"
 	"github.com/flanksource/telltale/pkg/definition"
 	"github.com/flanksource/telltale/pkg/traces"
+	"github.com/flanksource/telltale/pkg/tracing/prometheus"
 	"github.com/flanksource/telltale/webapp"
 	"github.com/spf13/cobra"
 )
@@ -40,6 +41,7 @@ type Options struct {
 	EnforceRules bool
 	OTLP         otelreceiver.Options
 	SelfTrace    bool
+	Prometheus   bool
 }
 
 func Run(ctx context.Context, options Options) (err error) {
@@ -81,6 +83,15 @@ func Run(ctx context.Context, options Options) (err error) {
 		return err
 	}
 	defer func() { err = errors.Join(err, telemetry.close()) }()
+	var metrics prometheus.Server
+	if options.Prometheus {
+		managed := prometheus.NewManaged(options.DataDir)
+		defer func() { err = errors.Join(err, managed.Release(ctx)) }()
+		metrics, err = managed.Server(ctx)
+		if err != nil {
+			return fmt.Errorf("serve --prometheus: %w", err)
+		}
+	}
 	connections, err := telltale.OpenConnections()
 	if err != nil {
 		return err
@@ -145,6 +156,11 @@ func Run(ctx context.Context, options Options) (err error) {
 	}
 	if _, err := fmt.Fprintf(options.Root.OutOrStdout(), "Telltale API: %s\n", apiURL); err != nil {
 		return fmt.Errorf("write server URL: %w", err)
+	}
+	if options.Prometheus {
+		if _, err := fmt.Fprintf(options.Root.OutOrStdout(), "VictoriaMetrics: %s\n", metrics.URL); err != nil {
+			return fmt.Errorf("write VictoriaMetrics URL: %w", err)
+		}
 	}
 	err = serve(ctx, httpOptions{listener: listener, handler: handler})
 	if cause := context.Cause(ctx); cause != nil && !errors.Is(cause, context.Canceled) {

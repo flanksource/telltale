@@ -29,16 +29,13 @@ func (h *Hub) List(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if err := h.registry.Discover(r.Context(), ""); err != nil {
+	infos, err := h.registry.Inventory(r.Context())
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	hellos := make([]protocol.Hello, 0)
-	for _, agent := range h.registry.Match(nil) {
-		hellos = append(hellos, agent.Hello)
-	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(hellos)
+	_ = json.NewEncoder(w).Encode(infos)
 }
 
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {

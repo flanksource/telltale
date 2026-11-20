@@ -1,10 +1,21 @@
-import type { ProcessNodeRow, ProcessSampleRow } from "@flanksource/clicky-ui/data";
+import type { ProcessNodeRow, ProcessSampleRow, TopMetric } from "@flanksource/clicky-ui/data";
+import { BASE_PATH, withBase } from "../base";
 
 // The server lists, starts and stops runs at /api/traces (telltale.Handler),
 // and serves each one's trace routes under its mount, /api/traces/<run id>
-// (traceserve.Handler).
+// (traceserve.Handler), both under the base a host mounts the viewer at.
 
-export const TRACES_ENDPOINT = "/api/traces";
+/** The traces API under base. */
+export function tracesEndpoint(base: string = BASE_PATH): string {
+  return withBase("/api/traces", base);
+}
+
+export const TRACES_ENDPOINT = tracesEndpoint();
+
+/** The mount of run's trace routes under the traces API at endpoint. */
+export function runMount(run: string, endpoint: string = TRACES_ENDPOINT): string {
+  return `${endpoint}/${encodeURIComponent(run)}`;
+}
 
 /** A window of a trace stream: the records after afterSeq through toSeq (0 = unbounded) of kind's stream. */
 export interface TraceRef {
@@ -18,6 +29,7 @@ export interface TraceRef {
 export interface ProcessTraceRefs {
   tree: TraceRef;
   samples: TraceRef;
+  facets: TraceRef;
   stacks: TraceRef;
   goprof?: TraceRef;
 }
@@ -27,6 +39,7 @@ export interface CaptureResult {
   kind: string;
   ref: TraceRef;
   summary?: Record<string, unknown>;
+  target?: TraceTarget;
 }
 
 export type RunStatus = "running" | "succeeded" | "failed" | "unfinished" | "standing";
@@ -64,6 +77,7 @@ export interface RunFilter {
   q?: string;
   status?: RunStatus | "";
   kind?: string;
+  limit?: number;
 }
 
 /** A field of a start request the server refused, at its JSON pointer ("" for the request as a whole). */
@@ -92,6 +106,7 @@ export interface TraceTarget {
   agent?: string;
   selector?: Record<string, string>;
   wait?: boolean;
+  allowMutation?: boolean;
 }
 
 /** What the run-wide process tree reads of each process (traces.TreeOptions). */
@@ -108,11 +123,19 @@ export interface RunExecution {
   command?: string;
 }
 
+/** One capture of a kind in a start request: whether it is armed, where, and the kind's params. */
+export interface TraceEntry {
+  enabled?: boolean;
+  target?: TraceTarget;
+  [param: string]: unknown;
+}
+
 export interface StartRequest extends RunExecution, Record<string, unknown> {
   /** A saved trace definition to run, in place of inline traces. */
   definition?: string;
   tree?: TreeOptions;
-  traces?: Record<string, { enabled?: boolean; target?: TraceTarget; [param: string]: unknown }>;
+  /** Per kind, one capture, or a list when the kind is armed more than once. */
+  traces?: Record<string, TraceEntry | TraceEntry[]>;
 }
 
 export interface TracesStatus {
@@ -130,6 +153,7 @@ export interface TraceExportFormat {
 }
 
 export interface TraceKindInfo {
+  top?: { identity?: string[]; perSource?: boolean; metrics?: TopMetric[]; relation?: { column:string; target:string; label:string } };
   name: string;
   title: string;
   exportFormats: TraceExportFormat[];
@@ -155,7 +179,7 @@ export async function fetchTraceRuns(filter: RunFilter = {}): Promise<TracesStat
 /** The query string of filter's non-empty fields. */
 export function runFilterQuery(filter: RunFilter): string {
   const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(filter)) if (value) params.set(key, String(value));
+  for (const [key, value] of Object.entries(filter)) if (value !== undefined && value !== "") params.set(key, String(value));
   return params.toString();
 }
 
@@ -272,9 +296,9 @@ export async function fetchTraceRecords(mount: string, ref: TraceRef, signal?: A
 }
 
 /** The highest seq ref's stream has committed; 0 when it has none. */
-export async function fetchLatestSeq(mount: string, ref: TraceRef): Promise<number> {
+export async function fetchLatestSeq(mount: string, ref: TraceRef, signal?: AbortSignal): Promise<number> {
   const query = new URLSearchParams({ stream: ref.stream });
-  const res = await fetch(`${mount}/api/v1/traces/${encodeURIComponent(ref.kind)}/seq?${query}`, { headers: { Accept: "application/json" } });
+  const res = await fetch(`${mount}/api/v1/traces/${encodeURIComponent(ref.kind)}/seq?${query}`, { headers: { Accept: "application/json" }, ...(signal ? { signal } : {}) });
   if (!res.ok) throw await failure(res, `read ${ref.kind} stream`);
   const body = await res.json() as { seq: number };
   return body.seq;

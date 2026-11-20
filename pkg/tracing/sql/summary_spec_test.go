@@ -4,6 +4,7 @@
 package sql_test
 
 import (
+	"encoding/json"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -70,6 +71,22 @@ var _ = Describe("summarizing statements", func() {
 
 	It("summarizes no statements as nothing spent, with empty tables and ops rather than none", func() {
 		Expect(tracesql.Summarize(nil)).To(Equal(tracesql.Summary{Tables: []string{}, ByOp: map[string]int{}}))
+	})
+
+	It("counts incomplete attempts without treating partial elapsed time as completed latency or a repeat", func() {
+		complete := statement(0, time.Millisecond, labels, 1, "")
+		incomplete := statement(0, 100*time.Millisecond, labels, -1, "")
+		incomplete.Incomplete = true
+		summary := tracesql.Summarize([]tracesql.StatementRow{complete, incomplete})
+		Expect(summary.Statements).To(Equal(2))
+		Expect(summary.DurationMs).To(Equal(float64(1)))
+		Expect(summary.AvgDurationMs).To(Equal(float64(1)))
+		Expect(summary.P95DurationMs).To(Equal(float64(1)))
+		Expect(summary.MaxDurationMs).To(Equal(float64(1)))
+		Expect(summary.Repeated).To(BeZero())
+		data, err := json.Marshal(summary)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(data)).To(ContainSubstring(`"incomplete":1`))
 	})
 
 	It("lists the statements that ran most often first, then the costliest", func() {

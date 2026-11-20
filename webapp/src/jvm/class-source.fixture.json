@@ -1,0 +1,15 @@
+{
+  "class": "Workload",
+  "loader": "14dad5dc",
+  "source": "/*\n * Decompiled with CFR.\n */\npublic class Workload {\n    public static void main(String[] stringArray) throws Exception {\n        System.out.println(\"ready\");\n        long l = stringArray.length == 0 ? 60L : Long.parseLong(stringArray[0]);\n        long l2 = System.nanoTime() + l * 1000000000L;\n        long l3 = 0L;\n        while (System.nanoTime() < l2) {\n            l3 = (long)((double)l3 + Workload.compute(l3));\n        }\n        System.out.println(l3);\n    }\n\n    public static double compute(long l) {\n        return Math.sqrt(l + 1L);\n    }\n}\n",
+  "methods": [
+    { "name": "main", "descriptor": "([Ljava/lang/String;)V", "line": 6, "endLine": 13 },
+    { "name": "compute", "descriptor": "(J)D", "line": 17, "endLine": 17 }
+  ],
+  "sourceLineNumbers": [0, 0, 0, 0, 0, 3, 4, 5, 6, 7, 7, 0, 8, 0, 0, 0, 10, 0, 0, 0],
+  "lineRows": { "3": 6, "4": 7, "5": 8, "6": 9, "7": 10, "8": 13, "10": 17 },
+  "digest": "sha256:e01a668b127451987001712eadc969c73cd93197711008a317d4af8289b0652e",
+  "decompiler": "cfr-0.152",
+  "durationMs": 0,
+  "cached": true
+}

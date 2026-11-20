@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/flanksource/captain/pkg/ai"
-	"github.com/flanksource/captain/pkg/ai/middleware"
+	"github.com/flanksource/captain/pkg/ai/observe"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -26,7 +26,7 @@ var _ = Describe("llm probe", func() {
 		Expect(err).To(HaveOccurred())
 	})
 	It("includes request and response only when requested", func() {
-		event := middleware.ProviderEvent{Request: &ai.Request{}, Response: &ai.Response{Text: "response"}}
+		event := observe.ProviderEvent{Request: &ai.Request{}, Response: &ai.Response{Text: "response"}}
 		without, err := makeRecord(event, params{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(without.Prompt).To(BeEmpty())
@@ -39,7 +39,7 @@ var _ = Describe("llm probe", func() {
 	It("masks included prompts and responses before emission", func() {
 		request := &ai.Request{}
 		request.Prompt.User = "password=prompt-secret"
-		record, err := makeRecord(middleware.ProviderEvent{Request: request, Response: &ai.Response{Text: "token=response-secret"}}, params{IncludePrompts: true, IncludeResponses: true})
+		record, err := makeRecord(observe.ProviderEvent{Request: request, Response: &ai.Response{Text: "token=response-secret"}}, params{IncludePrompts: true, IncludeResponses: true})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(record.Prompt).NotTo(ContainSubstring("prompt-secret"))
 		Expect(record.Response).NotTo(ContainSubstring("response-secret"))
@@ -47,7 +47,7 @@ var _ = Describe("llm probe", func() {
 	It("includes a runner turn prompt only when requested", func() {
 		turn := &ai.TurnStart{}
 		turn.Request.Prompt.User = "turn prompt"
-		event := middleware.ProviderEvent{Phase: "iteration", Event: &ai.Event{Kind: ai.EventTurnStart, Raw: turn}}
+		event := observe.ProviderEvent{Phase: observe.PhaseIteration, Event: &ai.Event{Kind: ai.EventTurnStart, Raw: turn}}
 		without, err := makeRecord(event, params{})
 		Expect(err).NotTo(HaveOccurred())
 		Expect(without.Prompt).To(BeEmpty())

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+
+	"github.com/flanksource/gavel/sdk/status"
 )
 
 type GroupBy string
@@ -13,14 +15,23 @@ const (
 	GroupRepo          GroupBy = "repo"
 	GroupWorktree      GroupBy = "worktree"
 	GroupClaudeSession GroupBy = "claude-session"
-	KindBucket                 = "bucket"
+	// GroupSlots buckets by the gavel slot pool a group's gavel process holds.
+	GroupSlots GroupBy = "slots"
 )
 
-var Groupings = []GroupBy{GroupTree, GroupRepo, GroupWorktree, GroupClaudeSession}
+const (
+	KindBucket = "bucket"
+	// KindGavelTask and KindGavelItem are the rows WithGavelTasks adds: a
+	// gavel task group and one of its running tasks.
+	KindGavelTask = "gavel-task"
+	KindGavelItem = "gavel-item"
+)
+
+var Groupings = []GroupBy{GroupTree, GroupRepo, GroupWorktree, GroupClaudeSession, GroupSlots}
 
 func (by GroupBy) Validate() error {
 	switch by {
-	case "", GroupTree, GroupRepo, GroupWorktree, GroupClaudeSession:
+	case "", GroupTree, GroupRepo, GroupWorktree, GroupClaudeSession, GroupSlots:
 		return nil
 	default:
 		return fmt.Errorf("group-by %q: expected one of %v", by, Groupings)
@@ -38,11 +49,19 @@ func (f Frame) Grouped(by GroupBy) (Frame, error) {
 	if err != nil {
 		return Frame{}, err
 	}
+	identities := map[string]bucket{}
+	if by == GroupSlots {
+		identities = slotBuckets(f.Groups)
+	} else {
+		for _, group := range f.Groups {
+			identity, label := bucketIdentity(by, contexts[group.Key])
+			identities[group.Key] = bucket{identity, label}
+		}
+	}
 	buckets := map[string]string{}
 	skipped := map[string]bool{}
 	for _, group := range f.Groups {
-		identity, _ := bucketIdentity(by, contexts[group.Key])
-		buckets[group.Key] = "bucket:" + string(by) + ":" + identity
+		buckets[group.Key] = "bucket:" + string(by) + ":" + identities[group.Key].identity
 		skipped[group.Key] = group.PID == 0 && (group.Kind == KindOther || group.Kind == KindApp)
 	}
 	var projected []GroupSample
@@ -53,8 +72,8 @@ func (f Frame) Grouped(by GroupBy) (Frame, error) {
 		}
 		key := buckets[group.Key]
 		if !created[key] {
-			identity, label := bucketIdentity(by, contexts[group.Key])
-			projected = append(projected, GroupSample{Key: key, Kind: KindBucket, Name: label, Target: identity, Command: identity, SampledAt: f.SampledAt, Tick: f.Tick})
+			id := identities[group.Key]
+			projected = append(projected, GroupSample{Key: key, Kind: KindBucket, Name: id.label, Target: id.identity, Command: id.identity, SampledAt: f.SampledAt, Tick: f.Tick})
 			created[key] = true
 		}
 		if group.ParentKey == "" || buckets[group.ParentKey] != key || skipped[group.ParentKey] {
@@ -65,6 +84,69 @@ func (f Frame) Grouped(by GroupBy) (Frame, error) {
 	}
 	f.Groups = Rollup(projected)
 	return f, nil
+}
+
+// bucket is what a group is bucketed by, and the bucket's name.
+type bucket struct{ identity, label string }
+
+// slotBuckets puts each group in the slot pool its gavel process holds — a
+// project pool before the global one — or, holding none, the pool it waits
+// for. A group with no gavel status of its own takes its parent's bucket, so
+// a gavel's tests share its pool.
+func slotBuckets(groups []GroupSample) map[string]bucket {
+	byKey := map[string]GroupSample{}
+	for _, group := range groups {
+		byKey[group.Key] = group
+	}
+	resolved := map[string]bucket{}
+	// ResolveContexts has refused a cycle by now.
+	var resolve func(key string) bucket
+	resolve = func(key string) bucket {
+		if found, ok := resolved[key]; ok {
+			return found
+		}
+		group, ok := byKey[key]
+		if !ok {
+			return bucket{"", "Unattributed"}
+		}
+		found, own := slotBucket(group.Gavel)
+		if !own {
+			found = resolve(group.ParentKey)
+		}
+		resolved[key] = found
+		return found
+	}
+	for _, group := range groups {
+		resolve(group.Key)
+	}
+	return resolved
+}
+
+// slotBucket is the pool a gavel status's leases name, and whether it has any.
+func slotBucket(s *status.Status) (bucket, bool) {
+	if s == nil || len(s.Slots) == 0 {
+		return bucket{}, false
+	}
+	best := s.Slots[0]
+	rank := func(l status.Lease) int {
+		score := 0
+		if l.State != status.LeaseWaiting {
+			score += 2
+		}
+		if l.Pool != "global" {
+			score++
+		}
+		return score
+	}
+	for _, lease := range s.Slots[1:] {
+		if rank(lease) > rank(best) {
+			best = lease
+		}
+	}
+	if best.State == status.LeaseWaiting {
+		return bucket{best.Pool + ":waiting", poolLabel(best.Pool, best.Project) + " (waiting)"}, true
+	}
+	return bucket{best.Pool, poolLabel(best.Pool, best.Project)}, true
 }
 
 func bucketIdentity(by GroupBy, c Context) (string, string) {

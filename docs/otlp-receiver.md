@@ -50,7 +50,7 @@ From this source checkout, `go run ./examples/otel` exports a two-span demonstra
 
 ## Forward from an OpenTelemetry Collector
 
-The runnable [Collector configuration](../examples/otel-collector.yaml) listens on ports 14317 and 14318 and forwards traces to Telltale over HTTP/protobuf. With Telltale already listening on 4318:
+The runnable [Collector configuration](https://github.com/flanksource/telltale/blob/main/examples/otel-collector.yaml) listens on ports 14317 and 14318 and forwards traces to Telltale over HTTP/protobuf. With Telltale already listening on 4318:
 
 ```bash
 otelcol-contrib --config examples/otel-collector.yaml

@@ -1,112 +1,84 @@
-// A live spec of the prometheus kind against the managed Prometheus it starts
-// through deps: an endpoint's gauge is scraped into its TSDB with the
-// session's labels.
-
 package prometheus_test
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
+	"path/filepath"
 	"time"
 
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
-
-	"github.com/flanksource/deps/start"
-	"github.com/flanksource/deps/start/state"
+	dbcontext "github.com/flanksource/commons-db/context"
+	"github.com/flanksource/commons-db/query"
+	_ "github.com/flanksource/commons-db/query/providers"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/prometheus"
 	"github.com/flanksource/telltale/pkg/tracing/tracingtest"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-// Set TELLTALE_PROMETHEUS_LIVE=1 to run it: the first run downloads
-// Prometheus prometheus.Version into ~/.deps.
 var _ = Describe("prometheus trace kind (live)", func() {
-	const gauge, value = "telltale_live_spec_gauge", 42
-
 	BeforeEach(func() {
 		if os.Getenv("TELLTALE_PROMETHEUS_LIVE") == "" {
-			Skip("TELLTALE_PROMETHEUS_LIVE is not set; this spec downloads and starts Prometheus " + prometheus.Version)
+			Skip("set TELLTALE_PROMETHEUS_LIVE to install and run VictoriaMetrics")
 		}
 	})
 
-	It("scrapes an endpoint's gauge into the managed Prometheus with the session's labels", func() {
+	It("stores labelled gauge samples in VictoriaMetrics and reads them after restart", func(ctx SpecContext) {
+		const gauge, value = "telltale_live_spec_gauge", 42
 		metrics := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = fmt.Fprintf(w, "# TYPE %s gauge\n%s %d\n", gauge, gauge, value)
 		}))
 		DeferCleanup(metrics.Close)
 		endpoint := metrics.URL + "/metrics"
-
 		dataDir := GinkgoT().TempDir()
-		paths, err := prometheus.Paths(dataDir)
-		Expect(err).NotTo(HaveOccurred())
+		oldState := filepath.Join(dataDir, "services", "prometheus", "state.yaml")
+		Expect(os.MkdirAll(filepath.Dir(oldState), 0o700)).To(Succeed())
+		Expect(os.WriteFile(oldState, []byte("previous Prometheus state"), 0o600)).To(Succeed())
 		managed := prometheus.NewManaged(dataDir)
-		DeferCleanup(func() {
-			Expect(managed.Release(context.Background())).To(Succeed())
-			Expect(start.Status(context.Background(), "prometheus", start.WithStateDir(paths.State))).
-				To(Equal(state.StatusStopped), "the last release stops the Prometheus this process supervises")
-		})
+		DeferCleanup(managed.Release, context.Background())
 		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{
 			prometheus.Kind: prometheus.NewKind(prometheus.KindOptions{RunID: "run-live", Server: managed.Server}),
 		})
+		from := time.Now().UTC().Truncate(time.Second)
 		session := env.Start(prometheus.Kind, fmt.Sprintf(`{"endpoints": [%q], "interval": "1s", "labels": {"env": "dev"}}`, endpoint))
 		tracingtest.Running(session)
-		Eventually(func() int64 { return session.Snapshot().EventCount }).WithTimeout(30 * time.Second).Should(BeNumerically(">=", 2))
 		server := session.Snapshot().Handle
-
-		var gauges struct {
-			Result []struct {
-				Metric map[string]string `json:"metric"`
-				Value  [2]any            `json:"value"`
-			} `json:"result"`
+		profile := query.Profile{Name: "captured-metrics", Query: gauge + `{telltale_run="run-live"}`,
+			Provider: query.ProviderConfig{Type: "prometheus", Options: map[string]any{"url": server}}}
+		checkSample := func(g Gomega) {
+			result, err := query.Execute(dbcontext.NewContext(ctx), profile)
+			g.Expect(err).NotTo(HaveOccurred())
+			g.Expect(result.Rows).To(ContainElement(And(
+				HaveKeyWithValue("value", BeNumerically("==", value)), HaveKeyWithValue("env", "dev"),
+				HaveKeyWithValue("telltale_run", "run-live"), HaveKeyWithValue("telltale_endpoint", endpoint),
+				HaveKeyWithValue("telltale_stream", Not(BeEmpty())),
+			)))
 		}
-		apiGet(server, "/api/v1/query", url.Values{"query": {gauge + `{telltale_run="run-live"}`}}, &gauges)
-		var targets struct {
-			ActiveTargets []struct {
-				Labels         map[string]string `json:"labels"`
-				ScrapeInterval string            `json:"scrapeInterval"`
-			} `json:"activeTargets"`
-		}
-		apiGet(server, "/api/v1/targets", url.Values{"scrapePool": {prometheus.Job}}, &targets)
+		Eventually(checkSample).WithTimeout(20 * time.Second).Should(Succeed())
 		session.Stop("spec")
 		info := tracingtest.Ended(session)
 		Expect(info.Error).To(BeEmpty())
-
-		Expect(gauges.Result).To(HaveLen(1))
-		Expect(gauges.Result[0].Metric).To(Equal(map[string]string{
-			"__name__": gauge, "job": prometheus.Job, "instance": metrics.Listener.Addr().String(), "env": "dev",
-			"telltale_run": "run-live", "telltale_stream": info.Events.Stream, "telltale_endpoint": endpoint,
-		}))
-		Expect(gauges.Result[0].Value[1]).To(Equal(fmt.Sprint(value)))
-		var intervals []string
-		for _, t := range targets.ActiveTargets {
-			if t.Labels["telltale_stream"] == info.Events.Stream {
-				intervals = append(intervals, t.ScrapeInterval)
-			}
+		Expect(info.EventCount).To(BeZero())
+		Expect(env.Rows(info)).To(BeEmpty())
+		frames, err := env.Results.Backend.Meta(ctx, info.Events.Stream+"-frames")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(frames.HighSeq).To(BeZero())
+		paths, err := prometheus.Paths(dataDir)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(filepath.Glob(filepath.Join(paths.FileSD, "*.json"))).To(BeEmpty())
+		to := time.Now().UTC().Add(time.Second).Truncate(time.Second)
+		Expect(managed.Release(ctx)).To(Succeed())
+		Expect(http.Get(server + "/health")).Error().To(HaveOccurred())
+		restarted, err := managed.Server(ctx)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(restarted.URL).To(Equal(server))
+		profile.Provider.Options["range"] = map[string]any{
+			"start": from.Format(time.RFC3339), "end": to.Format(time.RFC3339), "step": "1s",
 		}
-		Expect(intervals).To(Equal([]string{"1000ms"}), "the target's own __scrape_interval__ label, not the global 15s, sets its interval")
-		rows := env.Rows(info)
-		Expect(rows[0]).To(HaveKeyWithValue("health", "up"))
-		Expect(rows[0]).To(HaveKeyWithValue("samples", BeNumerically(">", 0)))
+		checkSample(Default)
+		Expect(os.ReadFile(oldState)).To(Equal([]byte("previous Prometheus state")))
 	})
 })
-
-// apiGet decodes the data of a Prometheus API answer into data.
-func apiGet(server, path string, query url.Values, data any) {
-	GinkgoHelper()
-	response, err := http.Get(server + path + "?" + query.Encode())
-	Expect(err).ToNot(HaveOccurred())
-	defer func() { _ = response.Body.Close() }()
-	var answer struct {
-		Status string          `json:"status"`
-		Data   json.RawMessage `json:"data"`
-	}
-	Expect(json.NewDecoder(response.Body).Decode(&answer)).To(Succeed())
-	Expect(answer.Status).To(Equal("success"))
-	Expect(json.Unmarshal(answer.Data, data)).To(Succeed())
-}

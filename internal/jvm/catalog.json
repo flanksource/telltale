@@ -1,0 +1,1102 @@
+[
+  {
+    "name": "jvm.extensions.list",
+    "title": "jvm.extensions.list",
+    "description": "List loaded diagnostic extensions",
+    "command": "jvm extensions list",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.extensions.install",
+    "title": "jvm.extensions.install",
+    "description": "Install a diagnostic extension JAR",
+    "command": "jvm extensions install",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "jar": {
+          "type": "string",
+          "title": "jar",
+          "format": "byte"
+        }
+      },
+      "required": [
+        "jar"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": true,
+    "scope": "jvm:instrument"
+  },
+  {
+    "name": "jvm.extensions.replace",
+    "title": "jvm.extensions.replace",
+    "description": "Replace a loaded diagnostic extension with a new JAR",
+    "command": "jvm extensions replace",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "jar": {
+          "type": "string",
+          "title": "jar",
+          "format": "byte"
+        }
+      },
+      "required": [
+        "jar"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": true,
+    "scope": "jvm:instrument"
+  },
+  {
+    "name": "jvm.extensions.unload",
+    "title": "jvm.extensions.unload",
+    "description": "Unload a diagnostic extension",
+    "command": "jvm extensions unload",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "title": "id"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": true,
+    "scope": "jvm:instrument"
+  },
+  {
+    "name": "jvm.catalog",
+    "title": "jvm.catalog",
+    "description": "List the operations this runtime supports",
+    "command": "jvm catalog",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.status",
+    "title": "jvm.status",
+    "description": "Report mutation permission, instrumentation and active patches",
+    "command": "jvm status",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.jmx.search",
+    "title": "jvm.jmx.search",
+    "description": "Search MBean names matching an ObjectName pattern",
+    "command": "jvm jmx search",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "title": "pattern"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.jmx.info",
+    "title": "jvm.jmx.info",
+    "description": "Describe an MBean's attributes, operations and notifications",
+    "command": "jvm jmx info",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "objectName": {
+          "type": "string",
+          "title": "objectName"
+        }
+      },
+      "required": [
+        "objectName"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.jmx.read",
+    "title": "jvm.jmx.read",
+    "description": "Read one MBean attribute, or all of them",
+    "command": "jvm jmx read",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "objectName": {
+          "type": "string",
+          "title": "objectName"
+        },
+        "attribute": {
+          "type": "string",
+          "title": "attribute"
+        }
+      },
+      "required": [
+        "objectName"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {},
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.jmx.write",
+    "title": "jvm.jmx.write",
+    "description": "Write an MBean attribute",
+    "command": "jvm jmx write",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "objectName": {
+          "type": "string",
+          "title": "objectName"
+        },
+        "attribute": {
+          "type": "string",
+          "title": "attribute"
+        },
+        "value": {}
+      },
+      "required": [
+        "objectName",
+        "attribute",
+        "value"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": true,
+    "scope": "jvm:write"
+  },
+  {
+    "name": "jvm.jmx.invoke",
+    "title": "jvm.jmx.invoke",
+    "description": "Invoke an MBean operation",
+    "command": "jvm jmx invoke",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "objectName": {
+          "type": "string",
+          "title": "objectName"
+        },
+        "operation": {
+          "type": "string",
+          "title": "operation"
+        },
+        "args": {
+          "type": "array",
+          "title": "args",
+          "items": {}
+        },
+        "signature": {
+          "type": "array",
+          "title": "signature",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "objectName",
+        "operation"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {},
+    "mutates": true,
+    "scope": "jvm:write"
+  },
+  {
+    "name": "jvm.metrics",
+    "title": "jvm.metrics",
+    "description": "Snapshot memory, GC, thread, class-loading and runtime metrics",
+    "command": "jvm metrics",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.telemetry",
+    "title": "jvm.telemetry",
+    "description": "Read native activity telemetry from every loaded application without arming it or using JMX",
+    "command": "jvm telemetry",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object",
+      "properties": {
+        "capturedAt": {
+          "type": "string",
+          "title": "capturedAt"
+        },
+        "applications": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "loader": {
+                "type": "string",
+                "title": "loader"
+              },
+              "label": {
+                "type": "string",
+                "title": "label"
+              },
+              "status": {
+                "type": "object",
+                "title": "status",
+                "additionalProperties": {}
+              },
+              "histograms": {
+                "type": "array",
+                "title": "histograms",
+                "items": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.settings",
+    "title": "jvm.settings",
+    "description": "Read OS/JVM properties, environment and resource settings",
+    "command": "jvm settings",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.resources",
+    "title": "jvm.resources",
+    "description": "Read filesystem capacity and Linux process and cgroup resources",
+    "command": "jvm resources",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.flags",
+    "title": "jvm.flags",
+    "description": "Read effective HotSpot VM flags",
+    "command": "jvm flags",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "string"
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.threads",
+    "title": "jvm.threads",
+    "description": "Sample thread states and CPU over a short interval",
+    "command": "jvm threads",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "sampleMs": {
+          "type": "integer",
+          "title": "sampleMs"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.threads.dump",
+    "title": "jvm.threads.dump",
+    "description": "Dump every thread's stack as text",
+    "command": "jvm threads dump",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "string"
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.heap.histogram",
+    "title": "jvm.heap.histogram",
+    "description": "List the heap's classes by retained bytes (GC.class_histogram)",
+    "command": "jvm heap histogram",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "top": {
+          "type": "integer",
+          "title": "top",
+          "description": "Rows to return, largest first (default 100)."
+        },
+        "classPattern": {
+          "type": "string",
+          "title": "classPattern",
+          "description": "Glob over class names, e.g. com.example.*"
+        },
+        "live": {
+          "type": "boolean",
+          "title": "live",
+          "description": "Count only reachable objects. Forces a full GC on this JVM first."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object",
+      "properties": {
+        "collectedAt": {
+          "type": "string",
+          "title": "collectedAt"
+        },
+        "live": {
+          "type": "boolean",
+          "title": "live"
+        },
+        "totalInstances": {
+          "type": "integer",
+          "title": "totalInstances"
+        },
+        "totalBytes": {
+          "type": "integer",
+          "title": "totalBytes"
+        },
+        "matched": {
+          "type": "integer",
+          "title": "matched"
+        },
+        "rows": {
+          "type": "array",
+          "title": "rows",
+          "items": {}
+        }
+      }
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.threads.stack",
+    "title": "jvm.threads.stack",
+    "description": "Read one thread's stack and lock state",
+    "command": "jvm threads stack",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "title": "id"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.logging.list",
+    "title": "jvm.logging.list",
+    "description": "List java.util.logging loggers and their levels",
+    "command": "jvm logging list",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.logging.set",
+    "title": "jvm.logging.set",
+    "description": "Set a logger's level, or inherit its parent's with null",
+    "command": "jvm logging set",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "title": "name"
+        },
+        "level": {
+          "type": "string",
+          "nullable": true,
+          "title": "level",
+          "description": "Use null to inherit the parent logger level."
+        }
+      },
+      "required": [
+        "name",
+        "level"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": true,
+    "scope": "jvm:write"
+  },
+  {
+    "name": "jvm.classes",
+    "title": "jvm.classes",
+    "description": "Page through loaded classes by name and loader",
+    "command": "jvm classes",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "title": "query"
+        },
+        "loader": {
+          "type": "string",
+          "title": "loader"
+        },
+        "limit": {
+          "type": "integer",
+          "title": "limit"
+        },
+        "offset": {
+          "type": "integer",
+          "title": "offset"
+        },
+        "includePlatform": {
+          "type": "boolean",
+          "title": "includePlatform"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.loaders",
+    "title": "jvm.loaders",
+    "description": "List class loaders and their identities",
+    "command": "jvm loaders",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.groovy.eval",
+    "title": "jvm.groovy.eval",
+    "description": "Execute a Groovy script once in an application loader",
+    "command": "jvm groovy eval",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "title": "source",
+          "format": "textarea"
+        },
+        "loader": {
+          "type": "string",
+          "title": "loader"
+        },
+        "args": {
+          "type": "object",
+          "title": "args",
+          "additionalProperties": {}
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "title": "timeoutSeconds"
+        }
+      },
+      "required": [
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object",
+      "properties": {
+        "value": {},
+        "graph": {
+          "type": "object",
+          "title": "graph",
+          "additionalProperties": {}
+        },
+        "stdout": {
+          "type": "string",
+          "title": "stdout"
+        },
+        "stderr": {
+          "type": "string",
+          "title": "stderr"
+        },
+        "elapsedMs": {
+          "type": "integer",
+          "title": "elapsedMs"
+        }
+      }
+    },
+    "mutates": true,
+    "scope": "jvm:eval"
+  },
+  {
+    "name": "jvm.ognl.eval",
+    "title": "jvm.ognl.eval",
+    "description": "Evaluate an OGNL expression in an application loader",
+    "command": "jvm ognl eval",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "expression": {
+          "type": "string",
+          "title": "expression",
+          "format": "textarea"
+        },
+        "loader": {
+          "type": "string",
+          "title": "loader"
+        }
+      },
+      "required": [
+        "expression"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object",
+      "properties": {
+        "value": {},
+        "graph": {
+          "type": "object",
+          "title": "graph",
+          "additionalProperties": {}
+        }
+      }
+    },
+    "mutates": true,
+    "scope": "jvm:eval"
+  },
+  {
+    "name": "jvm.classes.source",
+    "title": "jvm.classes.source",
+    "description": "Decompile a class with its descriptors and line mappings",
+    "command": "jvm decompile",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "class": {
+          "type": "string",
+          "title": "class"
+        },
+        "loader": {
+          "type": "string",
+          "title": "loader"
+        },
+        "method": {
+          "type": "string",
+          "title": "method"
+        }
+      },
+      "required": [
+        "class"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.classes.bytecode",
+    "title": "jvm.classes.bytecode",
+    "description": "Read a class's bytecode as base64",
+    "command": "jvm decompile bytecode",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "class": {
+          "type": "string",
+          "title": "class"
+        },
+        "loader": {
+          "type": "string",
+          "title": "loader"
+        },
+        "method": {
+          "type": "string",
+          "title": "method"
+        }
+      },
+      "required": [
+        "class"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.classes.compile",
+    "title": "jvm.classes.compile",
+    "description": "Preview compiling replacement source without applying it",
+    "command": "jvm patch compile",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "class": {
+          "type": "string",
+          "title": "class"
+        },
+        "loader": {
+          "type": "string",
+          "title": "loader"
+        },
+        "method": {
+          "type": "string",
+          "title": "method"
+        },
+        "source": {
+          "type": "string",
+          "title": "source",
+          "format": "textarea"
+        },
+        "classpath": {
+          "type": "string",
+          "title": "classpath"
+        }
+      },
+      "required": [
+        "class",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.classes.patch",
+    "title": "jvm.classes.patch",
+    "description": "Compile and apply replacement source under a restore lease",
+    "command": "jvm patch apply",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "class": {
+          "type": "string",
+          "title": "class"
+        },
+        "loader": {
+          "type": "string",
+          "title": "loader"
+        },
+        "method": {
+          "type": "string",
+          "title": "method"
+        },
+        "source": {
+          "type": "string",
+          "title": "source",
+          "format": "textarea"
+        },
+        "classpath": {
+          "type": "string",
+          "title": "classpath"
+        },
+        "leaseSeconds": {
+          "type": "integer",
+          "title": "leaseSeconds"
+        }
+      },
+      "required": [
+        "class",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": true,
+    "scope": "jvm:instrument"
+  },
+  {
+    "name": "jvm.classes.instrument",
+    "title": "jvm.classes.instrument",
+    "description": "Add a method probe to a class under a restore lease",
+    "command": "jvm trace instrument",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "class": {
+          "type": "string",
+          "title": "class"
+        },
+        "loader": {
+          "type": "string",
+          "title": "loader"
+        },
+        "method": {
+          "type": "string",
+          "title": "method"
+        },
+        "probe": {
+          "type": "object",
+          "title": "probe",
+          "additionalProperties": {}
+        },
+        "leaseSeconds": {
+          "type": "integer",
+          "title": "leaseSeconds"
+        }
+      },
+      "required": [
+        "class",
+        "probe"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": true,
+    "scope": "jvm:instrument"
+  },
+  {
+    "name": "jvm.classes.restore",
+    "title": "jvm.classes.restore",
+    "description": "Restore a class's original bytecode, or remove one probe",
+    "command": "jvm patch restore",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "class": {
+          "type": "string",
+          "title": "class"
+        },
+        "loader": {
+          "type": "string",
+          "title": "loader"
+        },
+        "method": {
+          "type": "string",
+          "title": "method"
+        },
+        "probe": {
+          "type": "object",
+          "title": "probe",
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "class"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": true,
+    "scope": "jvm:instrument"
+  },
+  {
+    "name": "jvm.classes.lease",
+    "title": "jvm.classes.lease",
+    "description": "Renew or change a patched class's restore lease",
+    "command": "jvm patch lease",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "class": {
+          "type": "string",
+          "title": "class"
+        },
+        "loader": {
+          "type": "string",
+          "title": "loader"
+        },
+        "method": {
+          "type": "string",
+          "title": "method"
+        },
+        "seconds": {
+          "type": "integer",
+          "title": "seconds"
+        }
+      },
+      "required": [
+        "class"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": true,
+    "scope": "jvm:instrument"
+  },
+  {
+    "name": "jvm.classes.patches",
+    "title": "jvm.classes.patches",
+    "description": "List active bytecode patches and probes",
+    "command": "jvm patch list",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.probes.read",
+    "title": "jvm.probes.read",
+    "description": "Read buffered events of a method probe",
+    "command": "jvm trace read",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "title": "key"
+        },
+        "since": {
+          "type": "integer",
+          "title": "since"
+        },
+        "limit": {
+          "type": "integer",
+          "title": "limit"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.probes.list",
+    "title": "jvm.probes.list",
+    "description": "List method probe keys",
+    "command": "jvm trace probes",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  },
+  {
+    "name": "jvm.probes.freeze",
+    "title": "jvm.probes.freeze",
+    "description": "Stop a method probe from recording further events",
+    "command": "jvm trace freeze",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "title": "key"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "object"
+    },
+    "mutates": true,
+    "scope": "jvm:trace"
+  },
+  {
+    "name": "jvm.notifications.list",
+    "title": "jvm.notifications.list",
+    "description": "List JMX notification subscriptions and their queues",
+    "command": "jvm notifications list",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "resultSchema": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "mutates": false,
+    "scope": "jvm:read"
+  }
+]

@@ -1,6 +1,7 @@
 package telltale
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/flanksource/telltale/pkg/traces"
+	"github.com/flanksource/telltale/pkg/tracing"
 )
 
 // Status is where a run is.
@@ -57,6 +59,7 @@ type RunInfo struct {
 	// Process names the process capture's streams; nil for an unfinished run
 	// and a host run.
 	Process *traces.ProcessRefs `json:"process,omitempty"`
+	Output  *OutputRefs         `json:"output,omitempty"`
 	// Live is set while the run is running, with what a client checkpoints.
 	Live *LiveRun `json:"live,omitempty"`
 	// Unavailable says why an unfinished run has nothing to read.
@@ -85,11 +88,25 @@ func resultInfo(result *Result) RunInfo {
 	if result.EndedAt.IsZero() {
 		status, exitCode = StatusRunning, nil
 	}
-	return RunInfo{
+	info := RunInfo{
 		RunID: result.RunID, Dir: result.Dir, Status: status, Command: result.Command, PID: result.PID, StartedAt: result.StartedAt,
-		EndedAt: result.EndedAt, ExitCode: exitCode, Captures: result.Captures, Process: result.Process,
+		EndedAt: result.EndedAt, ExitCode: exitCode, Captures: result.Captures, Process: result.Process, Output: result.Output,
 		CheckpointErrors: result.CheckpointErrors, Definition: result.Definition, Error: result.Error,
 	}
+	refs := []tracing.TraceRef{}
+	for _, capture := range info.Captures {
+		refs = append(refs, capture.Ref)
+	}
+	if info.Process != nil {
+		refs = append(refs, info.Process.Tree, info.Process.Samples)
+	}
+	for _, ref := range refs {
+		if slices.Contains([]string{"process_tree", "process_samples", "process_groups"}, ref.Kind) {
+			info.Unavailable = "This recording uses the retired " + ref.Kind + " format. Open it with the build that recorded it; this build records the unified process format."
+			break
+		}
+	}
+	return info
 }
 
 // GetOptions name one run.
@@ -193,9 +210,16 @@ func listRuns(options ListOptions) ([]RunInfo, error) {
 		if !options.matches(info) {
 			continue
 		}
-		if runs = append(runs, info); options.Limit > 0 && len(runs) == options.Limit {
-			break
+		runs = append(runs, info)
+	}
+	slices.SortFunc(runs, func(a, b RunInfo) int {
+		if compared := b.StartedAt.Compare(a.StartedAt); compared != 0 {
+			return compared
 		}
+		return cmp.Compare(b.RunID, a.RunID)
+	})
+	if options.Limit > 0 && len(runs) > options.Limit {
+		runs = runs[:options.Limit]
 	}
 	return runs, nil
 }
@@ -210,7 +234,7 @@ func (o ListOptions) matches(info RunInfo) bool {
 	if len(o.Status) > 0 && !slices.Contains(o.Status, info.Status) {
 		return false
 	}
-	if o.Kind != "" && !slices.ContainsFunc(info.Captures, func(c CaptureResult) bool { return c.Kind == o.Kind }) {
+	if o.Kind != "" && (info.Process == nil || info.Process.Tree.Kind != o.Kind) && !slices.ContainsFunc(info.Captures, func(c CaptureResult) bool { return c.Kind == o.Kind }) {
 		return false
 	}
 	return o.Since.IsZero() || info.Standing || (!info.StartedAt.IsZero() && !info.StartedAt.Before(o.Since))

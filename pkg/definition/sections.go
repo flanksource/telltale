@@ -5,7 +5,9 @@ import "github.com/flanksource/telltale/pkg/traces"
 // Each typed list carries the kind it compiles to in its telltale tag
 // (kind=<id>), and may fix the seam (seam=<seam>) or the logs backend
 // (backend=<provider>). A group's tag gives the seam its lists are aimed at
-// unless a list fixes its own. The tags are read by the walker (walk.go);
+// unless a list fixes its own. A preset group (preset) gathers lists of kinds
+// other groups also arm, so an ad-hoc capture lands in it only when no other
+// list takes it. The tags are read by the walker (walk.go);
 // the field's json name is the path segment and the default-name part.
 
 // Proxy are the proxies a command is routed through, each on its own port
@@ -28,8 +30,19 @@ type InstrumentGo struct {
 }
 
 type InstrumentJVM struct {
-	FlightRecorder []FlightRecorder `json:"flightRecorder,omitempty" clicky:"title=Flight Recorder,desc=Starts a JFR recording" telltale:"kind=jvm_jfr"`
-	AsyncProfiler  []AsyncProfiler  `json:"asyncProfiler,omitempty" clicky:"title=async-profiler,desc=Attaches async-profiler" telltale:"kind=jvm_jfr"`
+	Notifications  []JVMNotifications `json:"notifications,omitempty" clicky:"title=JMX notifications and GC" telltale:"kind=jvm_notifications,seam=agent"`
+	Expressions    []JVMExpression    `json:"expressions,omitempty" clicky:"title=Periodic OGNL" telltale:"kind=jvm_ognl,seam=agent"`
+	Methods        []JVMMethods       `json:"methods,omitempty" clicky:"title=Watch or trace methods" telltale:"kind=jvm_trace,seam=agent"`
+	Redefine       []JVMRedefine      `json:"redefine,omitempty" clicky:"title=Redefine Java code" telltale:"kind=jvm_redefine,seam=agent"`
+	FlightRecorder []FlightRecorder   `json:"flightRecorder,omitempty" clicky:"title=Flight Recorder,desc=Starts a JFR recording" telltale:"kind=jvm_jfr"`
+	AsyncProfiler  []AsyncProfiler    `json:"asyncProfiler,omitempty" clicky:"title=async-profiler,desc=Attaches async-profiler" telltale:"kind=jvm_jfr"`
+	HTTP           []HTTPProbe        `json:"http,omitempty" clicky:"title=HTTP exchanges" telltale:"kind=http,seam=agent"`
+	HTTPTop        []HTTPTopProbe     `json:"httpTop,omitempty" clicky:"title=Active HTTP exchanges" telltale:"kind=http_top,seam=agent"`
+	SQL            []JVMSQLProbe      `json:"sql,omitempty" clicky:"title=SQL executions" telltale:"kind=sql,seam=agent"`
+	SQLTop         []JVMTop           `json:"sqlTop,omitempty" clicky:"title=Active SQL executions" telltale:"kind=sql_top,seam=agent"`
+	JMS            []JMSProbe         `json:"jms,omitempty" clicky:"title=JMS operations" telltale:"kind=jms,seam=agent"`
+	JMSTop         []JMSTopProbe      `json:"jmsTop,omitempty" clicky:"title=JMS receive handlers" telltale:"kind=jms_top,seam=agent"`
+	Spans          []SpansProbe       `json:"spans,omitempty" clicky:"title=Existing OTel spans" telltale:"kind=spans,seam=agent"`
 }
 
 type InstrumentSQLServer struct {
@@ -40,6 +53,7 @@ type InstrumentSQLServer struct {
 // runtime or the servers it reaches.
 type Collect struct {
 	Go         CollectGo         `json:"go,omitzero" clicky:"title=Go" telltale:"seam=process"`
+	Clicky     CollectClicky     `json:"clicky,omitzero" clicky:"title=Clicky" telltale:"seam=agent,preset"`
 	Process    CollectProcess    `json:"process,omitzero" clicky:"title=Process" telltale:"seam=process"`
 	Logs       CollectLogs       `json:"logs,omitzero" clicky:"title=Logs" telltale:"seam=host"`
 	Query      CollectQuery      `json:"query,omitzero" clicky:"title=Query" telltale:"seam=host"`
@@ -47,6 +61,7 @@ type Collect struct {
 	Prometheus CollectPrometheus `json:"prometheus,omitzero" clicky:"title=Prometheus" telltale:"seam=host"`
 	OpenSearch CollectOpenSearch `json:"opensearch,omitzero" clicky:"title=OpenSearch" telltale:"seam=host"`
 	SQLServer  CollectSQLServer  `json:"sqlserver,omitzero" clicky:"title=SQL Server" telltale:"seam=connection"`
+	Postgres   CollectPostgres   `json:"postgres,omitzero" clicky:"title=Postgres" telltale:"seam=connection"`
 	Telltale   CollectTelltale   `json:"telltale,omitzero" clicky:"title=Telltale" telltale:"seam=self"`
 }
 
@@ -63,13 +78,26 @@ type CollectGo struct {
 	Spans []SpansProbe   `json:"spans,omitempty" clicky:"title=Spans" telltale:"kind=spans,seam=agent"`
 }
 
+// CollectClicky reads the probes github.com/flanksource/clicky/telltale
+// registers in a clicky process: its executions, entity operations, tasks,
+// commons HTTP and commons logs, and the SDK's Go profiles. The agent is the run's pid's, or the one an
+// entry names.
+type CollectClicky struct {
+	Exec   []ExecProbe    `json:"exec,omitempty" clicky:"title=Executions" telltale:"kind=exec"`
+	Entity []EntityProbe  `json:"entity,omitempty" clicky:"title=Entity operations" telltale:"kind=entity"`
+	Task   []TaskProbe    `json:"task,omitempty" clicky:"title=Tasks" telltale:"kind=task"`
+	HTTP   []HTTPProbe    `json:"http,omitempty" clicky:"title=HTTP" telltale:"kind=http"`
+	Logs   []LogsProbe    `json:"logs,omitempty" clicky:"title=Logs" telltale:"kind=logs"`
+	PProf  []CollectPProf `json:"pprof,omitempty" clicky:"title=pprof,desc=Heap cpu allocs or goroutine profiles read through the agent at each checkpoint" telltale:"kind=goprof"`
+}
+
 // CollectProcess reads the execution's process tree.
 type CollectProcess struct {
 	// Tree is the run-wide process tree every command or pid run records; it
 	// is one object, not a capture list, and absent reads no facets.
 	Tree         *traces.TreeOptions `json:"tree,omitempty" clicky:"title=Process tree,desc=What the run-wide process tree reads of each process"`
 	NativeStacks []NativeStacks      `json:"nativeStacks,omitempty" clicky:"title=Native stacks,desc=Thread stacks of any process: sample (darwin) eu-stack or gdb (linux)" telltale:"kind=stacks"`
-	Resources    []Resources         `json:"resources,omitempty" clicky:"title=Resources,desc=CPU memory disk IO and descriptors of every process" telltale:"kind=process_samples"`
+	Resources    []Resources         `json:"resources,omitempty" clicky:"title=Processes,desc=Startup metadata resource changes and metrics" telltale:"kind=process"`
 }
 
 // CollectLogs reads log sources outside the process, by the backend that
@@ -101,7 +129,7 @@ type CollectQuery struct {
 }
 
 type CollectHost struct {
-	ProcessGroups []ProcessGroups `json:"processGroups,omitempty" clicky:"title=Process groups" telltale:"kind=process_groups"`
+	Processes []Resources `json:"processes,omitempty" clicky:"title=Processes" telltale:"kind=process"`
 }
 
 type CollectPrometheus struct {
@@ -116,6 +144,12 @@ type CollectSQLServer struct {
 	SystemHealth   []SystemHealth   `json:"systemHealth,omitempty" clicky:"title=system_health,desc=Attach read-only to the system_health session" telltale:"kind=sql_xevent"`
 	PlanCache      []PlanCache      `json:"planCache,omitempty" clicky:"title=Plan cache" telltale:"kind=sql_plancache"`
 	DeadlockReport []DeadlockReport `json:"deadlockReport,omitempty" clicky:"title=Deadlock report" telltale:"kind=sql_deadlock"`
+	Top            []SQLServerTop   `json:"top,omitempty" clicky:"title=Running requests,desc=Samples sys.dm_exec_requests top style" telltale:"kind=sql_top"`
+}
+
+// CollectPostgres reads a Postgres server over a connection.
+type CollectPostgres struct {
+	Top []PostgresTop `json:"top,omitempty" clicky:"title=Running queries,desc=Samples pg_stat_activity top style" telltale:"kind=sql_top"`
 }
 
 // CollectTelltale reads telltale's own process.

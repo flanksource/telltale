@@ -1,6 +1,6 @@
-// Command crd writes the TraceDefinition CustomResourceDefinition reflected
-// from pkg/definition to definition.CRDFile, run from the repository root by
-// `task generate`.
+// Command crd writes the CustomResourceDefinitions reflected from
+// pkg/definition (TraceDefinition) and pkg/deploy (Deployer) to crds/, run
+// from the repository root by `task generate`.
 package main
 
 import (
@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/flanksource/telltale/pkg/definition"
+	"github.com/flanksource/telltale/pkg/deploy"
 )
 
 func main() {
@@ -19,12 +20,17 @@ func main() {
 }
 
 func write() error {
-	data, err := definition.CRD()
-	if err != nil {
-		return err
+	for file, generate := range map[string]func() ([]byte, error){definition.CRDFile: definition.CRD, deploy.CRDFile: deploy.CRD} {
+		data, err := generate()
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(file, data, 0o644); err != nil {
+			return err
+		}
 	}
-	if err := os.MkdirAll(filepath.Dir(definition.CRDFile), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(definition.CRDFile, data, 0o644)
+	return nil
 }

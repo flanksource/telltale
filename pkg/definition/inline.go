@@ -29,7 +29,7 @@ type inlined interface {
 // Inline is a start request's ad-hoc captures as a definition, so they
 // compile as a stored definition's entries do: each in the one typed list of
 // its kind and seam whose entry carries every param it sets. Captures maps
-// each entry's pointer to its capture's, /traces/<kind>.
+// each entry's pointer to its capture's request pointer.
 func Inline(captures []telltale.RequestedCapture) (*TraceDefinition, map[string]string, []telltale.FieldError) {
 	def := &TraceDefinition{
 		TypeMeta:   metav1.TypeMeta{APIVersion: APIVersion, Kind: Kind},
@@ -41,10 +41,10 @@ func Inline(captures []telltale.RequestedCapture) (*TraceDefinition, map[string]
 	for _, capture := range captures {
 		at, err := placeCapture(&def.Spec, capture)
 		if err != nil {
-			fields = append(fields, telltale.FieldError{InstancePath: "/traces/" + capture.Kind, Message: err.Error()})
+			fields = append(fields, telltale.FieldError{InstancePath: capture.Pointer, Message: err.Error()})
 			continue
 		}
-		pointers[at.Pointer()] = "/traces/" + capture.Kind
+		pointers[at.Pointer()] = capture.Pointer
 	}
 	return def, pointers, fields
 }
@@ -69,6 +69,17 @@ func placeCapture(spec *Spec, capture telltale.RequestedCapture) (Located, error
 		}
 		matches = append(matches, at)
 	}
+	if own := slices.DeleteFunc(slices.Clone(matches), func(at Located) bool { return at.Preset }); len(own) > 0 {
+		matches = own
+	}
+	if len(matches) > 1 {
+		preferred := slices.DeleteFunc(slices.Clone(matches), func(at Located) bool {
+			return (at.Section == SectionInstrument) != capture.Target.AllowMutation
+		})
+		if len(preferred) > 0 {
+			matches = preferred
+		}
+	}
 	switch {
 	case len(tried) == 0:
 		return Located{}, unarmable(capture)
@@ -83,7 +94,7 @@ func placeCapture(spec *Spec, capture telltale.RequestedCapture) (Located, error
 		}
 		return Located{}, fmt.Errorf("%s each carry these params: start a trace definition that names one", strings.Join(paths, ", "))
 	}
-	appendEntry(spec, matches[0])
+	matches[0].Index = appendEntry(spec, matches[0])
 	return matches[0], nil
 }
 
@@ -170,14 +181,15 @@ func carries(want, got any) bool {
 	return true
 }
 
-// appendEntry appends at's entry to its list in spec.
-func appendEntry(spec *Spec, at Located) {
+// appendEntry appends at's entry to its list in spec, at the index it returns.
+func appendEntry(spec *Spec, at Located) int {
 	list := fieldByJSON(reflect.ValueOf(spec).Elem(), at.Section)
 	if at.Group != "" {
 		list = fieldByJSON(list, at.Group)
 	}
 	list = fieldByJSON(list, at.Type)
 	list.Set(reflect.Append(list, reflect.ValueOf(at.Entry).Elem()))
+	return list.Len() - 1
 }
 
 func fieldByJSON(value reflect.Value, name string) reflect.Value {
@@ -192,6 +204,12 @@ func fieldByJSON(value reflect.Value, name string) reflect.Value {
 // inline takes the exec kind's name glob, which decodes as the entry's name.
 func (p *ExecProbe) inline(map[string]any) error {
 	p.Executable, p.Name = p.Name, ""
+	return nil
+}
+
+// inline takes the task kind's name glob, which decodes as the entry's name.
+func (p *TaskProbe) inline(map[string]any) error {
+	p.TaskName, p.Name = p.Name, ""
 	return nil
 }
 

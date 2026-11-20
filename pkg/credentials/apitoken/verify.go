@@ -31,6 +31,7 @@ type Record struct {
 	Pool       bool
 	PoolAgents []string
 	MaxAgents  int
+	Endpoints  []string
 	ExpiresAt  *time.Time
 	RevokedAt  *time.Time
 }

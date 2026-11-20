@@ -22,7 +22,7 @@ import (
 	"github.com/flanksource/commons-db/recordstore/recordresults"
 	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/tracing/seam"
-	commonsdb "github.com/flanksource/telltale/sdk/commonsdb"
+	_ "github.com/flanksource/telltale/sdk/commonsdb"
 )
 
 // RequestBody and ResponseBody are where an exchange holds its bodies, as
@@ -34,6 +34,9 @@ const (
 
 // Options choose the features whose exchanges a capture records.
 type Options struct {
+	Selection
+	Bodies string   `json:"bodies,omitempty" clicky:"title=Bodies,desc=Retained bytes of each body default 256KiB maximum 4MiB; zero keeps none"`
+	Redact []string `json:"redact,omitempty" clicky:"title=Redact headers,desc=Additional header names to redact"`
 	// Features name the transports to observe, as their HAR levels do:
 	// http, prometheus, loki, opensearch, git, ...
 	Features []string `json:"features" clicky:"required,title=Features,desc=Telltale's transports to observe by their HAR level: http prometheus loki opensearch git ..."`
@@ -50,6 +53,12 @@ type Params struct {
 
 // Validate is the static check of the features a capture records.
 func (p Options) Validate() error {
+	if err := p.Selection.Validate(); err != nil {
+		return err
+	}
+	if _, err := bodyLimit(p.Bodies); err != nil {
+		return err
+	}
 	if len(p.Features) == 0 {
 		return errors.New("name at least one feature to observe")
 	}
@@ -77,6 +86,7 @@ func (p Options) window() (time.Duration, error) {
 
 // Exchange is one outbound request and its response.
 type Exchange struct {
+	Metadata
 	tracing.Truncation
 	har.Entry
 	StartedAt  time.Time         `json:"startedAt" pretty:"label=Started" sort:"startedAt"`
@@ -100,7 +110,8 @@ type Exchange struct {
 	BytesOut  int64 `json:"bytesOut,omitempty" pretty:"label=Bytes out"`
 	// Encoding is the response content's encoding: base64 for a body that is
 	// not UTF-8 text.
-	Encoding string `json:"encoding,omitempty" pretty:"hide"`
+	Encoding        string `json:"encoding,omitempty" pretty:"hide"`
+	RequestEncoding string `json:"requestEncoding,omitempty" pretty:"hide"`
 	// Comment says what the capture left out of the exchange, such as a body
 	// it cut or an event stream still open when it ended.
 	Comment string `json:"comment,omitempty" filter:"text"`
@@ -129,7 +140,7 @@ func Key(exchange Exchange) string {
 	}
 	digest.Write([]byte{0})
 	digest.Write([]byte(exchange.Response.Content.Text))
-	return exchange.Method + " " + exchange.URL + " " + strconv.Itoa(exchange.Status) + " " + hex.EncodeToString(digest.Sum(nil))
+	return string(exchange.Direction) + " " + exchange.Method + " " + exchange.URL + " " + strconv.Itoa(exchange.Status) + " " + hex.EncodeToString(digest.Sum(nil))
 }
 
 type traffic struct {
@@ -169,15 +180,10 @@ func NewCapture(registry *agentclient.Registry) interface {
 	AgentAvailable(string, target.Target) (bool, error)
 } {
 	agent := seam.AgentSeam[Params, Exchange]{Probe: "http", Registry: registry,
-		Target:    func(p Params) target.Target { return p.Target },
-		ArmParams: func(p Params) (json.RawMessage, error) { return json.Marshal(p) },
-		DecodeRecord: func(raw json.RawMessage) (Exchange, error) {
-			var record commonsdb.HTTPEntry
-			if err := json.Unmarshal(raw, &record); err != nil {
-				return Exchange{}, err
-			}
-			return FromEntry(record.Feature, record.Entry), nil
-		},
+		Target:       func(p Params) target.Target { return p.Target },
+		ArmParams:    func(p Params) (json.RawMessage, error) { return json.Marshal(p) },
+		DecodeRecord: DecodeRecord,
+		DecodeBlob:   decodeBlob,
 	}
 	return traffic{agent: agent}
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/flanksource/clicky/tui/table"
 	"slices"
 	"strings"
 	"time"
@@ -41,6 +42,9 @@ type Options struct {
 // Model is the view's state: the latest frame, the selected group and how
 // the tree is folded, filtered and sorted.
 type Model struct {
+	inspection *table.Model
+	paused     bool
+	help       bool
 	ctx        context.Context
 	options    Options
 	source     Source
@@ -55,6 +59,8 @@ type Model struct {
 	selected   string
 	offset     int
 	folded     map[string]bool
+	// expanded are the groups whose member processes the tree lists.
+	expanded   map[string]bool
 	query      string
 	typing     bool
 	detail     bool
@@ -74,7 +80,7 @@ func New(ctx context.Context, options Options) Model {
 	return Model{
 		ctx: ctx, options: options, source: options.Source, toggles: options.Toggles, order: options.Order,
 		groupBy: options.GroupBy,
-		folded:  map[string]bool{},
+		folded:  map[string]bool{}, expanded: map[string]bool{},
 	}
 }
 
@@ -119,7 +125,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case frameMsg:
 		return m.received(msg)
 	case tickMsg:
-		if msg.gen == m.gen {
+		if msg.gen == m.gen && !m.paused {
 			return m, m.read()
 		}
 	case doneMsg:
@@ -138,6 +144,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // received takes a frame, or a failed read: the first failure is shown,
 // the second in a row ends the view.
 func (m Model) received(msg frameMsg) (tea.Model, tea.Cmd) {
+	if m.paused {
+		return m, nil
+	}
 	if msg.gen != m.gen {
 		return m, nil
 	}
@@ -173,6 +182,22 @@ func (m Model) pressed(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.Keystroke() == "ctrl+c" {
 		return m, tea.Quit
 	}
+	if m.inspection != nil {
+		switch msg.Keystroke() {
+		case "q":
+			return m, tea.Quit
+		case "esc", "d":
+			m.inspection = nil
+			return m, nil
+		case "space", "P":
+			m.inspection = nil
+			m.paused = false
+			return m, m.read()
+		default:
+			m.inspection.Key(msg.Keystroke())
+			return m, nil
+		}
+	}
 	if m.typing {
 		return m.typed(msg), nil
 	}
@@ -203,7 +228,9 @@ func (m Model) pressed(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.fold(rows, index, !rows[index].folded)
 		}
 	case tea.KeyEnter:
-		m.detail = !m.detail
+		if index >= 0 {
+			m.toggleExpanded(rows[index])
+		}
 	case tea.KeyEscape:
 		m.detail, m.query = false, ""
 	default:
@@ -216,8 +243,22 @@ func (m Model) pressed(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // command runs a key that names one: sort, filter, toggles, quit.
 func (m Model) command(key string) (tea.Model, tea.Cmd) {
 	switch key {
+	case "d":
+		view := m.processTable()
+		view.Detail = true
+		m.inspection = &view
+		m.paused = true
+	case "P":
+		m.paused = !m.paused
+		if !m.paused {
+			return m, m.read()
+		}
+	case "?":
+		m.help = !m.help
 	case "q":
 		return m, tea.Quit
+	case "f":
+		m.detail = !m.detail
 	case "[", "]":
 		m.cycleProcess(key)
 	case "x", "r":
@@ -260,7 +301,7 @@ func (m Model) typed(msg tea.KeyPressMsg) Model {
 		m.query += msg.Text
 	}
 	if rows := m.rows(); m.selectedIndex(rows) < 0 && len(rows) > 0 {
-		m.selected = rows[0].group.Key
+		m.selected = rows[0].key
 	}
 	m.scroll()
 	return m
@@ -275,14 +316,14 @@ func (m *Model) resort() {
 		m.err, m.status = err, err.Error()
 		return
 	}
-	sorted, err := projected.Sorted(m.order)
+	sorted, err := projected.WithGavelTasks().Sorted(m.order)
 	if err != nil {
 		m.err, m.status = err, err.Error()
 		return
 	}
 	m.frame = &sorted
 	if rows := m.rows(); m.selectedIndex(rows) < 0 && len(rows) > 0 {
-		m.selected = rows[0].group.Key
+		m.selected = rows[0].key
 	}
 }
 
@@ -308,13 +349,22 @@ func (m Model) reopen(toggles Toggles) (tea.Model, tea.Cmd) {
 	return m, m.read()
 }
 
-// row is a group as the tree shows it.
+// row is a group, or one of an expanded group's processes, as the tree
+// shows it. key and parentKey are the tree's: a group's own, or
+// proc:<process key> under the row its process nests in.
 type row struct {
-	group  groups.GroupSample
-	depth  int
-	parent bool
-	folded bool
+	group groups.GroupSample
+	// process is set on a process row; group is then the group it belongs to.
+	process *groups.ProcessSample
+	// detached marks a process whose parent is outside its group.
+	detached       bool
+	key, parentKey string
+	depth          int
+	parent         bool
+	folded         bool
 }
+
+const processPrefix = "proc:"
 
 func (m Model) matchingGroups() []groups.GroupSample {
 	if m.frame == nil {
@@ -360,6 +410,7 @@ func (m Model) rows() []row {
 	for _, group := range displayed {
 		parents[group.ParentKey] = true
 	}
+	under := m.processesUnder(displayed)
 	var rows []row
 	depth := map[string]int{}
 	hidden := map[string]bool{}
@@ -369,25 +420,138 @@ func (m Model) rows() []row {
 			level++
 		}
 		depth[group.Key] = level
-		folded := m.isFolded(group, parents[group.Key])
 		if hidden[group.ParentKey] {
 			hidden[group.Key] = true
 			continue
 		}
+		processes := under[group.Key]
+		parent := parents[group.Key] || len(processes) > 0
+		folded := m.isFolded(group.Key, group, parent)
 		hidden[group.Key] = folded
-		rows = append(rows, row{group: group, depth: level, parent: parents[group.Key], folded: folded})
+		rows = append(rows, row{group: group, key: group.Key, parentKey: group.ParentKey, depth: level, parent: parent, folded: folded})
+		if !folded {
+			for _, process := range m.foldProcesses(processes) {
+				process.depth += level + 1
+				rows = append(rows, process)
+			}
+		}
 	}
 	return rows
 }
 
-func (m Model) isFolded(group groups.GroupSample, parent bool) bool {
+// foldProcesses drops the process rows under a folded process row.
+func (m Model) foldProcesses(processes []row) []row {
+	var shown []row
+	hidden := map[string]bool{}
+	for _, r := range processes {
+		if hidden[r.parentKey] {
+			hidden[r.key] = true
+			continue
+		}
+		r.folded = m.isFolded(r.key, r.group, r.parent)
+		hidden[r.key] = r.folded
+		shown = append(shown, r)
+	}
+	return shown
+}
+
+func (m Model) isFolded(key string, group groups.GroupSample, parent bool) bool {
 	if !parent || m.query != "" {
 		return false
 	}
-	if folded, ok := m.folded[group.Key]; ok {
+	if folded, ok := m.folded[key]; ok {
 		return folded
 	}
-	return group.Kind == groups.KindOther
+	return group.Kind == groups.KindOther && !group.Total.Hogs.Pinned(m.frame.SampledAt)
+}
+
+// toggleExpanded lists or hides the member processes of r's group, or of
+// the group a process row belongs to.
+func (m *Model) toggleExpanded(r row) {
+	key := r.group.Key
+	if r.group.Task != nil || r.group.Kind == groups.KindBucket {
+		m.status = "enter lists a group's processes; f shows them all below"
+		return
+	}
+	if _, kept := m.source.Processes(groups.ProcessFilter{GroupKey: key}); !kept {
+		m.status = "A recording keeps each group's use, not its processes."
+		return
+	}
+	m.expanded[key] = !m.expanded[key]
+	if !m.expanded[key] && r.process != nil {
+		m.selected = key
+	}
+}
+
+// processesUnder are the expanded groups' member processes as rows, by the
+// key of the row each subtree nests under, their depths counted from it.
+// A group's anchor is the group's own row; a member a gavel task runs, and
+// the members under it, nest under that task's row.
+func (m Model) processesUnder(displayed []groups.GroupSample) map[string][]row {
+	under := map[string][]row{}
+	for _, group := range displayed {
+		if !m.expanded[group.Key] || group.Task != nil || group.Kind == groups.KindBucket {
+			continue
+		}
+		members, _ := m.source.Processes(groups.ProcessFilter{GroupKey: group.Key})
+		claims := map[int]string{}
+		for _, task := range displayed {
+			if task.Task != nil && task.Task.Item != nil && task.Task.Item.PID > 0 && strings.HasPrefix(task.Key, group.Key+"/") {
+				claims[task.Task.Item.PID] = task.Key
+			}
+		}
+		for key, rows := range processRows(group, members, claims) {
+			under[key] = append(under[key], rows...)
+		}
+	}
+	return under
+}
+
+// processRows nests members by parent pid: the anchor's children under the
+// group, a claimed process (and those under it) under its task's row, and a
+// process whose parent is outside the group directly under it, detached.
+// Siblings come busiest first.
+func processRows(group groups.GroupSample, members []groups.ProcessSample, claims map[int]string) map[string][]row {
+	byPID := map[int]groups.ProcessSample{}
+	for _, p := range members {
+		if p.PID != group.PID {
+			byPID[p.PID] = p
+		}
+	}
+	children := map[int][]groups.ProcessSample{}
+	var roots []groups.ProcessSample
+	for _, p := range byPID {
+		if _, ok := byPID[p.PPID]; ok && claims[p.PID] == "" {
+			children[p.PPID] = append(children[p.PPID], p)
+		} else {
+			roots = append(roots, p)
+		}
+	}
+	busiest := func(processes []groups.ProcessSample) {
+		slices.SortFunc(processes, func(a, b groups.ProcessSample) int {
+			return cmp.Or(cmp.Compare(cpuOf(b.Usage), cpuOf(a.Usage)), cmp.Compare(a.PID, b.PID))
+		})
+	}
+	under := map[string][]row{}
+	var walk func(owner string, p groups.ProcessSample, parentKey string, depth int, detached bool)
+	walk = func(owner string, p groups.ProcessSample, parentKey string, depth int, detached bool) {
+		process := p
+		key := processPrefix + p.Key
+		under[owner] = append(under[owner], row{group: group, process: &process, detached: detached, key: key, parentKey: parentKey, depth: depth, parent: len(children[p.PID]) > 0})
+		busiest(children[p.PID])
+		for _, child := range children[p.PID] {
+			walk(owner, child, key, depth+1, false)
+		}
+	}
+	busiest(roots)
+	for _, p := range roots {
+		if task := claims[p.PID]; task != "" {
+			walk(task, p, task, 0, false)
+			continue
+		}
+		walk(group.Key, p, group.Key, 0, p.PPID != group.PID)
+	}
+	return under
 }
 
 func matches(group groups.GroupSample, query string) bool {
@@ -400,14 +564,20 @@ func matches(group groups.GroupSample, query string) bool {
 }
 
 func (m Model) selectedIndex(rows []row) int {
-	return slices.IndexFunc(rows, func(r row) bool { return r.group.Key == m.selected })
+	return slices.IndexFunc(rows, func(r row) bool { return r.key == m.selected })
 }
 
+// selectAt selects the row at index; a process row also chooses its
+// process for x and r.
 func (m *Model) selectAt(rows []row, index int) {
 	if len(rows) == 0 {
 		return
 	}
-	m.selected = rows[max(0, min(index, len(rows)-1))].group.Key
+	r := rows[max(0, min(index, len(rows)-1))]
+	m.selected = r.key
+	if r.process != nil {
+		m.processKey = r.process.Key
+	}
 }
 
 // fold folds or unfolds the selected group; folding a group that holds
@@ -418,11 +588,11 @@ func (m *Model) fold(rows []row, index int, fold bool) {
 	}
 	current := rows[index]
 	if current.parent && current.folded != fold {
-		m.folded[current.group.Key] = fold
+		m.folded[current.key] = fold
 		return
 	}
-	if fold && current.group.ParentKey != "" && slices.ContainsFunc(rows, func(r row) bool { return r.group.Key == current.group.ParentKey }) {
-		m.selected = current.group.ParentKey
+	if fold && current.parentKey != "" && slices.ContainsFunc(rows, func(r row) bool { return r.key == current.parentKey }) {
+		m.selected = current.parentKey
 	}
 }
 
@@ -446,6 +616,13 @@ func (m Model) selectedProcesses() ([]groups.ProcessSample, bool) {
 	if m.frame == nil || m.selected == "" {
 		return nil, true
 	}
+	if strings.HasPrefix(m.selected, processPrefix) {
+		rows := m.rows()
+		if index := m.selectedIndex(rows); index >= 0 {
+			return []groups.ProcessSample{*rows[index].process}, true
+		}
+		return nil, true
+	}
 	under := map[string]bool{m.selected: true}
 	var processes []groups.ProcessSample
 	for _, group := range m.matchingGroups() {
@@ -462,7 +639,15 @@ func (m Model) selectedProcesses() ([]groups.ProcessSample, bool) {
 		}
 		processes = append(processes, read...)
 	}
-	slices.SortStableFunc(processes, func(a, b groups.ProcessSample) int { return cmp.Compare(cpuOf(b.Usage), cpuOf(a.Usage)) })
+	slices.SortStableFunc(processes, func(a, b groups.ProcessSample) int {
+		if a.Hogs.Pinned(m.frame.SampledAt) != b.Hogs.Pinned(m.frame.SampledAt) {
+			if a.Hogs.Pinned(m.frame.SampledAt) {
+				return -1
+			}
+			return 1
+		}
+		return cmp.Compare(cpuOf(b.Usage), cpuOf(a.Usage))
+	})
 	return processes, true
 }
 

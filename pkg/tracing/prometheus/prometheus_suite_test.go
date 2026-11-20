@@ -1,5 +1,4 @@
-// Runs the prometheus kind's specs: params, file_sd target groups, the scrape
-// records read from a fake Prometheus API, and one live managed Prometheus.
+// Runs the prometheus capture's parameter, target, and VictoriaMetrics specs.
 
 package prometheus_test
 

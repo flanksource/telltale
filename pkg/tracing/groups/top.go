@@ -12,6 +12,7 @@ import (
 	"time"
 
 	clickyprocess "github.com/flanksource/clicky/process"
+	"github.com/flanksource/gavel/sdk/status"
 	"github.com/flanksource/telltale/pkg/datadir"
 	"github.com/flanksource/telltale/pkg/tracing/process"
 )
@@ -32,6 +33,16 @@ type GroupSample struct {
 	Origin    Origin    `json:"origin" filter:"none"`
 	Self      Usage     `json:"self" filter:"none"`
 	Total     Usage     `json:"total" filter:"none"`
+	// Gavel is the progress and slots a gavel group's process publishes, and
+	// GavelError why it could not be read.
+	Gavel      *status.Status `json:"gavel,omitempty" filter:"none" pretty:"hide"`
+	GavelError string         `json:"gavelError,omitempty" filter:"none" pretty:"hide"`
+	// SkipAncestry is the group's rule's: its tasks claim their processes'
+	// groups by pid before ancestry does.
+	SkipAncestry bool `json:"skipAncestry,omitempty" filter:"none" pretty:"hide"`
+	// Task is what a row WithGavelTasks adds shows: a task group's progress,
+	// or one running task. It is never recorded.
+	Task *GavelTask `json:"-" filter:"none" pretty:"hide"`
 }
 
 // Frame is every group shown at one tick, parents before their children,
@@ -43,6 +54,8 @@ type Frame struct {
 	// Overhead is what reading the frame cost, when read live.
 	Overhead *Overhead     `json:"overhead,omitempty"`
 	Groups   []GroupSample `json:"groups"`
+	// Slots are the gavel slot pools the gavel groups hold or wait for.
+	Slots []SlotPool `json:"slots,omitempty"`
 }
 
 // ProcessSample is one process at one tick: who runs it, the group it is in,
@@ -77,7 +90,9 @@ func (p ProcessSample) holds(query string) bool {
 
 // TopOptions choose what a Top reads and shows.
 type TopOptions struct {
-	Catalog Catalog
+	Catalog         Catalog
+	RootPID         int
+	SkipDescriptors bool
 	// All shows, and reads the disk and descriptors of, the processes in no
 	// tool's group too.
 	All bool
@@ -86,6 +101,9 @@ type TopOptions struct {
 	// Net reads each process's network bytes with nettop, every Interval.
 	Net      bool
 	Interval time.Duration
+	// GavelCache is where gavel processes publish their status; defaults to
+	// gavel's user cache directory.
+	GavelCache string
 }
 
 // Top reads the host's process groups at each Tick.
@@ -100,9 +118,14 @@ type Top struct {
 	self      int
 	overhead  overheadReader
 	host      hostReader
+	hogs      hogTracker
 	net       *NetMonitor
 	tick      int64
 	processes []ProcessSample
+	gavel     *gavelStatuses
+	observed  []process.Observed
+	held      map[int][]clickyprocess.Descriptor
+	io        map[int]clickyprocess.Process
 }
 
 // NewTop is a Top over sampler, refusing a group no rule names; with Net it
@@ -113,7 +136,15 @@ func NewTop(ctx context.Context, sampler *process.Sampler, options TopOptions) (
 			return nil, fmt.Errorf("group %q is no rule of the catalog", name)
 		}
 	}
-	top := &Top{sampler: sampler, options: options, rates: NewRates(), contexts: newContexts(), brew: BrewPrefixes(), self: os.Getpid()}
+	if options.GavelCache == "" {
+		cache, err := status.CacheDir()
+		if err != nil {
+			return nil, fmt.Errorf("gavel status directory: %w", err)
+		}
+		options.GavelCache = cache
+	}
+	top := &Top{sampler: sampler, options: options, rates: NewRates(), contexts: newContexts(), brew: BrewPrefixes(), self: os.Getpid(),
+		gavel: newGavelStatuses(options.GavelCache)}
 	if options.Net {
 		monitor, err := StartNetMonitor(ctx, options.Interval)
 		if err != nil {
@@ -140,12 +171,13 @@ func (t *Top) Close() {
 	if t.net != nil {
 		t.net.Close()
 	}
+	t.gavel.close()
 }
 
 // Tick lists the host, sorts it into groups and reads what each uses.
 func (t *Top) collect(ctx context.Context) (Frame, error) {
 	started := time.Now()
-	listing, at, err := t.sampler.Observe(ctx, 0)
+	listing, at, err := t.sampler.Observe(ctx, t.options.RootPID)
 	if err != nil {
 		return Frame{}, err
 	}
@@ -162,10 +194,12 @@ func (t *Top) collect(ctx context.Context) (Frame, error) {
 	if err != nil {
 		return Frame{}, err
 	}
+	t.observed, t.held = listing, held
 	host, err := t.host.read(ctx)
 	if err != nil {
 		return Frame{}, err
 	}
+	t.hogs.observe(readings, host, at)
 	totals := Aggregate(classified, readings)
 	contexts := t.contexts.of(ctx, classified, held)
 	t.tick++
@@ -186,14 +220,33 @@ func (t *Top) collect(ctx context.Context) (Frame, error) {
 		return Frame{}, err
 	}
 	frame := Frame{SampledAt: at, Tick: t.tick, Host: &host, Overhead: &overhead}
+	var gavelPIDs []int
 	for _, group := range classified {
-		frame.Groups = append(frame.Groups, GroupSample{
+		if group.Rule.Name == gavelRule {
+			gavelPIDs = append(gavelPIDs, group.Anchor.PID)
+		}
+	}
+	gavels := t.gavel.of(gavelPIDs)
+	var published []status.Status
+	for _, group := range classified {
+		sample := GroupSample{
 			SampledAt: at, Tick: t.tick, Key: group.Key, ParentKey: group.ParentKey,
 			Name: group.Rule.Name, Kind: group.Rule.Kind, Target: group.Target,
 			PID: group.Anchor.PID, Command: group.Anchor.Command, Context: contexts[group.Key], Origin: group.Origin,
-			Self: totals[group.Key].Self, Total: totals[group.Key].Total,
-		})
+			Self: totals[group.Key].Self, Total: totals[group.Key].Total, SkipAncestry: group.Rule.SkipAncestry,
+		}
+		if reading, ok := gavels[group.Anchor.PID]; ok && group.Rule.Name == gavelRule {
+			sample.Gavel = reading.Status
+			if reading.Err != nil {
+				sample.GavelError = reading.Err.Error()
+			}
+			if reading.Status != nil {
+				published = append(published, *reading.Status)
+			}
+		}
+		frame.Groups = append(frame.Groups, sample)
 	}
+	frame.Slots = SlotPools(published)
 	return frame, nil
 }
 
@@ -201,13 +254,17 @@ func (t *Top) collect(ctx context.Context) (Frame, error) {
 func (t *Top) Processes(filter ProcessFilter) []ProcessSample {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	return FilterProcesses(t.processes, filter)
+}
+
+func FilterProcesses(processes []ProcessSample, filter ProcessFilter) []ProcessSample {
 	picked := map[int]bool{}
 	if filter.PID != 0 {
 		picked[filter.PID] = true
 		// Parents may be listed after their children: grow the subtree until it holds.
 		for grew := true; grew; {
 			grew = false
-			for _, p := range t.processes {
+			for _, p := range processes {
 				if picked[p.PPID] && !picked[p.PID] && p.PID != p.PPID {
 					picked[p.PID], grew = true, true
 				}
@@ -215,7 +272,7 @@ func (t *Top) Processes(filter ProcessFilter) []ProcessSample {
 		}
 	}
 	var result []ProcessSample
-	for _, p := range t.processes {
+	for _, p := range processes {
 		switch {
 		case filter.PID != 0 && !picked[p.PID]:
 		case filter.GroupKey != "" && p.GroupKey != filter.GroupKey:
@@ -247,6 +304,13 @@ func (t *Top) read(ctx context.Context, classified []Group, at time.Time) (map[s
 		}
 	}
 	t.rates.Forget(alive)
+	if len(readings) == 0 {
+		t.io = nil
+		return readings, nil, nil
+	}
+	if err := readMemory(ctx, classified, readings); err != nil {
+		return nil, nil, err
+	}
 	pids := make([]int, 0, len(measured))
 	for _, p := range measured {
 		pids = append(pids, p.PID)
@@ -255,12 +319,21 @@ func (t *Top) read(ctx context.Context, classified []Group, at time.Time) (map[s
 	if err := snapshot.PopulateIO(ctx, pids); err != nil {
 		return nil, nil, err
 	}
-	descriptors, err := clickyprocess.Descriptors(ctx, pids...)
-	if err != nil {
-		return nil, nil, fmt.Errorf("read sockets: %w", err)
+	t.io = make(map[int]clickyprocess.Process, len(pids))
+	for _, p := range snapshot.All() {
+		t.io[p.PID] = p
+	}
+	var descriptors map[int][]clickyprocess.Descriptor
+	if !t.options.SkipDescriptors && len(pids) > 0 {
+		var err error
+		descriptors, err = clickyprocess.Descriptors(ctx, pids...)
+		if err != nil {
+			return nil, nil, fmt.Errorf("read sockets: %w", err)
+		}
 	}
 	var network map[int]NetBytes // nil leaves every process's network unknown
 	if t.net != nil {
+		var err error
 		if network, err = t.net.Counters(); err != nil {
 			return nil, nil, err
 		}

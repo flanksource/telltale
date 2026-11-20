@@ -5,7 +5,6 @@ package sql
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -17,7 +16,6 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing/target"
 	_ "github.com/flanksource/telltale/sdk/commonsdb"
 
-	"github.com/flanksource/commons-db/connection"
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
@@ -74,7 +72,7 @@ var repeatsView = recordresults.ResultView{
 	Name: "repeats", Title: "Repeated SQL statements",
 	Query: `SELECT repeatKey, min(sql) AS sql, count(*) AS runs,
 			sum(durationMs) AS durationMs, max(durationMs) AS maxDurationMs
-		FROM stream_rows GROUP BY repeatKey HAVING count(*) > 1`,
+		FROM stream_rows WHERE repeatKey <> '' AND NOT coalesce(incomplete, false) GROUP BY repeatKey HAVING count(*) > 1`,
 	Columns: []query.ColumnDef{
 		{Name: "repeatKey", Type: query.ColumnTypeString, Hidden: true},
 		{Name: "sql", Label: "Statement", Type: query.ColumnTypeString},
@@ -180,15 +178,10 @@ func NewCapture(registry *agentclient.Registry) interface {
 	AgentAvailable(string, target.Target) (bool, error)
 } {
 	agent := seam.AgentSeam[Params, StatementRow]{Probe: RowKind, Registry: registry,
-		Target:    func(p Params) target.Target { return p.Target },
-		ArmParams: func(p Params) (json.RawMessage, error) { return json.Marshal(p) },
-		DecodeRecord: func(raw json.RawMessage) (StatementRow, error) {
-			var statement connection.Statement
-			if err := json.Unmarshal(raw, &statement); err != nil {
-				return StatementRow{}, err
-			}
-			return FromStatement(statement), nil
-		},
+		Target:       func(p Params) target.Target { return p.Target },
+		ArmParams:    agentArmParams,
+		DecodeRecord: decodeAgentStatement,
+		DecodeBlob:   decodeAgentBlob,
 	}
 	return statements{agent: agent}
 }

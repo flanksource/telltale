@@ -37,5 +37,11 @@ func decode(yaml string) *definition.TraceDefinition {
 var examples = []string{
 	filepath.Join("..", "..", "examples", "definitions", "checkout.yaml"),
 	filepath.Join("..", "..", "examples", "definitions", "logs-and-queries.yaml"),
+	filepath.Join("..", "..", "examples", "definitions", "java-app.yaml"),
+	filepath.Join("..", "..", "examples", "definitions", "java-build.yaml"),
+	filepath.Join("..", "..", "examples", "definitions", "go-app.yaml"),
+	filepath.Join("..", "..", "examples", "definitions", "go-build.yaml"),
+	filepath.Join("..", "..", "examples", "definitions", "node-app.yaml"),
+	filepath.Join("..", "..", "examples", "definitions", "node-build.yaml"),
 	filepath.Join("testdata", "all-kinds.yaml"),
 }

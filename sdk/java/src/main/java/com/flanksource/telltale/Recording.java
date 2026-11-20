@@ -5,7 +5,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-final class Recording implements AutoCloseable {
+final class Recording implements Capture {
   private static final AtomicBoolean ASYNC = new AtomicBoolean();
   private final Object recorder;
   private final Class<?> type;
@@ -54,6 +54,20 @@ final class Recording implements AutoCloseable {
                 .invoke(null, value(params, "settings", "profile"));
         type = Class.forName("jdk.jfr.Recording");
         recorder = type.getConstructor(configType).newInstance(config);
+        if (params.has("supportSnapshot") && params.get("supportSnapshot").getAsBoolean()) {
+          java.util.Map<String, String> settings = new java.util.HashMap<>();
+          java.util.Map<?, ?> original = (java.util.Map<?, ?>) type.getMethod("getSettings").invoke(recorder);
+          java.util.Set<String> allowed = new java.util.HashSet<>(java.util.Arrays.asList(
+              "jdk.ExecutionSample", "jdk.NativeMethodSample", "jdk.ObjectAllocationSample",
+              "jdk.ObjectAllocationInNewTLAB", "jdk.ObjectAllocationOutsideTLAB",
+              "jdk.JavaMonitorEnter", "jdk.ThreadPark", "jdk.GarbageCollection", "jdk.GCHeapSummary"));
+          for (java.util.Map.Entry<?, ?> entry : original.entrySet()) {
+            String key = entry.getKey().toString();
+            settings.put(key, key.endsWith("#enabled") && !allowed.contains(key.split("#")[0]) ? "false" : entry.getValue().toString());
+          }
+          type.getMethod("setSettings", java.util.Map.class).invoke(recorder, settings);
+          type.getMethod("setMaxSize", long.class).invoke(recorder, 60L * 1024 * 1024);
+        }
         type.getMethod("start").invoke(recorder);
       }
     } catch (Exception error) {
@@ -73,7 +87,7 @@ final class Recording implements AutoCloseable {
     return (String) type.getMethod("execute", String.class).invoke(recorder, command);
   }
 
-  synchronized byte[] dump() throws Exception {
+  public synchronized byte[] dump() throws Exception {
     if (closed) throw new IllegalStateException("Recording is closed");
     if (async) execute("dump,jfr,file=" + file.toString());
     else type.getMethod("dump", Path.class).invoke(recorder, file);
@@ -81,6 +95,14 @@ final class Recording implements AutoCloseable {
     if (bytes > 64L * 1024 * 1024)
       throw new IllegalStateException("Recording exceeds the 64 MiB protocol frame limit");
     return Files.readAllBytes(file);
+  }
+
+  public String contentType() {
+    return "application/x-jfr";
+  }
+
+  public String fileName() {
+    return "recording.jfr";
   }
 
   public synchronized void close() throws Exception {

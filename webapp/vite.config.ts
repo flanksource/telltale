@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -18,16 +18,26 @@ function clickyAliases(uiDirectory: string) {
     const target = typeof value === "string" ? value : value.import;
     if (!target?.startsWith("./dist/")) return [];
     const entry = key === "." ? "@flanksource/clicky-ui" : `@flanksource/clicky-ui${key.slice(1)}`;
+    const pattern = entry.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    if (key.includes("*")) {
+      const assetDirectory = resolve(packageRoot, dirname(target.replace(/\*.*$/, "*")));
+      if (!existsSync(assetDirectory)) throw new Error(`Missing local Clicky UI assets ${assetDirectory}; build the local package first`);
+      const source = resolve(packageRoot, target.replaceAll("*", "$1"));
+      return [{ find: new RegExp(`^${pattern.replace("\\*", "(.+)")}$`), replacement: source }];
+    }
     const cssSource: Record<string, string> = { "./dist/styles.css": "styles/full.css", "./dist/mdx-editor.css": "styles/mdx-editor.css" };
     const relative = cssSource[target] ?? target.slice("./dist/".length).replace(/\.js$/, ".ts");
     const source = resolve(packageRoot, "src", relative);
     if (!existsSync(source)) throw new Error(`Missing local Clicky UI entrypoint ${source}`);
-    return [{ find: new RegExp(`^${entry.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`), replacement: source }];
+    return [{ find: new RegExp(`^${pattern}$`), replacement: source }];
   });
 }
 
 export function createViteConfig(options: ViteOptions): UserConfig {
   return {
+    // Assets resolve against index.html's <base href>, which a host mounting the
+    // viewer under a prefix rewrites (webapp.Handler).
+    base: "./",
     plugins: [react(), tailwindcss(), options.localUI && {
       name: "watch-clicky-source",
       configureServer(server) { server.watcher.add(resolve(options.uiDirectory, "packages/ui/src")); },
@@ -37,7 +47,7 @@ export function createViteConfig(options: ViteOptions): UserConfig {
     }],
     resolve: {
       alias: options.localUI ? clickyAliases(options.uiDirectory) : [],
-      dedupe: ["react", "react-dom", "@tanstack/react-query"],
+      dedupe: ["react", "react-dom", "@tanstack/react-query", "monaco-editor", "@monaco-editor/react"],
     },
     optimizeDeps: options.localUI ? { exclude: ["@flanksource/clicky-ui"] } : {},
     server: {

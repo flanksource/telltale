@@ -8,8 +8,13 @@
       }
     },
     "connection": {
+      "title": "Connection",
       "type": "string",
-      "title": "Connection"
+      "x-clicky-lookup": {
+        "filter": "connection",
+        "searchParam": "__lookup_q",
+        "url": "/api/v1/connection"
+      }
     },
     "databases": {
       "type": "array",

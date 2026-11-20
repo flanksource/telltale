@@ -1,0 +1,13 @@
+# jvm_notifications
+
+import { KindReference } from '../_components/KindReference';
+
+Subscribe to JMX notifications from an MBean name or ObjectName pattern. Garbage collector notifications include decoded GC details. The bounded buffer records dropped-event counts when consumers fall behind.
+
+```sh
+telltale run jvm_notifications --agent 1234 --duration 10s --mbean 'java.lang:type=GarbageCollector,*'
+```
+
+Use `--types` to select notification type prefixes and `--capacity` to size the buffer. Stopping or disconnecting the capture removes its listeners. See [JVM diagnostics](/jvm-diagnostics-port).
+
+<KindReference kind="jvm_notifications" />

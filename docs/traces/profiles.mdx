@@ -1,0 +1,84 @@
+---
+title: Active operation profiles
+description: OTLP Profiles transport for current HTTP requests and SQL operations
+---
+
+Telltale carries JVM `http_top` and `sql_top` snapshots using the development OTLP Profiles schema. Each profile is a complete observation of the operations retained by one capture at one sampling tick. An operation sample represents one active operation and contains its current elapsed nanoseconds. These values are gauges: repeated observations of the same operation must never be summed as elapsed intervals.
+
+Telltale convention version `2` carries empty observations with one explicit zero-valued control sample. This works around Collector 0.163.0 discarding zero-sample profiles; released 0.165.0 has the same [receiver guard](https://github.com/open-telemetry/opentelemetry-collector/blob/e883d737e49935984df6b064e512eed6cdc0d289/receiver/otlpreceiver/internal/profiles/otlp.go#L33-L46). Telltale preserves the control sample in the native profile and excludes it from operation rows. Generic Profiles consumers see that sample, and Collector sample counters count it as one.
+
+## Wire contract
+
+The implementation pins `go.opentelemetry.io/collector/pdata/pprofile` to `v0.163.0`, Collector pdata to `v1.69.0`, Java `io.opentelemetry.proto:opentelemetry-proto` to `1.11.1-alpha`, and Java protobuf to `4.36.2`. Java production sources compile for Java 8. Profiles use the `opentelemetry.proto.profiles.v1development` package and development version `1`. Changes to these pins require rerunning the Java golden and actual Collector gates.
+
+The instrumentation scope is `com.flanksource.telltale.top`, version `1`. The sample type is `telltale.http.active.elapsed` or `telltale.sql.active.elapsed`, with unit `ns`. Every dictionary contains reserved zero entries for strings, attributes, mappings, locations, functions, links, and stacks. Real stack frames occupy the function, location, and stack tables; trace and span IDs occupy a native link entry. Elapsed values, timestamps, sequence numbers, and thread IDs use protobuf integers, preserving values above JavaScript's exact integer range.
+
+Each profile carries these attributes:
+
+| Attribute | Type | Meaning |
+| --- | --- | --- |
+| `telltale.schema.version` | integer | Telltale convention version, currently `2`; version `1` is rejected |
+| `telltale.kind` | string | `http_top` or `sql_top` |
+| `telltale.capture.id` | string | Capture identity |
+| `telltale.source.instance` | string | JVM source identity; changes when the JVM restarts |
+| `telltale.snapshot.sequence` | positive integer | Increasing sequence within a source and capture |
+| `telltale.snapshot.observed` | nonnegative integer | Number of matching operations before row limiting |
+| `telltale.snapshot.limit` | nonnegative integer | Retention limit; zero means no row limit |
+| `telltale.snapshot.dropped` | nonnegative integer | Events or operations lost by the observer |
+| `telltale.snapshot.complete` | boolean | Whether this tick finished successfully |
+| `telltale.checkpoint.id` | string | Optional capture checkpoint, empty when absent |
+| `telltale.snapshot.poll_interval_ms` | positive integer | Optional expected sampling interval for freshness display |
+
+The native profile UUID identifies a snapshot. `time_unix_nano` and `duration_nano` define the producer's observation bounds. Each operation sample has exactly one elapsed value and one observation timestamp inside those bounds. `telltale.operation.id` identifies the request or SQL execution across ticks. HTTP attributes describe method, direction, URL, route, phase, start time, and thread. SQL attributes describe JDBC or R2DBC, statement or explicit unavailability, driver or pool context, start time, and thread. Resource attributes describe the JVM and application. The Telltale convention version is independent of instrumentation scope version `1` and OTLP development version `1`.
+
+An empty observation has observed count zero, normal producer metadata, and exactly one control sample. Its sole sample attribute is `telltale.sample.kind="snapshot_control"`. It has one elapsed value of `0`, one timestamp equal to the snapshot's completed-at time, zero stack and link references, and no operation ID or HTTP/SQL operation attributes. Decoding produces zero operation rows. A complete empty observation clears the current table.
+
+The decoder rejects zero-sample version-2 profiles, missing or unknown marker kinds, extra control attributes, mixed control/operation samples, nonzero control values, invalid control timestamps, stack/link references, and control samples with a nonzero observed count. Encoders reject zero retained operations with a positive observed count. The convention does not downgrade to version 1. Collector filters and transforms must retain the control sample and its marker attribute.
+
+A missing message leaves the previous observation available with its receive timestamp. Truncation retains the profile's observed count and row limit. An incomplete profile remains available in history and does not replace the newest complete observation. Dropped events are displayed separately from truncation and completeness.
+
+## Transport and persistence
+
+The injected JVM sends binary `ProfilesData` in the existing authenticated capture blob transport with content type `application/x-protobuf;message=opentelemetry.proto.profiles.v1development.ProfilesData`. Decoding binds its kind, capture ID, and source identity to the authenticated capture. Direct agent and standalone ingestion share a durable profile UUID and source/capture/sequence journal, committing identities, rows, and frame metadata atomically. Producer sequences and completeness survive interleaved sources and reordered delivery; delivery gaps do not make a complete observation incomplete. The transport never reconstructs active operations from completed spans.
+
+Standalone producers send OTLP export requests directly to `POST /v1/profiles`, or use the OTLP Profiles gRPC service on the configured OTLP listener. HTTP accepts protobuf or JSON and optional gzip. Send `OTLP-Profiles-Development-Version: 1`; unsupported, repeated, and malformed version metadata fail before payload decoding. HTTP responses identify development version `1`. API-scoped bearer tokens protect standalone ingestion; agent-scoped tokens are rejected. The standalone receiver uses the producer's resource, source, and capture metadata and appears under the standing `receiver` run.
+
+For a saved binary golden request, direct HTTP ingestion is reproducible with:
+
+```sh
+curl --fail-with-body \
+  -H "Authorization: Bearer $TELLTALE_API_TOKEN" \
+  -H 'Content-Type: application/x-protobuf' \
+  -H 'OTLP-Profiles-Development-Version: 1' \
+  --data-binary @pkg/otlp/profiles/testdata/java-http-top-active.pb \
+  http://localhost:8080/v1/profiles
+```
+
+Adapt the URL to the configured Telltale HTTP address. An HTTP success means the direct receiver committed the snapshot, its retained operation rows, and identity metadata atomically. A retry of the same content is idempotent; conflicting content for the same UUID or source/capture/sequence receives OTLP partial rejection. Old snapshots remain history and cannot replace a newer producer sequence. Retries do not refresh the newest snapshot's receive timestamp.
+
+The receiver stores the redacted native profile once in the frame summary, alongside its canonical digest and status metadata. Operation rows contain the typed projection. Native periods, dropped attributes, resource and scope schemas, dictionaries, trace links, and stack detail supported by the pinned pdata schema survive readback. Unrecognized future wire fields are outside that preservation contract. The digest resolves dictionary references to semantic values and sorts unordered samples and attributes, so Collector reserialization remains idempotent while changed native metadata conflicts. Redaction rebuilds dictionary references so unused strings cannot retain secret values. Native payloads embedded in `original_payload` are rejected because they cannot participate safely in this structured convention.
+
+Rows, frames, and the small identity ledger expire using receive time and the configured receiver retention. Producer clock skew does not expire newly received observations. Reads and Top use the same record store as captures and the standing receiver run; there is no parallel snapshot database.
+
+## Verification and Collector compatibility
+
+The ordinary Go codec tests read checked binary fixtures emitted by the Java encoder. Receiver tests cover direct protobuf, JSON, gzip, gRPC, API authentication, durable retries, conflicts, reordered delivery, empty clearing, native readback, and retention. Control-sample tests check the exact shape and reject malformed markers before publication.
+
+```sh
+go test ./pkg/otlp/profiles
+go test ./internal/otelreceiver -run TestReceiver -ginkgo.focus='Profiles protocol boundaries|durable Profiles snapshots|OTLP Profiles receiver'
+```
+
+Regenerate the Java fixtures from `sdk/java` when deliberately updating the shared wire contract:
+
+```sh
+TELLTALE_UPDATE_PROFILE_GOLDEN=true ./gradlew test --tests com.flanksource.telltale.observer.profiles.ProfileEncoderTest
+```
+
+The actual Collector compatibility gate starts the released `otlpreceiver` and `otlpexporter` components from a separately pinned module in `hack/collector-fixture`, tests request-sized and item-sized export queues, and sends network requests through both components. It verifies that active, updated, and empty observations arrive intact and that the native control sample produces zero operation rows in the latest Top view:
+
+```sh
+go test ./internal/otelreceiver -run TestReceiver -ginkgo.focus='released Collector Profiles pipeline'
+```
+
+The control-sample workaround was approved on 2026-11-15. The correct upstream fix must distinguish empty telemetry envelopes from profiles that have metadata and zero samples. In 0.165.0, the receiver still has a [zero-sample early return](https://github.com/open-telemetry/opentelemetry-collector/blob/e883d737e49935984df6b064e512eed6cdc0d289/receiver/otlpreceiver/internal/profiles/otlp.go#L33-L46). The exporter's [item count remains the sample count](https://github.com/open-telemetry/opentelemetry-collector/blob/e883d737e49935984df6b064e512eed6cdc0d289/exporter/exporterhelper/xexporterhelper/profiles.go#L98-L100), so [an item-sized queue discards zero-sample requests](https://github.com/open-telemetry/opentelemetry-collector/blob/e883d737e49935984df6b064e512eed6cdc0d289/exporter/exporterhelper/internal/queue/memory_queue.go#L61-L66). The default request-sized queue counts each request as one. [Batch merging and splitting also omit zero-sample data](https://github.com/open-telemetry/opentelemetry-collector/blob/e883d737e49935984df6b064e512eed6cdc0d289/exporter/exporterhelper/xexporterhelper/profiles_batch.go#L31-L79). These paths all require profile-aware handling before the control sample can be removed. The pinned 0.163.0 pipeline uses receiver and queued exporter components; its stock batch processor lacks Profiles support.

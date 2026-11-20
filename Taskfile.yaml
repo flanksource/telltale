@@ -22,9 +22,10 @@ tasks:
       - pnpm --filter @flanksource/telltale-webapp build{{if .LOCAL_UI}} --mode local-ui{{end}}
 
   generate:
-    desc: Write the TraceDefinition CRD reflected from pkg/definition to crds/
+    desc: Write the TraceDefinition CRD reflected from pkg/definition to crds/ and the JVM operation catalog to internal/jvm
     cmds:
       - go run ./hack/crd
+      - ./sdk/java/gradlew -p sdk/java jvmCatalog
 
   binary:
     desc: Compile the binary with existing embedded assets
@@ -118,14 +119,28 @@ tasks:
       - JFR_FILE={{.JFR_FILE}} go test ./pkg/tracing/jfr -run '^$' -bench BenchmarkCompression -benchtime {{.JFR_BENCHTIME}}
 
   java:build:
-    desc: Build the shaded Java 8-compatible agent
+    desc: Build the Java 8-compatible agent, WAR (also embedded for the tomcat deployer), extension artifacts and the Tomcat test harness
     cmds:
-      - ./sdk/java/gradlew -p sdk/java shadowJar -PbuildVersion={{.VERSION}}
+      - ./sdk/java/gradlew -p sdk/java shadowJar war extensionApiJar exampleExtensionJar tomcatHarnessJar -PbuildVersion={{.VERSION}}
 
   java:test:
     desc: Test Java agent recording lifecycle
     cmds:
       - ./sdk/java/gradlew -p sdk/java test
+
+  jvm:verify:
+    desc: Build and verify JVM diagnostics sequentially against disposable runtimes
+    cmds:
+      - task: build
+      - task: java:test
+      - task: lint
+      - go test ./internal/jvm ./pkg/tracing/jvmtrace ./pkg/tracing/seam
+      - go test ./internal/cli -run TestCLI -ginkgo.focus='a kind.s params as flags|kind argument OpenAPI'
+      - go test ./internal/server -run TestServer -ginkgo.focus='HTTP routing'
+      - go test ./pkg/definition -run TestDefinition -ginkgo.focus='typed lists|compiled collect entry|TraceDefinition CRD'
+      - go test ./pkg/traces -run TestTraces -ginkgo.focus='trace host'
+      - go test ./pkg/agentinstall -run TestInstallation
+      - pnpm exec vitest run webapp/src/jvm webapp/src/routes.test.tsx packages/api/test/agents.spec.ts
 
   clean:
     desc: Remove generated assets and binaries while preserving the embed sentinel

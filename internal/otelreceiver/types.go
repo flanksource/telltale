@@ -3,18 +3,18 @@ package otelreceiver
 import (
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"time"
 
+	otlpspans "github.com/flanksource/telltale/pkg/otlp/spans"
 	sdk "github.com/flanksource/telltale/sdk"
 	"go.opentelemetry.io/collector/pdata/ptrace/ptraceotlp"
 )
 
 const SourceID = "receiver"
 
-var ErrLimit = errors.New("OTLP request limit exceeded")
+var ErrLimit = otlpspans.ErrLimit
 
 type Options struct {
 	Enabled         bool

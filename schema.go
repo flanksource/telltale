@@ -49,7 +49,7 @@ func StartSchema() (*rpc.OpenAPISchema, map[string]any, error) {
 		if selection := params.Properties["target"]; selection != nil {
 			delete(selection.Properties, "pid")
 		}
-		captures.Properties[kind] = captureSchema(registration.Title, order, params)
+		captures.Properties[kind] = captureSchema(registration, order, params)
 		defaults := map[string]any{enabledKey: kind == httpproxy.Kind}
 		for name, property := range params.Properties {
 			if property.Default != nil {
@@ -91,20 +91,22 @@ func treeSchema() *rpc.OpenAPISchema {
 	return schema
 }
 
-// captureSchema is one armable kind's object: its enabled switch and, while
-// it is on, the kind's params.
-func captureSchema(title string, order int, params *rpc.OpenAPISchema) *rpc.OpenAPISchema {
+// captureSchema is one armable kind's object: its summary, seams, enabled
+// switch and, while it is on, the kind's params.
+func captureSchema(registration traces.Registration, order int, params *rpc.OpenAPISchema) *rpc.OpenAPISchema {
 	then := map[string]any{"properties": params.Properties}
 	if len(params.Required) > 0 {
 		then["required"] = params.Required
 	}
 	return &rpc.OpenAPISchema{
-		Type: "object", Title: title,
+		Type: "object", Title: registration.Title, Description: registration.Summary,
 		Properties: map[string]*rpc.OpenAPISchema{
 			enabledKey: {Type: "boolean", Title: "Enabled", Extensions: map[string]any{"x-clicky-order": -1}},
 		},
 		Extensions: map[string]any{
-			"x-clicky-order": order,
+			"x-clicky-order":          order,
+			"x-telltale-seams":        slices.Clone(registration.Seams),
+			"x-telltale-default-seam": registration.DefaultSeam,
 			"allOf": []any{map[string]any{
 				"if":   map[string]any{"properties": map[string]any{enabledKey: map[string]any{"const": true}}},
 				"then": then,

@@ -1,24 +1,272 @@
 plugins {
     id 'java'
-    id 'com.github.johnrengelman.shadow' version '8.1.1'
+    id 'war'
+    id 'com.gradleup.shadow' version '8.3.6'
 }
 
 group = 'com.flanksource.telltale'
 version = providers.gradleProperty('buildVersion').getOrElse('dev')
 repositories { mavenCentral() }
+def observerTargets = new Properties()
+file('src/main/resources/com/flanksource/telltale/observer/targets.properties').withInputStream { observerTargets.load(it) }
+def observerPin = { String name ->
+    def value = observerTargets.getProperty(name + '.version')
+    if (value == null || value.trim().isEmpty()) throw new GradleException('missing observer dependency pin ' + name)
+    value
+}
 java { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
 tasks.withType(JavaCompile).configureEach { if (JavaVersion.current().isJava9Compatible()) options.release = 8 }
+sourceSets {
+    servlet { java.srcDir 'src/war/java' }
+    harness { java.srcDir 'src/harness/java' }
+    jvmDemo { java.srcDir '../../hack/jvm-demo/java' }
+}
+configurations { bridgeRuntime; otelGateAgent; jakartaJmsClient; spring6Jms; spring7Jms; spring6Http; spring7Http; spring6Mvc; spring7Mvc; spring6Sql; spring7Sql; httpClients3Runtime; httpClients4Runtime; h2Fixture; gateH2Java8 }
+configurations.testImplementation.extendsFrom(configurations.h2Fixture)
+configurations.testCompileClasspath.attributes.attribute(org.gradle.api.attributes.java.TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, JavaVersion.current().majorVersion.toInteger())
+configurations.testRuntimeClasspath.attributes.attribute(org.gradle.api.attributes.java.TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, JavaVersion.current().majorVersion.toInteger())
+configurations.jvmDemoCompileClasspath.attributes.attribute(org.gradle.api.attributes.java.TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, 17)
+configurations.jvmDemoRuntimeClasspath.attributes.attribute(org.gradle.api.attributes.java.TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, 17)
+tasks.named('compileJvmDemoJava') { options.release = 17 }
 dependencies {
     implementation 'com.google.code.gson:gson:2.11.0'
     implementation 'org.java-websocket:Java-WebSocket:1.6.0'
     implementation 'tools.profiler:async-profiler:4.6'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.18.3'
+    implementation 'ognl:ognl:3.3.4'
+    implementation 'org.benf:cfr:0.152'
+    implementation 'org.ow2.asm:asm:9.11.1'
+    implementation 'org.ow2.asm:asm-tree:9.11.1'
+    implementation 'org.ow2.asm:asm-commons:9.11.1'
+    implementation 'org.javassist:javassist:3.29.0-GA'
+    implementation 'org.apache.groovy:groovy:4.0.33'
+    implementation "io.opentelemetry.proto:opentelemetry-proto:${observerPin('profiles')}"
+    implementation "com.google.protobuf:protobuf-java:${observerPin('protobuf')}"
+    implementation "io.opentelemetry.instrumentation:opentelemetry-instrumentation-api-incubator:${observerPin('instrumentation')}-alpha"
+    implementation 'io.r2dbc:r2dbc-spi:1.0.0.RELEASE'
+    implementation 'io.r2dbc:r2dbc-proxy:1.1.7.RELEASE'
+    h2Fixture('com.h2database:h2:2.3.232') { transitive = false }
+    gateH2Java8('com.h2database:h2:2.2.224') { transitive = false }
+    testImplementation 'io.r2dbc:r2dbc-h2:1.0.0.RELEASE'
+    testImplementation 'net.bytebuddy:byte-buddy-agent:1.18.2'
+    testImplementation "io.opentelemetry:opentelemetry-sdk:${observerPin('sdk')}"
+    testImplementation "io.opentelemetry:opentelemetry-exporter-otlp:${observerPin('sdk')}"
+    testImplementation "io.opentelemetry.instrumentation:opentelemetry-instrumentation-api:${observerPin('instrumentation')}"
+    testImplementation 'org.apache.activemq:artemis-jms-server:2.44.0'
+    testImplementation 'org.springframework:spring-jms:5.3.39'
+    testImplementation 'org.springframework:spring-context:5.3.39'
+    testImplementation 'jakarta.jms:jakarta.jms-api:3.1.0'
+    testImplementation 'javax.jms:javax.jms-api:2.0.1'
+    testImplementation 'org.apache.httpcomponents:httpclient:4.5.14'
+    testImplementation 'org.apache.httpcomponents:httpasyncclient:4.1.5'
+    testImplementation 'org.apache.httpcomponents.client5:httpclient5:5.2.3'
+    testImplementation 'com.squareup.okhttp3:okhttp:4.12.0'
+    testImplementation 'org.springframework:spring-webmvc:5.3.39'
+    testImplementation 'org.springframework:spring-webflux:5.3.39'
+    testImplementation 'io.projectreactor.netty:reactor-netty-http:1.0.48'
+    testImplementation 'org.springframework:spring-jdbc:5.3.39'
+    testImplementation 'org.springframework:spring-orm:5.3.39'
+    testImplementation 'org.springframework.data:spring-data-r2dbc:1.5.18'
+    testImplementation 'org.hibernate:hibernate-core:5.6.15.Final'
+    testImplementation 'com.zaxxer:HikariCP:4.0.3'
+    testImplementation 'javax.persistence:javax.persistence-api:2.2'
+    otelGateAgent "io.opentelemetry.javaagent:opentelemetry-javaagent:${observerPin('instrumentation')}"
+    jakartaJmsClient('org.apache.activemq:artemis-jakarta-client:2.44.0') { transitive = false }
+    spring6Jms 'org.springframework:spring-jms:6.2.14'
+    spring6Jms 'org.springframework:spring-context:6.2.14'
+    spring7Jms 'org.springframework:spring-jms:7.0.10'
+    spring7Jms 'org.springframework:spring-context:7.0.10'
+    spring6Http 'org.springframework:spring-webflux:6.2.14'
+    spring6Http 'org.springframework:spring-context:6.2.14'
+    spring6Http 'io.projectreactor.netty:reactor-netty-http:1.2.14'
+    spring7Http 'org.springframework:spring-webflux:7.0.10'
+    spring7Http 'org.springframework:spring-context:7.0.10'
+    spring7Http 'io.projectreactor.netty:reactor-netty-http:1.3.8'
+    spring6Mvc 'org.springframework:spring-webmvc:6.2.14'
+    spring6Mvc 'org.springframework:spring-context:6.2.14'
+    spring6Mvc 'org.apache.tomcat.embed:tomcat-embed-core:10.1.50'
+    spring6Mvc 'jakarta.annotation:jakarta.annotation-api:2.1.1'
+    spring7Mvc 'org.springframework:spring-webmvc:7.0.10'
+    spring7Mvc 'org.springframework:spring-context:7.0.10'
+    spring7Mvc 'org.apache.tomcat.embed:tomcat-embed-core:11.0.20'
+    spring7Mvc 'jakarta.annotation:jakarta.annotation-api:3.0.0'
+    spring6Sql 'org.springframework:spring-jdbc:6.2.14'
+    spring6Sql 'org.springframework:spring-context:6.2.14'
+    spring7Sql 'org.springframework:spring-jdbc:7.0.10'
+    spring7Sql 'org.springframework:spring-context:7.0.10'
+    httpClients3Runtime 'com.squareup.okhttp3:okhttp:3.14.9'
+    httpClients4Runtime 'com.squareup.okhttp3:okhttp:4.12.0'
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.5'
+    testRuntimeOnly 'org.junit.vintage:junit-vintage-engine:5.10.5'
+    testImplementation 'org.apache.tomcat.embed:tomcat-embed-core:9.0.123'
+    testImplementation 'javax.annotation:javax.annotation-api:1.3.2'
+    servletCompileOnly 'javax.servlet:javax.servlet-api:3.1.0'
+    harnessImplementation 'org.apache.tomcat.embed:tomcat-embed-core:9.0.123'
+    harnessImplementation 'javax.annotation:javax.annotation-api:1.3.2'
+    bridgeRuntime 'com.fasterxml.jackson.core:jackson-databind:2.18.3'
+    jvmDemoImplementation 'org.springframework:spring-webmvc:5.3.39'
+    jvmDemoImplementation 'org.springframework:spring-webflux:5.3.39'
+    jvmDemoImplementation 'org.springframework:spring-jdbc:5.3.39'
+    jvmDemoImplementation 'org.springframework:spring-jms:5.3.39'
+    jvmDemoImplementation 'org.springframework.data:spring-data-r2dbc:1.5.18'
+    jvmDemoImplementation 'org.apache.tomcat.embed:tomcat-embed-core:9.0.123'
+    jvmDemoImplementation 'javax.annotation:javax.annotation-api:1.3.2'
+    jvmDemoImplementation 'com.fasterxml.jackson.core:jackson-databind:2.18.3'
+    jvmDemoImplementation 'com.h2database:h2:2.3.232'
+    jvmDemoImplementation 'io.r2dbc:r2dbc-h2:1.0.0.RELEASE'
+    jvmDemoImplementation 'io.projectreactor.netty:reactor-netty-http:1.0.48'
+    jvmDemoImplementation 'org.apache.activemq:artemis-jms-server:2.44.0'
+    jvmDemoImplementation 'javax.jms:javax.jms-api:2.0.1'
+    jvmDemoImplementation "io.opentelemetry:opentelemetry-api:${observerPin('sdk')}"
+}
+tasks.register('jvmDemo') {
+    dependsOn 'jvmDemoClasses'
+    inputs.files sourceSets.jvmDemo.runtimeClasspath, configurations.otelGateAgent
+    outputs.dir layout.buildDirectory.dir('jvm-demo')
+    doLast {
+        if (!JavaVersion.current().isCompatibleWith(JavaVersion.VERSION_17)) throw new GradleException('JVM demo requires a full JDK 17 or newer')
+        def destination = layout.buildDirectory.dir('jvm-demo').get().asFile
+        destination.mkdirs()
+        new File(destination, 'classpath.txt').text = sourceSets.jvmDemo.runtimeClasspath.asPath + '\n'
+        copy {
+            from configurations.otelGateAgent
+            into destination
+            rename { 'opentelemetry-javaagent.jar' }
+        }
+    }
 }
 shadowJar {
-    archiveFileName = 'telltale-agent.jar'
-    destinationDirectory = file('../../pkg/agentinstall/java/assets')
+    exclude 'com/flanksource/telltale/observer/bootstrap/**'
+    archiveFileName = 'telltale-agent-runtime.jar'
+    destinationDirectory = layout.buildDirectory.dir('libs')
+    finalizedBy 'agentJar'
     relocate 'com.google.gson', 'com.flanksource.telltale.shaded.gson'
     relocate 'org.java_websocket', 'com.flanksource.telltale.shaded.websocket'
     relocate 'org.slf4j', 'com.flanksource.telltale.shaded.slf4j'
-    manifest { attributes('Premain-Class':'com.flanksource.telltale.Agent', 'Agent-Class':'com.flanksource.telltale.Agent', 'Main-Class':'com.flanksource.telltale.Attach', 'Implementation-Version':project.version) }
+    relocate 'com.fasterxml.jackson', 'com.flanksource.telltale.shaded.jackson'
+    relocate 'org.objectweb.asm', 'com.flanksource.telltale.shaded.asm'
+    relocate 'ognl', 'com.flanksource.telltale.shaded.ognl'
+    relocate 'javassist', 'com.flanksource.telltale.shaded.javassist'
+    relocate 'io.opentelemetry', 'com.flanksource.telltale.shaded.otel'
+    relocate 'com.google.protobuf', 'com.flanksource.telltale.shaded.protobuf'
+    dependencies {
+        exclude(dependency('io.r2dbc:r2dbc-spi:.*'))
+        exclude(dependency('org.reactivestreams:reactive-streams:.*'))
+        exclude(dependency('io.projectreactor:reactor-core:.*'))
+    }
+    manifest { attributes('Premain-Class':'com.flanksource.telltale.bootstrap.AgentBootstrap', 'Agent-Class':'com.flanksource.telltale.bootstrap.AgentBootstrap', 'Main-Class':'com.flanksource.telltale.Attach', 'Implementation-Version':project.version, 'Can-Redefine-Classes':'true', 'Can-Retransform-Classes':'true') }
+}
+// The agent the Go deployer embeds (gitignored assets dir). A plain Jar over the runtime shadow
+// jar, so the diag agent and observer bootstrap jars nested in it stay whole: shadow would unpack
+// them. InstrumentationService stages telltale-diag-agent.jar back out to self-attach.
+tasks.register('agentJar', Jar) {
+    dependsOn shadowJar, 'diagnosticAgentJar', 'observerBootstrapJar', 'testFixtureJars'
+    archiveFileName = 'telltale-agent.jar'
+    destinationDirectory = file('../../pkg/agentinstall/java/assets')
+    from({ zipTree(tasks.shadowJar.archiveFile.get().asFile) }) { exclude 'META-INF/MANIFEST.MF' }
+    from({ tasks.named('diagnosticAgentJar').get().archiveFile })
+    from({ tasks.named('observerBootstrapJar').get().archiveFile })
+    manifest.from tasks.shadowJar.manifest
+}
+tasks.register('testFixtureJars', Copy) {
+    from configurations.h2Fixture
+    from configurations.gateH2Java8
+    into layout.buildDirectory.dir('libs/integration-fixtures')
+}
+tasks.register('observerBootstrapJar', Jar) {
+    archiveFileName = 'telltale-observer-bootstrap.jar'
+    destinationDirectory = layout.buildDirectory.dir('bridge')
+    from(sourceSets.main.output) { include 'com/flanksource/telltale/observer/bootstrap/**' }
+}
+tasks.register('diagnosticAgentJar', Jar) {
+    dependsOn shadowJar, 'observerBootstrapJar'
+    archiveFileName = 'telltale-diag-agent.jar'
+    destinationDirectory = layout.buildDirectory.dir('bridge')
+    from({ zipTree(tasks.shadowJar.archiveFile.get().asFile) }) { exclude 'META-INF/MANIFEST.MF' }
+    from({ tasks.named('observerBootstrapJar').get().archiveFile })
+    manifest { attributes('Agent-Class':'com.flanksource.telltale.diag.agent.DiagAgent','Premain-Class':'com.flanksource.telltale.diag.agent.DiagAgent','Can-Redefine-Classes':'true','Can-Retransform-Classes':'true') }
+}
+tasks.named('processTestResources') {
+    dependsOn 'diagnosticAgentJar'
+    from({ tasks.named('diagnosticAgentJar').get().archiveFile })
+}
+war {
+    dependsOn 'agentJar', servletClasses
+    archiveFileName = 'telltale-diag.war'
+    destinationDirectory = layout.buildDirectory.dir('libs')
+    classpath = files(sourceSets.servlet.output)
+    webXml = file('src/war/web.xml')
+    from(tasks.named('agentJar').flatMap { it.archiveFile }) { into 'WEB-INF/runtime' }
+    finalizedBy 'embedWar'
+}
+// The Go deployer embeds the WAR next to telltale-agent.jar (gitignored assets dir).
+tasks.register('embedWar') {
+    def source = tasks.war.archiveFile
+    def target = file('../../pkg/agentinstall/java/assets/telltale-diag.war')
+    inputs.file(source)
+    outputs.file(target)
+    doLast {
+        java.nio.file.Files.createDirectories(target.parentFile.toPath())
+        java.nio.file.Files.copy(source.get().asFile.toPath(), target.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+    }
+}
+tasks.register('tomcatHarnessJar', com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar) {
+    archiveFileName = 'telltale-tomcat-harness.jar'
+    destinationDirectory = layout.buildDirectory.dir('libs')
+    configurations = [project.configurations.harnessRuntimeClasspath]
+    from(sourceSets.harness.output)
+    exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA', 'module-info.class'
+    manifest { attributes('Main-Class':'com.flanksource.telltale.harness.TomcatHarness') }
+}
+test {
+    useJUnitPlatform()
+    dependsOn 'war', 'exampleExtensionJar', 'tomcatHarnessJar', 'diagnosticAgentJar', 'jvmDemoClasses'
+    systemProperty 'telltale.jvm.catalog', file('../../internal/jvm/catalog.json').absolutePath
+    // The diag agent attached as it is in a pod, so a test can redefine and
+    // retransform a live class through the real Instrumentation: how HotSpot
+    // treats those bytes is behaviour no bytecode assertion can stand in for.
+    jvmArgumentProviders.add({
+        ["-javaagent:" + tasks.named('diagnosticAgentJar').get().archiveFile.get().asFile.absolutePath]
+    } as CommandLineArgumentProvider)
+    systemProperty 'telltale.observer.bootstrap', layout.buildDirectory.file('bridge/telltale-observer-bootstrap.jar').get().asFile.absolutePath
+    systemProperty 'telltale.gate.otel', configurations.otelGateAgent.singleFile.absolutePath
+    systemProperty 'telltale.gate.agent', tasks.named('agentJar').get().archiveFile.get().asFile.absolutePath
+    systemProperty 'telltale.gate.classpath', sourceSets.test.runtimeClasspath.minus(sourceSets.main.output).asPath
+    systemProperty 'telltale.demo.classpath', sourceSets.jvmDemo.runtimeClasspath.asPath
+    systemProperty 'telltale.gate.java8H2', configurations.gateH2Java8.singleFile.absolutePath
+    systemProperty 'telltale.jms.jakartaClient', configurations.jakartaJmsClient.singleFile.absolutePath
+    systemProperty 'telltale.jms.spring6', configurations.spring6Jms.asPath
+    systemProperty 'telltale.jms.spring7', configurations.spring7Jms.asPath
+    systemProperty 'telltale.http.spring6', configurations.spring6Http.asPath
+    systemProperty 'telltale.http.spring7', configurations.spring7Http.asPath
+    systemProperty 'telltale.http.spring6Mvc', configurations.spring6Mvc.asPath
+    systemProperty 'telltale.http.spring7Mvc', configurations.spring7Mvc.asPath
+    systemProperty 'telltale.sql.spring6', configurations.spring6Sql.asPath
+    systemProperty 'telltale.sql.spring7', configurations.spring7Sql.asPath
+    systemProperty 'telltale.http.clients3.classpath', configurations.httpClients3Runtime.asPath
+    systemProperty 'telltale.http.clients4.classpath', configurations.httpClients4Runtime.asPath
+    for (String key : ['telltale.gate.fixtureJava', 'telltale.gate.expectedJava']) {
+        if (System.getProperty(key) != null) systemProperty key, System.getProperty(key)
+    }
+}
+sourceSets.test.java.srcDir 'examples'
+tasks.register('jvmCatalog', JavaExec) {
+    description = 'Write the built-in JVM operation catalog the Go CLI and OpenAPI are generated from'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.flanksource.telltale.CatalogExport'
+    args file('../../internal/jvm/catalog.json').absolutePath
+}
+tasks.register('extensionApiJar', Jar) {
+    archiveFileName = 'telltale-extension-api.jar'
+    from sourceSets.main.output
+    include 'com/flanksource/telltale/DiagnosticExtension.class'
+    include 'com/flanksource/telltale/ExtensionContext*.class'
+    include 'com/flanksource/telltale/OperationSpec*.class'
+}
+tasks.register('exampleExtensionJar', Jar) {
+    dependsOn testClasses
+    archiveFileName = 'telltale-example-extension.jar'
+    from(sourceSets.test.output) { include 'example/ExampleExtension.class' }
+    from('examples/resources')
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing/target"
 
 	dbcontext "github.com/flanksource/commons-db/context"
+	"github.com/flanksource/commons-db/models"
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
 )
@@ -95,6 +96,8 @@ func (events[P]) Params() P {
 	var defaults P
 	return defaults
 }
+
+func (events[P]) ConnectionTypes() []string { return []string{models.ConnectionTypeSQLServer} }
 
 // Schema follows a capture's stream while it runs, and searches the text a
 // reader remembers of a statement rather than a column.

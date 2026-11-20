@@ -13,7 +13,6 @@ import (
 	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/credentials/apitoken"
 	"github.com/flanksource/telltale/pkg/datadir"
-	"github.com/flanksource/telltale/sdk/protocol"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -47,17 +46,19 @@ var _ = Describe("agent token command", func() {
 		GinkgoT().Setenv("TELLTALE_API_TOKEN", "example-api-token")
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			Expect(r.Header.Get("Authorization")).To(Equal("Bearer example-api-token"))
-			_, _ = w.Write([]byte(`[{"agentId":"remote-agent","resource":{"service.name":"example"}}]`))
+			_, _ = w.Write([]byte(`[{"agentId":"remote-agent","service":"example","connected":true,"group":"other","resource":{"service.name":"example"}}]`))
 		}))
 		DeferCleanup(server.Close)
 		output := &bytes.Buffer{}
 		root := cli.NewRoot("test")
 		root.SetOut(output)
-		root.SetArgs([]string{"agents", "list", "--server", server.URL})
+		root.SetArgs([]string{"agents", "list", "--server", server.URL, "--format", "json"})
 		Expect(root.Execute()).To(Succeed())
-		var groups map[string][]protocol.Hello
+		var groups map[string][]agentclient.Info
 		Expect(json.Unmarshal(output.Bytes(), &groups)).To(Succeed())
 		Expect(groups["other"]).To(HaveLen(1))
 		Expect(groups["other"][0].AgentID).To(Equal("remote-agent"))
+		Expect(groups["other"][0].Connected).To(BeTrue())
+		Expect(groups["other"][0].Resource).To(HaveKeyWithValue("service.name", "example"))
 	})
 })

@@ -36,8 +36,8 @@ var standing = struct {
 // MustRegisterStore registers a standing store from an init func, panicking
 // on an ID a run could take or another store holds.
 func MustRegisterStore(store StandingStore) {
-	if store.ID == "" || strings.ContainsAny(store.ID, `/\`) || strings.HasPrefix(store.ID, traces.RunPrefix) {
-		panic(fmt.Errorf("register standing store %q: its id must be a plain name that is no run id (%s…)", store.ID, traces.RunPrefix))
+	if store.ID == "" || strings.ContainsAny(store.ID, `/\`) || strings.HasPrefix(store.ID, "run-") || traces.IsRunID(store.ID) {
+		panic(fmt.Errorf("register standing store %q: its id must be a plain name that is no run id", store.ID))
 	}
 	if store.Info == nil || store.Open == nil {
 		panic(fmt.Errorf("register standing store %q: Info and Open are required", store.ID))

@@ -67,20 +67,24 @@ func Export(format string, rows iter.Seq[Exchange], w io.Writer) error {
 // the encoding of a response body that is not text.
 type Entry struct {
 	har.Entry
-	ServerIPAddress string `json:"serverIPAddress,omitempty"`
-	Comment         string `json:"comment,omitempty"`
-	Tunnelled       bool   `json:"_tunnelled,omitempty"`
-	BytesIn         int64  `json:"_bytesIn,omitempty"`
-	BytesOut        int64  `json:"_bytesOut,omitempty"`
-	Encoding        string `json:"_encoding,omitempty"`
+	Metadata        Metadata `json:"_telltale,omitzero"`
+	ServerIPAddress string   `json:"serverIPAddress,omitempty"`
+	Comment         string   `json:"comment,omitempty"`
+	Tunnelled       bool     `json:"_tunnelled,omitempty"`
+	BytesIn         int64    `json:"_bytesIn,omitempty"`
+	BytesOut        int64    `json:"_bytesOut,omitempty"`
+	Encoding        string   `json:"_encoding,omitempty"`
+	RequestEncoding string   `json:"_requestEncoding,omitempty"`
 }
 
 // ToEntry is exchange as the HAR entry it was captured from.
 func ToEntry(exchange Exchange) Entry {
 	return Entry{
 		Entry:           exchange.Entry,
+		Metadata:        exchange.Metadata,
 		ServerIPAddress: exchange.ServerIPAddress, Comment: exchange.Comment,
 		Tunnelled: exchange.Tunnelled, BytesIn: exchange.BytesIn, BytesOut: exchange.BytesOut, Encoding: exchange.Encoding,
+		RequestEncoding: exchange.RequestEncoding,
 	}
 }
 
@@ -92,8 +96,10 @@ func Summarize(rows iter.Seq[Exchange]) (map[string]any, error) {
 	methods, statuses, hosts := map[string]int{}, map[string]int{}, map[string]bool{}
 	requests := []map[string]any{}
 	entries, errors := 0, 0
+	durationMs := 0.0
 	for exchange := range rows {
 		entries++
+		durationMs += exchange.DurationMs
 		host, path, err := splitURL(exchange.URL)
 		if err != nil {
 			return nil, err
@@ -111,6 +117,7 @@ func Summarize(rows iter.Seq[Exchange]) (map[string]any, error) {
 	return map[string]any{
 		"entries": entries, "errors": errors, "hosts": slices.Sorted(maps.Keys(hosts)),
 		"methods": methods, "statuses": statuses, "requests": requests,
+		"durationMs": durationMs,
 	}, nil
 }
 

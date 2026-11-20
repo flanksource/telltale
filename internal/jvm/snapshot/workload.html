@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Workload panel</title>
+  <!-- The published @flanksource/clicky-ui, pinned: its stylesheet and its data entry (WorkloadPanel). -->
+  <link rel="stylesheet" href="https://unpkg.com/@flanksource/clicky-ui@0.3.63/dist/styles.css">
+  <script type="importmap">
+  {
+    "imports": {
+      "react": "https://esm.sh/react@19.2.0",
+      "react/": "https://esm.sh/react@19.2.0/",
+      "react-dom": "https://esm.sh/react-dom@19.2.0",
+      "react-dom/": "https://esm.sh/react-dom@19.2.0/",
+      "@flanksource/clicky-ui/data": "https://esm.sh/@flanksource/clicky-ui@0.3.63/data?external=react,react-dom"
+    }
+  }
+  </script>
+  <style>
+    body { margin: 0; padding: 24px; font-family: system-ui, sans-serif; background: #f8fafc; }
+    .status { font-size: 12px; color: #64748b; margin: 0 0 12px; }
+    .error { white-space: pre-wrap; color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; padding: 12px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <div id="root"><p class="status">Loading clicky-ui…</p></div>
+
+  <!-- WorkloadPanelProps, summarised by telltale jvm snapshot from the samples in workload.json. -->
+  <script type="application/json" id="workload">null</script>
+
+  <!-- The page as TSX; the loader below compiles it with Sucrase and imports it as a module, so the import map resolves its imports. -->
+  <script type="text/tsx" id="page">
+import { Component, type ReactNode } from "react";
+import { createRoot } from "react-dom/client";
+import { WorkloadPanel, type WorkloadPanelProps } from "@flanksource/clicky-ui/data";
+
+const props: WorkloadPanelProps = JSON.parse(document.getElementById("workload")!.textContent!);
+
+class Boundary extends Component<{ children: ReactNode }, { error?: Error }> {
+  state: { error?: Error } = {};
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  render() { return this.state.error ? <pre className="error">{this.state.error.message}</pre> : this.props.children; }
+}
+
+createRoot(document.getElementById("root")!).render(
+  <div style={{ maxWidth: 960 }}>
+    <p className="status">Recorded by telltale jvm snapshot over {Math.round(props.observationWindowMs / 1000)}s</p>
+    <Boundary><WorkloadPanel {...props} /></Boundary>
+  </div>,
+);
+  </script>
+
+  <script type="module">
+    import { transform } from "https://esm.sh/sucrase@3.35.0";
+    try {
+      const { code } = transform(document.getElementById("page").textContent, {
+        transforms: ["typescript", "jsx"], jsxRuntime: "automatic", production: true,
+      });
+      await import(URL.createObjectURL(new Blob([code], { type: "text/javascript" })));
+    } catch (error) {
+      const pre = Object.assign(document.createElement("pre"), { className: "error", textContent: String(error?.stack ?? error) });
+      document.getElementById("root").replaceChildren(pre);
+    }
+  </script>
+</body>
+</html>

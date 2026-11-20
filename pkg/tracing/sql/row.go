@@ -21,6 +21,7 @@ const RowKind = "sql"
 // RepeatKey keys the statements that differ only by their values.
 type StatementRow struct {
 	tracing.Truncation
+	Observation
 	StartedAt  time.Time `json:"startedAt" pretty:"label=Started" sort:"startedAt"`
 	Connection string    `json:"connection" filter:"terms"`
 	Driver     string    `json:"driver" filter:"terms"`
@@ -30,11 +31,24 @@ type StatementRow struct {
 	RepeatKey  string    `json:"repeatKey" pretty:"hide" filter:"exact"`
 	Args       []any     `json:"args,omitempty" pretty:"hide"`
 	DurationMs float64   `json:"durationMs" pretty:"label=Duration,type=duration,unit=ms" sort:"durationMs"`
-	// Rows is how many rows the statement returned, or -1 when its driver
-	// could not tell.
+	// Rows is the observed affected or returned row count, or -1 when unknown.
 	Rows     int64             `json:"rows" sort:"rows"`
 	Error    string            `json:"error,omitempty" filter:"text"`
 	Resource map[string]string `json:"resource,omitempty"`
+}
+
+type Observation struct {
+	OperationID          string `json:"operationId,omitempty" filter:"exact"`
+	TraceID              string `json:"traceId,omitempty" filter:"exact"`
+	SpanID               string `json:"spanId,omitempty" filter:"exact"`
+	API                  string `json:"api,omitempty" filter:"terms"`
+	Database             string `json:"database,omitempty" filter:"terms"`
+	Engine               string `json:"engine,omitempty" filter:"terms"`
+	Phase                string `json:"phase,omitempty" filter:"terms"`
+	Incomplete           bool   `json:"incomplete,omitempty" filter:"terms"`
+	Completion           string `json:"completion,omitempty" filter:"terms"`
+	BatchSize            *int64 `json:"batchSize,omitempty"`
+	SQLUnavailableReason string `json:"sqlUnavailableReason,omitempty" filter:"terms"`
 }
 
 // FromStatement is the row a capture stores for statement. A statement naming
@@ -67,6 +81,17 @@ func (StatementRow) Columns() []api.ColumnDef {
 		api.Column("args").Kind("json").Hidden().Build(),
 		api.Column("repeatKey").Hidden().Build(),
 		api.Column("truncated").Hidden().Build(),
+		api.Column("operationId").Hidden().Build(),
+		api.Column("traceId").Hidden().Build(),
+		api.Column("spanId").Hidden().Build(),
+		api.Column("api").DefaultHidden().Build(),
+		api.Column("batchSize").DefaultHidden().Build(),
+		api.Column("sqlUnavailableReason").DefaultHidden().Build(),
+		api.Column("phase").DefaultHidden().Build(),
+		api.Column("incomplete").DefaultHidden().Build(),
+		api.Column("completion").DefaultHidden().Build(),
+		api.Column("database").DefaultHidden().Build(),
+		api.Column("engine").DefaultHidden().Build(),
 	}
 }
 
@@ -85,12 +110,19 @@ func (r StatementRow) Row() map[string]any {
 		"rows":       api.TableCell{Value: rows, FilterValue: r.Rows},
 		"connection": r.Connection, "driver": r.Driver, "error": r.Error,
 		"args": r.Args, "repeatKey": r.RepeatKey, "truncated": r.Truncated,
+		"operationId": r.OperationID, "traceId": r.TraceID, "spanId": r.SpanID,
+		"api": r.API, "batchSize": r.BatchSize, "sqlUnavailableReason": r.SQLUnavailableReason,
+		"phase": r.Phase, "incomplete": r.Incomplete, "completion": r.Completion,
+		"database": r.Database, "engine": r.Engine,
 	}
 }
 
 // statementCell is the statement's SQL, and for a statement that failed, its
 // error in red beneath it.
 func (r StatementRow) statementCell() api.Textable {
+	if r.SQLUnavailableReason != "" {
+		return api.Text{}.AddText("SQL unavailable: "+r.SQLUnavailableReason, "text-muted")
+	}
 	code := api.CodeBlock("text/x-sql", r.SQL)
 	if r.Error == "" {
 		return code

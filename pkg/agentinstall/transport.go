@@ -13,19 +13,24 @@ type Destination struct {
 	Kind      string `json:"kind"`
 	Host      string `json:"host,omitempty"`
 	SSHConfig string `json:"sshConfig,omitempty"`
-	Context   string `json:"context,omitempty"`
-	Namespace string `json:"namespace,omitempty"`
-	Pod       string `json:"pod,omitempty"`
-	Container string `json:"container,omitempty"`
+	// Kubeconfig and Context select the cluster kubectl reaches; unset, its own defaults.
+	Kubeconfig string `json:"kubeconfig,omitempty"`
+	Context    string `json:"context,omitempty"`
+	Namespace  string `json:"namespace,omitempty"`
+	Pod        string `json:"pod,omitempty"`
+	Container  string `json:"container,omitempty"`
 }
 
 func (d Destination) Validate() error {
 	switch d.Kind {
 	case "local":
-		if d.Host != "" || d.Pod != "" {
-			return fmt.Errorf("local destination cannot name a remote host or pod")
+		if d.Host != "" || d.Pod != "" || d.Kubeconfig != "" || d.Context != "" {
+			return fmt.Errorf("local destination cannot name a remote host, pod, kubeconfig or kube context")
 		}
 	case "ssh":
+		if d.Kubeconfig != "" || d.Context != "" {
+			return fmt.Errorf("SSH destination cannot name a kubeconfig or kube context")
+		}
 		if d.Host == "" || strings.HasPrefix(d.Host, "-") || strings.ContainsAny(d.Host, "\n\r\x00 ") {
 			return fmt.Errorf("SSH host is required and must be a single host name")
 		}
@@ -65,6 +70,9 @@ func (t CommandTransport) Run(ctx context.Context, args []string, input io.Reade
 		args = append(prefix, d.Host, strings.Join(quoted, " "))
 	case "kubernetes":
 		prefix := []string{"kubectl"}
+		if d.Kubeconfig != "" {
+			prefix = append(prefix, "--kubeconfig", d.Kubeconfig)
+		}
 		if d.Context != "" {
 			prefix = append(prefix, "--context", d.Context)
 		}
