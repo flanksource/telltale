@@ -2,15 +2,16 @@ package telltale
 
 import (
 	"bytes"
-	"context"
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/felixge/httpsnoop"
 	"github.com/flanksource/commons/har"
 	"github.com/flanksource/commons/http/middlewares"
+	"github.com/flanksource/telltale/sdk/protocol"
 )
 
 type capturedBody struct {
@@ -38,6 +39,9 @@ func Handler(next http.Handler) http.Handler {
 		panic("telltale: HTTP handler must not be nil")
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if Armed(httpTopKind) {
+			defer activeHTTPRequests.begin(req, protocol.HTTPIncoming)()
+		}
 		if !Armed("http") {
 			next.ServeHTTP(w, req)
 			return
@@ -99,16 +103,7 @@ func Handler(next http.Handler) http.Handler {
 
 func captureInbound(req *http.Request, requestBody *capturedBody, started time.Time, config har.HARConfig, roundTrip middlewares.RoundTripperFunc) {
 	copyReq := req.Clone(req.Context())
-	urlCopy := *req.URL
-	if urlCopy.Scheme == "" {
-		urlCopy.Scheme = "http"
-		if req.TLS != nil {
-			urlCopy.Scheme = "https"
-		}
-	}
-	if urlCopy.Host == "" {
-		urlCopy.Host = req.Host
-	}
+	urlCopy := httpTarget(req)
 	copyReq.URL = &urlCopy
 	copyReq.Body = io.NopCloser(bytes.NewReader(requestBody.data.Bytes()))
 	copyReq.ContentLength = requestBody.size
@@ -116,7 +111,7 @@ func captureInbound(req *http.Request, requestBody *capturedBody, started time.T
 	collector := har.NewCollectorWithLifecycle(config, nil, func(entry *har.Entry) error {
 		entry.StartedDateTime = started.UTC().Format(time.RFC3339Nano)
 		entry.Time = float64(time.Since(started)) / float64(time.Millisecond)
-		Record(context.Background(), "http", entry)
+		recordHTTP(*entry, protocol.HTTPIncoming)
 		return nil
 	})
 	result, err := collector.Middleware()(roundTrip).RoundTrip(copyReq)
@@ -130,4 +125,18 @@ func captureInbound(req *http.Request, requestBody *capturedBody, started time.T
 	if result != nil && result.Body != nil {
 		_ = result.Body.Close()
 	}
+}
+
+func httpTarget(req *http.Request) url.URL {
+	target := *req.URL
+	if target.Scheme == "" {
+		target.Scheme = "http"
+		if req.TLS != nil {
+			target.Scheme = "https"
+		}
+	}
+	if target.Host == "" {
+		target.Host = req.Host
+	}
+	return target
 }
