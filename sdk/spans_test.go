@@ -44,9 +44,9 @@ var _ = Describe("manual spans", func() {
 	})
 	It("records parent and child spans with attributes and errors", func() {
 		agent := Loopback()
-		defer agent.Close()
+		defer func() { Expect(agent.Close()).To(Succeed()) }()
 		stream := agent.Connect()
-		defer stream.Close()
+		defer func() { Expect(stream.Close()).To(Succeed()) }()
 		Expect(stream.SetDeadline(time.Now().Add(5 * time.Second))).To(Succeed())
 		conn, _, err := protocol.Authenticate(stream, "")
 		Expect(err).NotTo(HaveOccurred())

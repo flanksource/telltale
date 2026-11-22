@@ -38,6 +38,7 @@ jobs:
           cache: pnpm
       - uses: flanksource/deps@v1.0.50
         with:
+          GITHUB_TOKEN: ${{ github.token }}
           tools: |
             task
       - run: make setup
@@ -157,6 +158,7 @@ jobs:
           cache: pnpm
       - uses: flanksource/deps@v1.0.50
         with:
+          GITHUB_TOKEN: ${{ github.token }}
           tools: |
             task
             rhysd/actionlint

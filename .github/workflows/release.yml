@@ -41,6 +41,7 @@ jobs:
           cache: pnpm
       - uses: flanksource/deps@v1.0.50
         with:
+          GITHUB_TOKEN: ${{ github.token }}
           tools: |
             task
       - name: Select or reuse release version

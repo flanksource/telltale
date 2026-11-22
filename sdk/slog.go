@@ -91,7 +91,7 @@ func (logProbe) Arm(_ context.Context, raw json.RawMessage, sink Sink) (func() e
 	var releaseAdapter func() error
 	if adapter != nil {
 		var err error
-		releaseAdapter, err = adapter(LogOptions{Levels: params.Levels, MinLevel: params.MinLevel, Match: params.Match}, sink)
+		releaseAdapter, err = adapter(LogOptions(params), sink)
 		if err != nil {
 			return nil, err
 		}

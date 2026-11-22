@@ -153,13 +153,15 @@ func (a *httpActivity) sample(options httpTopOptions) (time.Time, int, []profile
 	}
 	a.Unlock()
 	slices.SortFunc(operations, func(a, b activeHTTPRequest) int { return a.started.Compare(b.started) })
-	rows := make([]profiles.Row, 0, min(options.Limit, len(operations)))
-	for _, operation := range operations[:cap(rows)] {
+	observed := len(operations)
+	operations = operations[:min(options.Limit, observed)]
+	rows := make([]profiles.Row, 0, len(operations))
+	for _, operation := range operations {
 		rows = append(rows, profiles.Row{OperationID: strconv.FormatUint(operation.id, 10), ElapsedNS: now.Sub(operation.started).Nanoseconds(), SampledAt: now,
 			Attributes: map[string]any{"direction": string(operation.direction), "method": operation.method, "host": operation.target.Host,
 				"url": operation.target.String(), "startedAt": operation.started.UTC().Format(time.RFC3339Nano)}})
 	}
-	return now, len(operations), rows
+	return now, observed, rows
 }
 
 type activeHTTPBody struct {
