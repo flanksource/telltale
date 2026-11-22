@@ -75,6 +75,10 @@ type OpenOptions struct {
 	// RunConnectionsDir as one more layer, after Connections' so a run's
 	// connection shadows a stored one of its name for this run only.
 	RunConnections []crd.Connection
+	// SessionStore is already scoped to this run. SessionStores resolves a
+	// store after Open chooses the actual run ID, including any collision suffix.
+	SessionStore  query.SessionStore
+	SessionStores SessionStores
 }
 
 // RunConnectionsDir is where a run's own connections are kept in its store;
@@ -114,6 +118,9 @@ func Open(options OpenOptions) (*Host, error) {
 	if options.DataDir == "" || options.RunID == "" {
 		return nil, fmt.Errorf("open trace store: a data dir and a run id are required (got %q, %q)", options.DataDir, options.RunID)
 	}
+	if options.SessionStore != nil && options.SessionStores != nil {
+		return nil, errors.New("open trace store: specify a session store or a session store provider")
+	}
 	root := filepath.Join(options.DataDir, Dir)
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		return nil, fmt.Errorf("open trace store: %w", err)
@@ -121,6 +128,16 @@ func Open(options OpenOptions) (*Host, error) {
 	dir, name, err := claimRunDir(root, options.RunID)
 	if err != nil {
 		return nil, err
+	}
+	sessionStore := options.SessionStore
+	if options.SessionStores != nil {
+		sessionStore, err = options.SessionStores(name)
+		if err != nil {
+			return nil, fmt.Errorf("open run %s session store: %w", name, err)
+		}
+		if sessionStore == nil {
+			return nil, fmt.Errorf("open run %s session store: provider returned no store", name)
+		}
 	}
 	connections, err := runConnections(options.Connections, dir, options.RunConnections)
 	if err != nil {
@@ -132,14 +149,6 @@ func Open(options OpenOptions) (*Host, error) {
 	}
 	var releases []func(context.Context) error
 	onClose := func(release func(context.Context) error) { releases = append(releases, release) }
-	runtime, _, err := openStore(dir, KindDeps{Dumpers: dumpers, DataDir: options.DataDir, RunID: name, OnClose: onClose})
-	if err != nil {
-		return nil, err
-	}
-	runtime.PollEvery = pollEvery
-	runtime.Sessions = query.NewSessionRegistry(query.RegistryOptions{
-		MaxSessions: options.MaxCaptures, MaxDuration: maxDuration, BeforeRead: runtime.Results.Registry.BeforeRead,
-	})
 	ctx := dbcontext.New()
 	if connections != nil {
 		ctx = connections.Attach(ctx)
@@ -166,6 +175,14 @@ func Open(options OpenOptions) (*Host, error) {
 		}
 		return managed.Connection(ctx)
 	})
+	runtime, _, err := openStore(traceserve.OpenOptions{
+		Dir: dir, Retention: retention, SessionStore: sessionStore,
+		Registry: query.RegistryOptions{MaxSessions: options.MaxCaptures, MaxDuration: maxDuration},
+	}, KindDeps{Dumpers: dumpers, DataDir: options.DataDir, RunID: name, OnClose: onClose})
+	if err != nil {
+		return nil, err
+	}
+	runtime.PollEvery = pollEvery
 	return &Host{runID: name, dir: dir, runtime: runtime, dumpers: dumpers, ctx: ctx, releases: releases}, nil
 }
 
@@ -183,7 +200,7 @@ func StoreDir(dataDir, runID string) string {
 // Reopen opens the store a finished run left in dir, such as for a saved
 // snapshot to serve, with the close that stops using it. A store Prune
 // removed is os.ErrNotExist.
-func Reopen(dir string) (*tracing.Runtime, func() error, error) {
+func Reopen(dir string, sessionStores ...query.SessionStore) (*tracing.Runtime, func() error, error) {
 	info, err := os.Stat(dir)
 	if err != nil {
 		return nil, nil, fmt.Errorf("reopen trace store: %w", err)
@@ -195,18 +212,31 @@ func Reopen(dir string) (*tracing.Runtime, func() error, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return openStore(dir, KindDeps{Dumpers: dumpers})
+	options := traceserve.OpenOptions{Dir: dir, Retention: retention}
+	if len(sessionStores) > 1 {
+		return nil, nil, errors.New("reopen trace store: at most one session store is allowed")
+	}
+	if len(sessionStores) == 1 {
+		options.SessionStore = sessionStores[0]
+	}
+	runtime, closeStore, err := openStore(options, KindDeps{Dumpers: dumpers})
+	if err == nil && options.SessionStore != nil {
+		if recoverErr := traceserve.Recover(runtime); recoverErr != nil {
+			return nil, nil, errors.Join(recoverErr, closeStore())
+		}
+	}
+	return runtime, closeStore, err
 }
 
 // openStore opens the store in dir with every kind of the catalog over deps,
 // the way query serves a store.
 // The kinds are built before the store whose registry prepares their reads,
 // so BeforeExecute is bound to that registry once the store is open.
-func openStore(dir string, deps KindDeps) (*tracing.Runtime, func() error, error) {
+func openStore(options traceserve.OpenOptions, deps KindDeps) (*tracing.Runtime, func() error, error) {
 	var registry *recordresults.Registry
 	deps.BeforeExecute = func(ctx context.Context, reads []profilestore.ReadRequest) (func(), error) {
 		if registry == nil {
-			return nil, fmt.Errorf("trace store %s: a profile read before the store opened", dir)
+			return nil, fmt.Errorf("trace store %s: a profile read before the store opened", options.Dir)
 		}
 		return registry.BeforeExecute(ctx, reads)
 	}
@@ -214,7 +244,8 @@ func openStore(dir string, deps KindDeps) (*tracing.Runtime, func() error, error
 	if err != nil {
 		return nil, nil, err
 	}
-	runtime, closeStore, err := traceserve.Open(traceserve.OpenOptions{Dir: dir, Kinds: kinds, Retention: retention})
+	options.Kinds = kinds
+	runtime, closeStore, err := traceserve.Open(options)
 	if err != nil {
 		return nil, nil, err
 	}

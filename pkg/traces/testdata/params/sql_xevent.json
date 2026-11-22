@@ -13,7 +13,7 @@
       "x-clicky-lookup": {
         "filter": "connection",
         "searchParam": "__lookup_q",
-        "url": "/api/v1/connection"
+        "url": "/api/v1/connection?types=sql_server"
       }
     },
     "databases": {
@@ -56,6 +56,8 @@
       "type": "string"
     },
     "sessionName": {
+      "title": "Session name",
+      "description": "Base name of the managed Extended Events session. Defaults to telltale_<db>_<date> using the connection database and UTC time. Telltale appends a unique suffix.",
       "type": "string"
     },
     "tables": {

@@ -3,6 +3,7 @@ package traceserve
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/query/profilestore"
@@ -24,6 +25,7 @@ func Handler(runtime *tracing.Runtime) (http.Handler, error) {
 		Profiles:  func() (profilestore.Store, error) { return runtime.Results.Registry, nil },
 		Context:   func() dbcontext.Context { return dbcontext.New() },
 		Registry:  runtime.Sessions,
+		Store:     runtime.SessionStore,
 		Records:   runtime.Results.Backend,
 		Traces:    runtime,
 		Authorize: sessions.ReadOnly,
@@ -31,5 +33,17 @@ func Handler(runtime *tracing.Runtime) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	return service.Handler(APIPrefix, http.NotFoundHandler())
+	handler, err := service.Handler(APIPrefix, http.NotFoundHandler())
+	if err != nil || runtime.RecoverSessions == nil {
+		return handler, err
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == APIPrefix+"/sessions" || strings.HasPrefix(r.URL.Path, APIPrefix+"/sessions/") {
+			if err := runtime.RecoverSessions(r.Context()); err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		handler.ServeHTTP(w, r)
+	}), nil
 }

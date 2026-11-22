@@ -25,5 +25,6 @@ func presentFeedPage(page read.FeedResult, presentation string) any {
 	return struct {
 		Rows       []any  `json:"rows"`
 		NextCursor string `json:"nextCursor"`
-	}{Rows: rows, NextCursor: page.NextCursor}
+		Resume     string `json:"resume,omitempty"`
+	}{Rows: rows, NextCursor: page.NextCursor, Resume: page.Resume}
 }

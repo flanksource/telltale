@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/flanksource/commons-db/cmd/query/sessionstore"
 	"github.com/flanksource/commons-db/query"
 
 	// A store's result profiles page through the sqlite provider.
@@ -37,7 +38,9 @@ type OpenOptions struct {
 	// Kinds declares the result types the store's streams hold.
 	Kinds *tracing.Kinds
 	// Retention is how long a stream is kept; an expired one is swept away.
-	Retention time.Duration
+	Retention    time.Duration
+	SessionStore query.SessionStore
+	Registry     query.RegistryOptions
 }
 
 // Open opens the trace results store in options.Dir and returns the runtime
@@ -51,6 +54,13 @@ func Open(options OpenOptions) (*tracing.Runtime, func() error, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	sessionStore := options.SessionStore
+	if sessionStore == nil {
+		sessionStore, err = sessionstore.NewMemoryKVStore(sessionstore.KVStoreOptions{})
+		if err != nil {
+			return nil, nil, err
+		}
+	}
 	results, err := recordresults.Open(recordresults.OpenOptions{
 		Prefix: Prefix, ConnectionName: Prefix, Register: options.Kinds.RegisterResultTypes,
 		Schemas:  schemas,
@@ -59,10 +69,12 @@ func Open(options OpenOptions) (*tracing.Runtime, func() error, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("open trace store %s: %w", options.Dir, err)
 	}
+	options.Registry.Store = sessionStore
+	options.Registry.BeforeRead = results.Registry.BeforeRead
 	return &tracing.Runtime{
 		Kinds: options.Kinds, Results: results,
 		Probes:   probe.NewManager(probe.ManagerOptions{LockDir: filepath.Join(options.Dir, "locks")}),
-		Sessions: query.NewSessionRegistry(query.RegistryOptions{BeforeRead: results.Registry.BeforeRead}),
+		Sessions: query.NewSessionRegistry(options.Registry), SessionStore: sessionStore,
 	}, results.Close, nil
 }
 
@@ -88,7 +100,8 @@ type ReopenOptions struct {
 	// run's; Reopen never creates it.
 	Dir string
 	// Kinds declares the result types the store's streams hold.
-	Kinds *tracing.Kinds
+	Kinds        *tracing.Kinds
+	SessionStore query.SessionStore
 }
 
 // reopenedRetention is the stream TTL a reopened store is opened with. A
@@ -108,9 +121,14 @@ func Reopen(options ReopenOptions) (http.Handler, func() error, error) {
 	if !info.IsDir() {
 		return nil, nil, fmt.Errorf("reopen trace store: %s is not a directory", options.Dir)
 	}
-	runtime, closeStore, err := Open(OpenOptions{Dir: options.Dir, Kinds: options.Kinds, Retention: reopenedRetention})
+	runtime, closeStore, err := Open(OpenOptions{Dir: options.Dir, Kinds: options.Kinds, Retention: reopenedRetention, SessionStore: options.SessionStore})
 	if err != nil {
 		return nil, nil, err
+	}
+	if options.SessionStore != nil {
+		if err := Recover(runtime); err != nil {
+			return nil, nil, errors.Join(err, closeStore())
+		}
 	}
 	handler, err := Handler(runtime)
 	if err != nil {
