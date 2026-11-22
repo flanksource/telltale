@@ -3,6 +3,9 @@ package traces_test
 import (
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
+	"github.com/flanksource/clicky"
+	"github.com/flanksource/clicky/api"
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/telltale/pkg/traces"
 
@@ -11,6 +14,29 @@ import (
 )
 
 var _ = Describe("styled trace variants", func() {
+	DescribeTable("shows HTTP direction in compact events and active samples", func(direction, arrow string) {
+		kinds, err := traces.Kinds()
+		Expect(err).NotTo(HaveOccurred())
+		const endpoint = "https://example.test/projects"
+		exchange, err := kinds.Present("http", query.Row{
+			"direction": direction, "request": map[string]any{"method": "GET", "url": endpoint},
+			"response": map[string]any{"status": 200},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(exchange.Summary.String()).To(ContainSubstring(arrow + " GET " + endpoint))
+		Expect(exchange.Detail.String()).To(ContainSubstring(arrow + " GET " + endpoint))
+
+		sample, err := kinds.Present("http_top", query.Row{
+			"direction": direction, "method": "GET", "url": endpoint, "elapsedMs": 84.0,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		for _, summary := range []api.Text{exchange.Summary, sample.Summary} {
+			presentation, err := clicky.Format(summary, clicky.FormatOptions{Format: "ansi"})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(strings.Join(strings.Fields(ansi.Strip(presentation)), " ")).To(ContainSubstring(arrow + " GET " + endpoint))
+		}
+	}, Entry("incoming", "incoming", "←"), Entry("outgoing", "outgoing", "→"))
+
 	DescribeTable("preserves status and failure semantics", func(kind string, row query.Row, content, color string) {
 		kinds, err := traces.Kinds()
 		Expect(err).NotTo(HaveOccurred())

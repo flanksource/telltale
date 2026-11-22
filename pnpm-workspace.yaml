@@ -4,3 +4,6 @@ minimumReleaseAgeExclude:
   - '@flanksource/clicky-ui@0.3.52 || 0.3.56 || 0.3.58'
 overrides:
   '@flanksource/clicky-ui': link:../clicky-ui/packages/ui
+
+allowBuilds:
+  "@flanksource/clicky-ui": true

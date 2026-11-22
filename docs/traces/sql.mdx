@@ -16,5 +16,12 @@ An attached JVM observes existing JDBC and R2DBC connections, including calls ma
 telltale run sql --agent java/checkout --allow-mutation --connections '*' --duration 1m
 ```
 
-In a TraceDefinition, `instrument.jvm.sql` defaults omitted `connections` to `['*']`. The `self` selector is Go-only. Go and Telltale connection selection keeps its existing defaults. SQL prepared before attachment may have unavailable text; the observer records that reason with the observed execution timing.
+In a TraceDefinition, `instrument.jvm.sql` defaults omitted `connections` to `['*']`. SQL prepared before JVM attachment may have unavailable text; the observer records that reason with the observed execution timing.
+
+For the Go SDK with its commons-db adapter, `self` selects the application's own database. Open **SQL statements** in the run's records view after arming the probe.
+
+```sh
+telltale run sql --agent AGENT_ID --connections self --duration 30s
+```
+
 <KindReference kind="sql" />

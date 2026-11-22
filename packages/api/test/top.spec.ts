@@ -130,6 +130,20 @@ describe("live process groups", () => {
     expect(frame.groups.some(group => group.total.processes > 0 && group.total.rssBytes > 0)).toBe(true);
   });
 
+  it("advertises the CPU-aware polling period and reuses a frame for immediate refreshes", async () => {
+    const url = `${apiURL}/api/top?all=true`;
+    const first = await fetch(url);
+    expect(first.status).toBe(200);
+    const frame = await first.json() as Frame & { polling: { minimumIntervalMs: number }; overhead: { cpuPercent: number } };
+    expect(frame.polling.minimumIntervalMs).toBeGreaterThanOrEqual(1000);
+    expect(frame.overhead.cpuPercent).toBeGreaterThan(0);
+    const cached = await fetch(url);
+    expect(await cached.json()).toMatchObject({ tick: frame.tick, sampledAt: frame.sampledAt, polling: { minimumIntervalMs: expect.any(Number) } });
+    const processes = await fetch(`${apiURL}/api/top/processes?pid=1&all=true`);
+    expect(processes.status).toBe(200);
+    expect(await processes.json()).toMatchObject({ tick: frame.tick, polling: { minimumIntervalMs: expect.any(Number) } });
+  });
+
   it("refuses a query it cannot read as true or false", async () => {
     const response = await fetch(`${apiURL}/api/top?all=maybe`);
     expect(response.status).toBe(400);
