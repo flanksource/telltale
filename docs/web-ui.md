@@ -11,6 +11,8 @@ Run `telltale serve` after `make build`, then open the printed server URL. `make
 
 The UI uses `/api/v1/connection` for CRUD and schema negotiation (`Accept: application/schema+json`), `/api/v1/connections/dashboard` for inventory, `/api/v1/connection/<id>/browser` for query capabilities, `/api/agents` for agents, and `/api/traces` for capture runs. Trace queries use `/api/traces/<run>/traces/<kind>/records`; requesting its schema returns query options and columns derived from the result profile.
 
+`GET /api/traces/start` returns the run form schema and its defaults. Each kind under `traces` accepts a single capture object or a nonempty array of capture objects. An enabled capture uses that kind's argument schema, including required fields, target-specific options, and connection lookups. The same argument schema feeds the kind's CLI flags and session API.
+
 Trace definitions are served under `/api/traces/definitions`; a write takes only a same-origin request:
 
 - `GET /api/traces/definitions` lists each definition in effect as `{name, layer, path, resourceVersion, description, counts: {proxy, instrument, collect}, problem?}`, `layer` one of `cwd`, `global` or `builtin`, `problem` the load error of an unreadable file.

@@ -7,13 +7,13 @@
 Configure a SQL Server connection using the [connection configuration](https://github.com/flanksource/telltale#connections) and pass its `connection://name` reference. These captures need neither a local PID nor a command. An empty database filter selects the connection's database; `--databases '*'` selects all databases. Filters accept exact names, `*` wildcards, and `!` exclusions.
 
 ```sh
-telltale run sql_xevent --connection connection://orders --session-name diagnostic --min-duration 10ms --duration 30s
+telltale run sql_xevent --connection connection://orders --min-duration 10ms --duration 30s
 telltale run sql_xevent --connection connection://orders --session system_health --duration 30s
 telltale run sql_deadlock --connection connection://orders --duration 1m --poll 5s
 telltale run sql_deadlock --connection connection://orders --from 2026-10-28T08:00:00Z --to 2026-10-28T09:00:00Z
 ```
 
-For managed XEvents, `--session-name` is required. Telltale appends a unique suffix, drains the capture, and drops only that owned session. `--events` selects events; `--users`, `--apps`, `--hosts`, and `--databases` scope the server predicate. `--types` and `--tables` filter decoded statements. `--poll`, `--max-events`, and `--max-memory-kb` control polling and ring-buffer capacity. Lost or truncated events are reported.
+For managed XEvents, Telltale generates `telltale_<db>_<date>` from the connection's database and the UTC start time. Use `--session-name` to choose a different base name. Telltale appends a unique suffix, drains the capture, and drops the session it created. `--events` selects events. `--users`, `--apps`, `--hosts`, and `--databases` scope the server predicate. `--types` and `--tables` filter decoded statements. `--poll`, `--max-events`, and `--max-memory-kb` control polling and ring-buffer capacity. Lost or truncated events are reported.
 
 `--session system_health` attaches to the existing event files from their current end. It leaves the session and its configuration running. Statement capture requires a managed session; `system_health` contains only the events SQL Server already records there. Managed sessions require permission to create and alter server event sessions. Reading existing sessions needs `VIEW SERVER STATE`, or `VIEW SERVER PERFORMANCE STATE` on SQL Server 2022+, and permission to read the event files.
 

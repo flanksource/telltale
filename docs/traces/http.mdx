@@ -24,4 +24,20 @@ The Go SDK labels traffic through `telltale.Handler` as incoming and traffic thr
 telltale run http --agent AGENT_ID --direction incoming --paths /api/projects --bodies 0 --duration 30s
 ```
 
+## Protocol metadata
+
+HTTP records for recognized exchanges include filterable `protocol` and `operation` fields. The `decoded` object contains details such as repository, Kubernetes resource, model and token usage, or AWS service and request ID. HAR exports include these fields under `_telltale`.
+
+| Protocol | Supported HTTP traffic |
+| --- | --- |
+| `git` | Smart HTTP ref discovery, upload-pack, and receive-pack |
+| `github` | GitHub Cloud and identifiable Enterprise REST and GraphQL requests |
+| `kubernetes` | Resource and discovery endpoints, including CRDs and watches |
+| `anthropic` | Public Messages and token counting endpoints |
+| `openai` | Public Responses and Chat Completions endpoints |
+| `s3` | Standard virtual-hosted and path-style bucket and object endpoints |
+| `aws` | Standard AWS endpoints and requests with an observable SigV4 scope |
+
+Body-derived fields depend on the capture source, MIME type, redaction, and `--bodies` limit. With `--bodies 0`, the decoder uses URLs and headers. AI streams report usage when the relevant events were retained. HTTPS exchanges through the proxy require `--mode mitm` for decoding.
+
 <KindReference kind="http" />

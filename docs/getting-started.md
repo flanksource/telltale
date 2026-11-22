@@ -29,6 +29,32 @@ Run `.bin/telltale explain` to list trace kinds, or `.bin/telltale explain http`
 
 Runs are stored under `traces/<run id>` in the data directory. Set `--data-dir` to choose it; by default Telltale uses `$XDG_CACHE_HOME/telltale` or the operating system cache directory.
 
+## Persist session state
+
+By default, a run keeps its session state in memory. Configure a Redis or Valkey connection to list a run's sessions after its writer exits or from another Telltale process serving the same data directory.
+
+Save a typed connection in the Telltale config directory under `connections/session-cache.yaml`.
+
+```yaml
+apiVersion: mission-control.flanksource.com/v1
+kind: Connection
+metadata:
+  name: session-cache
+spec:
+  redis:
+    url: redis://127.0.0.1:6379
+```
+
+Set `sessionStore` in `./.telltale/config.yaml` or in the global `$XDG_CONFIG_HOME/telltale/config.yaml` (typically `~/.config/telltale/config.yaml`). Telltale uses the first file it finds. Configure both the writer and the server with the same connection and data directory.
+
+```yaml
+sessionStore: connection://session-cache
+```
+
+Pass `--session-store connection://session-cache` to override the file for a command, or `--session-store=` to use memory for that invocation. Startup fails if the configured connection cannot be reached. Put credentials in the connection's secret references.
+
+Redis or Valkey keeps the start record and session status for up to 30 days. Capture rows remain in the run's SQLite store and `run.json` holds the run manifest. Keys are scoped to the run and a hash of the machine's persistent ID and the canonical data directory, so symlink aliases agree and separate hosts using the same path get different keys. When the next process takes the SQLite lock after a writer exits unexpectedly, it lists the abandoned sessions as `interrupted` with the reason `owner restarted`.
+
 ## Next steps
 
 - Learn how to [navigate the web workspace](/web-ui).
