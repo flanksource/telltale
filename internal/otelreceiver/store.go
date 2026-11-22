@@ -8,12 +8,14 @@ import (
 	"sync"
 	"time"
 
+	"github.com/flanksource/commons-db/cmd/query/sessionstore"
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/commons-db/recordstore/owner"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
 	"github.com/flanksource/commons-db/recordstore/sampleframe"
 	"github.com/flanksource/commons-db/recordstore/sqlite"
+	"github.com/flanksource/telltale/pkg/traceserve"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/httptop"
 	"github.com/flanksource/telltale/pkg/tracing/jmstop"
@@ -22,9 +24,10 @@ import (
 )
 
 type StoreOptions struct {
-	DataDir   string
-	Retention time.Duration
-	Writable  bool
+	DataDir      string
+	Retention    time.Duration
+	Writable     bool
+	SessionStore query.SessionStore
 }
 
 type ReadOptions struct {
@@ -139,11 +142,24 @@ func OpenStore(options StoreOptions) (_ *Store, err error) {
 	if err := kinds.RegisterKind("sql_top_active", sqltop.NewActiveKind()); err != nil {
 		return nil, err
 	}
+	sessionStore := options.SessionStore
+	if sessionStore == nil {
+		sessionStore, err = sessionstore.NewMemoryKVStore(sessionstore.KVStoreOptions{})
+		if err != nil {
+			return nil, err
+		}
+	}
 	store.runtime = &tracing.Runtime{
 		Results: store.results, Kinds: kinds,
-		Sessions: query.NewSessionRegistry(query.RegistryOptions{BeforeRead: store.results.Registry.BeforeRead}),
+		Sessions:     query.NewSessionRegistry(query.RegistryOptions{Store: sessionStore, BeforeRead: store.results.Registry.BeforeRead}),
+		SessionStore: sessionStore,
 	}
 	if options.Writable {
+		if options.SessionStore != nil {
+			if err := traceserve.Recover(store.runtime); err != nil {
+				return nil, err
+			}
+		}
 		if err := store.serve(); err != nil {
 			return nil, err
 		}

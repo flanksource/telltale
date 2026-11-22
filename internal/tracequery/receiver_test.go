@@ -67,6 +67,7 @@ var _ = Describe("received traces through the receiver pseudo-run", func() {
 		Expect(detail.Spans).To(ContainElement(HaveField("Attributes", HaveKeyWithValue("large.integer", int64(9007199254740993)))))
 	})
 	It("offers no special receiver source", func() {
-		Expect(Service{DataDir: GinkgoT().TempDir()}.load(context.Background(), Request{Source: otelreceiver.SourceID}, nil)).Error().To(HaveOccurred())
+		_, err := (Service{DataDir: GinkgoT().TempDir()}).Search(context.Background(), Request{Source: otelreceiver.SourceID})
+		Expect(err).To(MatchError(ContainSubstring("trace source catalog is not configured")))
 	})
 })

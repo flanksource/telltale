@@ -9,6 +9,7 @@ import (
 	"sync"
 	"syscall"
 
+	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/commons-db/recordstore/owner"
 	"github.com/flanksource/telltale"
@@ -72,7 +73,7 @@ func standingInfo(dataDir string) (telltale.RunInfo, bool, error) {
 }
 
 func standingCaptures(dataDir string) ([]telltale.CaptureResult, error) {
-	runtime, closeStore, err := openStanding(dataDir)
+	runtime, closeStore, err := openStanding(dataDir, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +122,7 @@ func receiving(dataDir string) (bool, error) {
 	return err == nil || errors.Is(err, syscall.EPERM), nil
 }
 
-func openStanding(dataDir string) (*tracing.Runtime, func() error, error) {
+func openStanding(dataDir string, sessionStore query.SessionStore) (*tracing.Runtime, func() error, error) {
 	store, err := servingStore(dataDir)
 	if err != nil {
 		return nil, nil, err
@@ -129,7 +130,7 @@ func openStanding(dataDir string) (*tracing.Runtime, func() error, error) {
 	if store != nil {
 		return store.Runtime(), func() error { return nil }, nil
 	}
-	store, err = OpenStore(StoreOptions{DataDir: dataDir, Retention: DefaultOptions().Retention})
+	store, err = OpenStore(StoreOptions{DataDir: dataDir, Retention: DefaultOptions().Retention, SessionStore: sessionStore})
 	if err != nil {
 		return nil, nil, err
 	}

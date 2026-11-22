@@ -268,6 +268,9 @@ func (m Model) sampleView() tea.View {
 			limit = fmt.Sprintf("%v active + evictions", active)
 		}
 		lines = append(lines, fmt.Sprintf("%s · %s · %d/%d rows · limit %s", f.Source, f.CompletedAt.Local().Format("15:04:05"), f.Retained, f.Observed, limit))
+		if s.ref.Kind == "sql_top" {
+			lines = append(lines, sqlTopMetrics(f, s.frames)...)
+		}
 	}
 	lines = append(lines, fmt.Sprintf("Search: %s · Filter: %s · Sort: %s · Metric: %s", s.search, s.filter, s.sort, s.metric))
 	if s.typing != "" {

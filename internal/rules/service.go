@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/flanksource/clicky/sse"
 	"github.com/flanksource/telltale/internal/lifetime"
 	"github.com/flanksource/telltale/pkg/tracing/groups"
 	"github.com/flanksource/telltale/pkg/tracing/process"
@@ -49,6 +50,7 @@ type Service struct {
 	activeCancel context.CancelFunc
 	activeID     string
 	wake         chan struct{}
+	changed      sse.Notifier
 	sampleTask   *lifetime.Service
 	dispatchTask *lifetime.Service
 	unlock       func() error
@@ -137,6 +139,7 @@ func (s *Service) sample(ctx context.Context) error {
 func (s *Service) observe(ctx context.Context, snapshot groups.Snapshot, readErr error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	defer s.changed.Notify()
 	if s.fatal {
 		return
 	}
@@ -183,6 +186,7 @@ func (s *Service) observe(ctx context.Context, snapshot groups.Snapshot, readErr
 func (s *Service) storageFailure(err error) {
 	s.failure = "incident persistence failed: " + err.Error()
 	s.fatal = true
+	s.changed.Notify()
 	s.due = nil
 	if s.activeCancel != nil {
 		s.activeCancel()
@@ -273,8 +277,14 @@ func (s *Service) persist(ctx context.Context, event Event) error {
 	if s.options.Enforce {
 		event.Mode = "enforce"
 	}
-	return s.options.Journal.Append(ctx, event)
+	if err := s.options.Journal.Append(ctx, event); err != nil {
+		return err
+	}
+	s.changed.Notify()
+	return nil
 }
+
+func (s *Service) Changes() (<-chan struct{}, func()) { return s.changed.Subscribe() }
 func actionIdentity(d Decision) string {
 	keys := []string{}
 	for _, p := range d.Targets.Processes {

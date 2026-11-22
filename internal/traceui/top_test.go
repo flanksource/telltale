@@ -15,6 +15,21 @@ import (
 )
 
 var _ = Describe("sample navigation", func() {
+	It("renders server gauges for the selected SQL sample without including later readings", func() {
+		frame := sampleframe.Frame{ID: "before", Source: "example", Summary: map[string]any{"engine": "sqlserver", "serverMetrics": map[string]any{
+			"cpuPercent": float64(0), "pageLifeExpectancySeconds": float64(540), "readIOPS": float64(10),
+			"unavailable": map[string]any{"writeIOPS": "Waiting for next sample"},
+		}}}
+		reading := func(id string, cpu float64) sampleframe.Frame {
+			return sampleframe.Frame{ID: id, Source: frame.Source, Summary: map[string]any{"serverMetrics": map[string]any{"cpuPercent": cpu}}}
+		}
+		top := &sampledTab{ref: read.Ref{TraceRef: tracing.TraceRef{Kind: "sql_top"}}, result: &read.TopResult{Frame: frame},
+			frames: []sampleframe.Frame{reading("first", 40), frame, reading("after", 90)}}
+		model := Model{tabs: []tab{{name: "sql_top", top: top}}, width: 100, height: 20}
+		view := ansi.Strip(model.sampleView().Content)
+		Expect(view).To(And(ContainSubstring("SQL Server CPU 0% █▁"), ContainSubstring("PLE 540s"), ContainSubstring("Read IOPS 10"), ContainSubstring("Write IOPS —")))
+	})
+
 	It("renders HTTP Top direction arrows without rewriting recorded directions", func() {
 		kinds, err := traces.Kinds()
 		Expect(err).NotTo(HaveOccurred())
