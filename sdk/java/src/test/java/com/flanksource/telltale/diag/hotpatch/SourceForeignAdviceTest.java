@@ -38,7 +38,7 @@ public class SourceForeignAdviceTest {
       assertEquals("original:after-rejection", request.invoke(receiver, "after-rejection"));
       assertEquals("foreign advice must still run after rejection", 2, client.getField("foreignCalls").getInt(null));
     } finally {
-      if (SourceTransformations.contains(client)) SourceTransformations.restore(Collections.singletonList(client));
+      if (SourceTransformations.contains(client)) SourceTransformations.restore(Collections.singletonList(client), null);
       instrumentation.removeTransformer(foreign);
     }
   }

@@ -501,7 +501,7 @@ public final class AgentBridge {
     Instrumentation instrumentation = InstrumentationService.instrumentation();
     ClassIndex index = ClassIndex.from(instrumentation);
     new PatchService(instrumentation).restore(index, new PatchService.RestoreRequest(
-        index.resolve(className, loaderHash), PatchService.RestoreScope.ALL));
+        index.resolve(className, loaderHash), PatchService.RestoreScope.ALL, null));
     LOG.log(
         Level.WARNING,
         "telltale-diag: restored {0} (loader {1}) — its patch lease lapsed,"

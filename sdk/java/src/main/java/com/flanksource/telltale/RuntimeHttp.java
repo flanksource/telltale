@@ -115,14 +115,14 @@ final class RuntimeHttp {
       return reply;
     }
     if (!renew && method.equals("DELETE")) {
+      Map<String, Object> reply;
       try {
-        Map<String, Object> reply =
-            artifact(capture, (byte[]) runtime.captureAction("captureFinish", id));
-        putReport(reply, capture);
-        return reply;
+        reply = artifact(capture, (byte[]) runtime.captureAction("captureFinish", id));
       } finally {
         runtime.captureAction("captureClose", id);
       }
+      putReport(reply, capture);
+      return reply;
     }
     throw new Failure(404, "unknown diagnostic route " + method + " " + path);
   }

@@ -27,7 +27,12 @@ public final class PatchService {
   static final class RestoreRequest {
     final ClassIndex.Entry entry;
     final RestoreScope scope;
-    RestoreRequest(ClassIndex.Entry entry, RestoreScope scope) { this.entry = entry; this.scope = scope; }
+    final String leaseId;
+    RestoreRequest(ClassIndex.Entry entry, RestoreScope scope, String leaseId) {
+      this.entry = entry;
+      this.scope = scope;
+      this.leaseId = leaseId;
+    }
   }
 
   private static final String ORIGINALS_FIELD = "ORIGINAL_BYTES";
@@ -75,7 +80,7 @@ public final class PatchService {
    *     classes, which must be redefined in the same call to stay consistent with each other.
    */
   public Map<String, Object> apply(
-      ClassIndex index, ClassIndex.Entry entry, Map<String, byte[]> compiled) {
+      ClassIndex index, ClassIndex.Entry entry, Map<String, byte[]> compiled, String leaseId) {
     SourceTransformations.install(instrumentation);
     // Resolve the stash before anything is redefined. It is the only route
     // back, and a JVM still running an older agent jar does not have one —
@@ -119,7 +124,7 @@ public final class PatchService {
       definitions.add(new ClassDefinition(nestedType, produced.getValue()));
     }
 
-    SourceTransformations.apply(instrumentation, definitions);
+    SourceTransformations.apply(instrumentation, definitions, leaseId);
 
     for (Map.Entry<String, byte[]> original : originals.entrySet()) {
       // putIfAbsent: the first patch holds the true original. Re-patching a
@@ -213,7 +218,7 @@ public final class PatchService {
               + "), so there is nothing to restore");
     }
     String handedDigest = BytecodeSource.digest(registry.get(prefix));
-    SourceTransformations.restore(restoredTypes);
+    SourceTransformations.restore(restoredTypes, request.leaseId);
     for (String className : restored) {
       registry.remove(key(entry.getLoaderHash(), className));
     }
