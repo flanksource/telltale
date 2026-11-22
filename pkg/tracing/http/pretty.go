@@ -5,8 +5,22 @@ import (
 	"github.com/flanksource/commons/har/harpretty"
 )
 
+func DirectionArrow(direction Direction) string {
+	switch direction {
+	case Incoming:
+		return "←"
+	case Outgoing:
+		return "→"
+	default:
+		return ""
+	}
+}
+
 func (e Exchange) Pretty() api.Text {
 	t := harpretty.Entry(e.Entry).Pretty()
+	if arrow := DirectionArrow(e.Direction); arrow != "" {
+		t = t.Prefix(arrow + " ")
+	}
 	if e.Error != "" {
 		t = t.Space().Append(e.Error, "text-red-500")
 	}

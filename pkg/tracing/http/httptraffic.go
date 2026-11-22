@@ -23,6 +23,7 @@ import (
 	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/tracing/seam"
 	_ "github.com/flanksource/telltale/sdk/commonsdb"
+	"github.com/flanksource/telltale/sdk/protocol"
 )
 
 // RequestBody and ResponseBody are where an exchange holds its bodies, as
@@ -56,7 +57,7 @@ func (p Options) Validate() error {
 	if err := p.Selection.Validate(); err != nil {
 		return err
 	}
-	if _, err := bodyLimit(p.Bodies); err != nil {
+	if _, err := protocol.HTTPBodyLimit(p.Bodies); err != nil {
 		return err
 	}
 	if len(p.Features) == 0 {

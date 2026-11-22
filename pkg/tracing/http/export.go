@@ -128,7 +128,7 @@ func Summarize(rows iter.Seq[Exchange]) (map[string]any, error) {
 func requestVars(exchange Exchange, host, path string) map[string]any {
 	content := exchange.Response.Content
 	vars := map[string]any{
-		"method": exchange.Method, "url": exchange.URL, "host": host, "path": path,
+		"direction": string(exchange.Direction), "method": exchange.Method, "url": exchange.URL, "host": host, "path": path,
 		"status": exchange.Status, "duration_ms": exchange.DurationMs, "error": exchange.Error,
 		"mime": content.MimeType, "tunnelled": exchange.Tunnelled,
 		"request_headers":  firstValues(exchange.Request.Headers, func(h har.Header) (string, string) { return h.Name, h.Value }),
