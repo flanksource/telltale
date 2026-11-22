@@ -1,4 +1,5 @@
 import type { TraceFeedPage, TraceFeedProps, TraceFeedRecord, TraceFeedRequest } from "@flanksource/clicky-ui/data";
+import { subscribeJSON, type EventSourceFactory } from "@flanksource/clicky-ui/hooks";
 import { failure } from "./api";
 
 function feedUrl(mount: string, values: Record<string, string>): string {
@@ -7,36 +8,27 @@ function feedUrl(mount: string, values: Record<string, string>): string {
   return `${mount}/records?${params}`;
 }
 
-export function traceFeedSource(mount: string): Pick<TraceFeedProps, "loadPage" | "follow"> {
+export function traceFeedSource(mount: string, open: EventSourceFactory): Pick<TraceFeedProps, "loadPage" | "follow"> {
   const tokens = new Map<string, string>();
   return {
     loadPage: async (request: TraceFeedRequest, signal: AbortSignal): Promise<TraceFeedPage> => {
-      const response = await fetch(feedUrl(mount, { ...request, excludeKind: "process", presentation: "ansi", limit: "100" }), { signal });
+      const response = await fetch(feedUrl(mount, { ...request, excludeKind: "process", presentation: "ansi", limit: "100", tail: "1" }), { signal });
       if (!response.ok) throw await failure(response, "Read trace feed");
-      return response.json() as Promise<TraceFeedPage>;
+      const page = await response.json() as TraceFeedPage;
+      if (!signal.aborted && !request.cursor && page.resume) tokens.set(request.kind, page.resume);
+      return page;
     },
-    follow: ({ kind, onRecord, onError, onEnd }) => {
-      const source = new EventSource(feedUrl(mount, { kind, excludeKind: "process", presentation: "ansi", follow: "1", resume: tokens.get(kind) ?? "" }));
-      source.onmessage = event => {
-        try {
-          const record = JSON.parse(event.data) as TraceFeedRecord;
+    follow: ({ kind, onRecord, onError, onOpen, onEnd }) => {
+      return subscribeJSON<TraceFeedRecord>(open, feedUrl(mount, { kind, excludeKind: "process", presentation: "ansi", follow: "1", resume: tokens.get(kind) ?? "" }), {
+        onData: (record, id) => {
           if (!Number.isSafeInteger(record.seq) || record.seq < 1 || !record.kind || !record.stream || !record.record) throw new Error("Invalid trace feed record");
           onRecord(record);
-          tokens.set(kind, event.lastEventId);
-        } catch (error) {
-          source.close();
-          onError(error instanceof Error ? error : new Error(String(error)));
-        }
-      };
-      source.addEventListener("end", () => { source.close(); onEnd(); });
-      source.addEventListener("error", event => {
-        if (event instanceof MessageEvent) {
-          source.close();
-          try { onError(new Error((JSON.parse(event.data) as { error: string }).error)); }
-          catch (error) { onError(error instanceof Error ? error : new Error(String(error))); }
-        } else onError(new Error("Trace feed disconnected; reconnecting"));
+          tokens.set(kind, id);
+        },
+        onError,
+        onOpen,
+        onEnd,
       });
-      return () => source.close();
     },
   };
 }

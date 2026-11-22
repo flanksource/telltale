@@ -45,22 +45,24 @@ function renderPage() {
 const cpuOf = (name: RegExp) => within(screen.getByRole("row", { name })).getAllByRole("cell")[2]!.textContent;
 
 describe("live process groups", () => {
-  it("uses the slower of the CPU budget and the selected refresh period", async () => {
+  it("requests the selected delivery cadence without polling for frames", async () => {
     vi.useFakeTimers();
     const read = vi.fn(() => Promise.resolve(json({ ...sampleFrame(), polling: { minimumIntervalMs: 8000 } })));
     vi.stubGlobal("fetch", read);
+    const opened: string[] = [];
+    vi.stubGlobal("EventSource", class extends EventTarget {
+      constructor(url: string) { super(); opened.push(url); }
+      close() {}
+    });
     renderPage();
     await act(async () => vi.advanceTimersByTimeAsync(1000));
-    expect(screen.getByText("Polling every 8s to limit CPU overhead")).toBeInTheDocument();
+    expect(screen.getByText("Updates every 8s to limit CPU overhead")).toBeInTheDocument();
+    expect(opened).toEqual(["/api/top?all=false&net=false&follow=1&everyMs=1000"]);
     expect(read).toHaveBeenCalledTimes(1);
-    await act(async () => vi.advanceTimersByTimeAsync(7100));
-    expect(read).toHaveBeenCalledTimes(2);
     fireEvent.change(screen.getByRole("combobox", { name: "Refresh interval" }), { target: { value: "30000" } });
-    expect(screen.queryByText("Polling every 8s to limit CPU overhead")).not.toBeInTheDocument();
-    await act(async () => vi.advanceTimersByTimeAsync(9000));
-    expect(read).toHaveBeenCalledTimes(2);
-    await act(async () => vi.advanceTimersByTimeAsync(21100));
-    expect(read).toHaveBeenCalledTimes(3);
+    expect(opened.at(-1)).toContain("everyMs=30000");
+    await act(async () => vi.advanceTimersByTimeAsync(40000));
+    expect(read).toHaveBeenCalledTimes(1);
   });
 
   it("shows the latest frame as a tree table", async () => {
@@ -145,12 +147,13 @@ function recordedFrames(): Frame[] {
 
 function serveRecording(runs: RunTraces[]) {
   const rows = recordedFrames().flatMap(frame => frame.groups);
-  vi.stubGlobal("EventSource", vi.fn(function () { return new (class extends EventTarget {
+  vi.stubGlobal("EventSource", vi.fn(function (url: string) { return new (class extends EventTarget {
     closed = false;
     constructor() {
       super();
       queueMicrotask(() => {
         if (this.closed) return;
+        if (!url.includes("/process/groups?")) return;
         rows.forEach((row, index) => this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ ...row, seq: index + 1 }), lastEventId: String(index + 1) })));
         this.dispatchEvent(new Event("end"));
       });

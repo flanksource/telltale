@@ -1,35 +1,56 @@
 import { useState } from "react";
-import { Button, Combobox, type ComboboxOption } from "@flanksource/clicky-ui/components";
-import { ConnectionTypeIcon } from "@flanksource/clicky-ui/connections";
+import { useQueryClient } from "@tanstack/react-query";
+import { Button, Combobox, Modal, type ComboboxOption } from "@flanksource/clicky-ui/components";
+import { ConnectionTypeIcon, CreateConnectionDialog } from "@flanksource/clicky-ui/connections";
 import { UiAdd } from "@flanksource/clicky-ui/icons";
 import type { Agent, DeployedTarget } from "../agents/api";
 import { DeployAgentDialog } from "../agents/DeployAgentDialog";
-import type { ConnectionInfo } from "../definitions/api";
+import { definitionKeys, type ConnectionInfo } from "../definitions/api";
+import { connectionsFor } from "./catalog";
 import type { AgentChoice } from "./model";
 
 const TYPE_LABEL: Record<string, string> = { sql_server: "SQL Server", postgres: "Postgres", kubernetes: "Kubernetes" };
 const typeLabel = (type: string) => TYPE_LABEL[type] ?? type;
 
-/** One saved connection of the types a capture accepts, sized for a row header; with none saved, Add connection. */
-export function ConnectionSelect({ id, types, connections, value, onChange, invalid }: {
+function CaptureConnectionDialog({ types, existing, onClose, onCreated }: {
+  types: string[];
+  existing: string[];
+  onClose: () => void;
+  onCreated: (reference: string) => void;
+}) {
+  const [type, setType] = useState(types.length === 1 ? types[0] : undefined);
+  if (types.length > 1 && !type) {
+    return (
+      <Modal open onClose={onClose} title="Choose a connection type" size="sm">
+        <div className="flex flex-wrap gap-2">
+          {types.map(option => (
+            <Button key={option} variant="outline" onClick={() => setType(option)}>
+              <ConnectionTypeIcon type={option} className="mr-1 size-4" />
+              {typeLabel(option)}
+            </Button>
+          ))}
+        </div>
+      </Modal>
+    );
+  }
+  return <CreateConnectionDialog apiBase="/api/v1" type={type} existing={existing} onClose={onClose} onCreated={onCreated} />;
+}
+
+/** A capture's saved connection picker and its add action. */
+export function ConnectionSelect({ id, types, connections, value, onChange, invalid, defaultLabel }: {
   id: string;
   types: string[];
   connections: ConnectionInfo[];
   value: string;
   onChange: (reference: string) => void;
   invalid: boolean;
+  defaultLabel?: string;
 }) {
+  const [adding, setAdding] = useState(false);
+  const queryClient = useQueryClient();
   const wanted = types.map(typeLabel).join(" or ") || "saved";
-  // A new tab keeps the draft; the connections list refetches when this tab regains focus.
-  const add = () => window.open("/connections", "_blank", "noopener");
-  if (connections.length === 0) {
-    return (
-      <Button size="sm" variant="outline" className={invalid ? "border-destructive" : undefined} onClick={add} title={`No ${wanted} connection is saved yet`}>
-        <UiAdd className="mr-1" /> Add {wanted} connection
-      </Button>
-    );
-  }
-  const options: ComboboxOption[] = connections.map(connection => ({
+  const add = () => setAdding(true);
+  const options: ComboboxOption[] = connectionsFor(types, connections).map(connection => ({
     value: connection.reference,
     label: connection.name,
     selectedLabel: connection.name,
@@ -37,26 +58,51 @@ export function ConnectionSelect({ id, types, connections, value, onChange, inva
     icon: <ConnectionTypeIcon type={connection.type} className="size-4" />,
     trailing: <span className="text-[11px] text-muted-foreground">{typeLabel(connection.type)}</span>,
   }));
+  if (value && !options.some(option => option.value === value)) {
+    options.push({ value, label: value.replace(/^connection:\/\//, "") });
+  }
+  const defaultValue = "server-kubeconfig";
+  if (defaultLabel) options.unshift({ value: defaultValue, label: defaultLabel });
   return (
-    <Combobox
-      id={id}
-      ariaLabel={`${wanted} connection`}
-      size="sm"
-      className="min-w-32 flex-1"
-      menuWidth={360}
-      options={options}
-      value={value}
-      onChange={onChange}
-      allowCustomValue={false}
-      invalid={invalid}
-      ariaRequired
-      placeholder={`${wanted} connection…`}
-      footer={
-        <button type="button" className="flex w-full items-center gap-1 px-3 py-1.5 text-left text-xs text-primary hover:bg-muted" onClick={add}>
-          <UiAdd /> Add a {wanted} connection
-        </button>
-      }
-    />
+    <>
+      {options.length ? (
+        <Combobox
+          id={id}
+          ariaLabel={`${wanted} connection`}
+          size="sm"
+          className="min-w-32 flex-1"
+          menuWidth={360}
+          options={options}
+          value={value || (defaultLabel ? defaultValue : "")}
+          onChange={selected => onChange(selected === defaultValue ? "" : selected)}
+          allowCustomValue={false}
+          invalid={invalid}
+          ariaRequired={!defaultLabel}
+          placeholder={`${wanted} connection…`}
+          footer={
+            <button type="button" className="flex w-full items-center gap-1 px-3 py-1.5 text-left text-xs text-primary hover:bg-muted" onMouseDown={event => event.preventDefault()} onClick={add}>
+              <UiAdd /> Add a {wanted} connection
+            </button>
+          }
+        />
+      ) : (
+        <Button size="sm" variant="outline" className={invalid ? "border-destructive" : undefined} onClick={add}>
+          <UiAdd className="mr-1" /> Add {wanted} connection
+        </Button>
+      )}
+      {adding && (
+        <CaptureConnectionDialog
+          types={types}
+          existing={connections.map(connection => connection.reference)}
+          onClose={() => setAdding(false)}
+          onCreated={reference => {
+            onChange(reference);
+            setAdding(false);
+            void queryClient.invalidateQueries({ queryKey: definitionKeys.connections });
+          }}
+        />
+      )}
+    </>
   );
 }
 

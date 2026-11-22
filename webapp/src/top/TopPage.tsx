@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Button, Tabs } from "@flanksource/clicky-ui/components";
-import { fetchTraceRuns } from "../traces/api";
-import { fetchTopFrame, PROCESS_GROUPS_KIND, type Frame } from "./api";
+import { useRunList } from "../traces/useRunList";
+import { fetchTopFrame, PROCESS_GROUPS_KIND, topFollow, topFrameUrl, type Frame } from "./api";
 import { GroupsFilterBar, GroupsTable } from "./GroupsTable";
 import { appendFrame, cpuTrend, viewGroups } from "./groups";
 import { HostStrip } from "./HostStrip";
 import { RecordedGroups } from "./RecordedGroups";
 import { useTopState, type TopState, type TopTab } from "./useTopState";
-import { RefreshControl, refreshAt, useRefreshInterval } from "../monitoring/RefreshControl";
+import { RefreshControl, useRefreshInterval } from "../monitoring/RefreshControl";
+import { useSnapshotQuery } from "../monitoring/useSnapshotQuery";
 import { RulesPanel } from "../rules/RulesPanel";
 import { EventsPanel } from "../rules/EventsPanel";
 
@@ -29,15 +29,12 @@ interface TabProps {
 
 function useLiveFrame({ showOther, net }: TopState, enabled: boolean) {
   const interval = useRefreshInterval();
-  return useQuery({
-    queryKey: ["top-live", { all: showOther, net }],
-    queryFn: ({ signal }) => fetchTopFrame({ all: showOther, net }, signal),
+  const options = { all: showOther, net };
+  return useSnapshotQuery({
+    key: ["top-live", options],
+    read: ({ signal }) => fetchTopFrame(options, signal),
+    stream: topFollow(topFrameUrl(options), interval),
     enabled,
-    retry: false,
-    refetchOnWindowFocus: interval !== false,
-    refetchOnReconnect: interval !== false,
-    // A refused reading is not polled again until Retry: the server would refuse it every second.
-    refetchInterval: current => current.state.status === "error" ? false : refreshAt(interval, current.state.data?.polling?.minimumIntervalMs),
   });
 }
 
@@ -57,7 +54,7 @@ function LiveGroups({ state, setState, query }: TabProps & { query: ReturnType<t
       </GroupsFilterBar>
       {query.isError && (
         <div className="space-y-2">
-          <p role="alert">{query.error.message}</p>
+          <p role="alert">{query.error?.message}</p>
           <Button onClick={() => void query.refetch()}>Retry</Button>
         </div>
       )}
@@ -74,21 +71,15 @@ function LiveGroups({ state, setState, query }: TabProps & { query: ReturnType<t
 }
 
 function RecordedRuns({ state, setState }: TabProps) {
-  const interval = useRefreshInterval();
-  const query = useQuery({
-    queryKey: ["top-runs"],
-    queryFn: () => fetchTraceRuns({ kind: PROCESS_GROUPS_KIND }),
-    retry: false,
-    refetchInterval: current => current.state.data?.runs.some(run => run.status === "running") ? interval : false,
-  });
+  const query = useRunList(["top-runs"], { kind: PROCESS_GROUPS_KIND });
   if (query.isPending) return <p role="status">Loading recordings…</p>;
-  if (query.isError) return (
+  if (query.error && !query.data) return (
     <div className="space-y-2">
-      <p role="alert">{query.error.message}</p>
+      <p role="alert">{query.error?.message}</p>
       <Button onClick={() => void query.refetch()}>Retry</Button>
     </div>
   );
-  const runs = query.data.runs;
+  const runs = query.data?.runs ?? [];
   if (runs.length === 0) return (
     <p className="text-sm text-muted-foreground">
       No process groups recorded yet. Record them with <code>telltale top --record</code>, or arm the <code>{PROCESS_GROUPS_KIND}</code> trace on a host run.
@@ -97,6 +88,7 @@ function RecordedRuns({ state, setState }: TabProps) {
   const run = runs.find(candidate => candidate.runId === state.run) ?? runs[0]!;
   return (
     <div className="space-y-4">
+      {query.error && <p role="alert">{query.error.message}</p>}
       <label className="flex items-center gap-2 text-sm">
         Recording
         <select className="rounded border border-border bg-background px-2 py-1" value={run.runId} onChange={event => setState({ run: event.target.value })}>

@@ -12,6 +12,8 @@ describe("readKinds", () => {
       { name: "http", summary: "Record HTTP exchanges from an agent or a local proxy", seams: ["agent", "proxy"], defaultSeam: "proxy", connectionTypes: [], group: "traffic" },
       { name: "sql_top", summary: "Sample the queries a Postgres or SQL Server is running", seams: ["connection", "agent"], defaultSeam: "connection", connectionTypes: ["postgres", "sql_server"], group: "sql" },
       { name: "jvm_trace", summary: "Record method calls in a JVM", seams: ["agent"], defaultSeam: "agent", connectionTypes: [], group: "jvm" },
+      { name: "logs", summary: "Record application logs", seams: ["agent", "host"], defaultSeam: "agent", connectionTypes: [], group: "query" },
+      { name: "spans", summary: "Record application spans", seams: ["agent", "host"], defaultSeam: "agent", connectionTypes: [], group: "query" },
     ]);
   });
 
@@ -23,6 +25,18 @@ describe("readKinds", () => {
 });
 
 describe("buildStartRequest", () => {
+  it("nests a saved OpenTelemetry connection and index inside the OpenSearch span parameters", () => {
+    const draft = addCapture(captures, kind("spans"), {
+      backend: "opensearch-spans",
+      seam: "host",
+      connection: "connection://orders-traces",
+      params: { index: "orders-spans-*" },
+    });
+    expect(buildStartRequest(draft, kinds)).toEqual({
+      traces: { spans: { enabled: true, target: { seam: "host" }, opensearch: { connection: "connection://orders-traces", index: "orders-spans-*" } } },
+    });
+  });
+
   it("sends a kind armed twice as a list, one entry per capture, and one entry per chosen agent", () => {
     let draft = addCapture(captures, kind("sql_top"), { connection: "connection://mssql" });
     draft = addCapture(draft, kind("sql_top"), { connection: "connection://prod-backup" });
@@ -51,6 +65,13 @@ describe("buildStartRequest", () => {
 });
 
 describe("validate", () => {
+  it("uses the kind schema to require a log source or the selected source's options", () => {
+    const generic = addCapture(captures, kind("logs"), { seam: "host" });
+    const kubernetes = addCapture(captures, kind("logs"), { seam: "host", backend: "kubernetes", params: { namespace: "orders" } });
+    expect(validate(generic, kinds).map(error => error.instancePath)).toEqual(["/traces/logs/source"]);
+    expect(validate(kubernetes, kinds).map(error => error.instancePath)).toEqual(["/traces/logs/podSelector"]);
+  });
+
   it("names each capture's missing target at its request pointer, and the command a proxy needs", () => {
     let draft = addCapture(captures, kind("sql_top"));
     draft = addCapture(draft, kind("sql_top"), { connection: "connection://mssql" });

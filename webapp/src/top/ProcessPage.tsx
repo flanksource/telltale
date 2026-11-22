@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Button } from "@flanksource/clicky-ui/components";
 import { LabeledSparkline, RadialGauge } from "@flanksource/clicky-ui/data";
 import { useRouter } from "@flanksource/clicky-ui/rpc";
-import { fetchTopProcesses, type HostUsage, type ProcessSample, type TopProcesses, type Usage } from "./api";
+import { fetchTopProcesses, topFollow, topProcessesUrl, type HostUsage, type ProcessSample, type TopProcesses, type Usage } from "./api";
 import { appendFrame, formatBytes, formatCount, formatPercent, formatRate, originText } from "./groups";
 import { FacetsPanel } from "./FacetsPanel";
 import { toneOf } from "./HostStrip";
 import { isCPUHog } from "./cpu";
 import { hogLabel } from "./hogs";
 import { ProcessActions } from "./ProcessActions";
-import { RefreshControl, refreshAt, useRefreshInterval } from "../monitoring/RefreshControl";
+import { RefreshControl, useRefreshInterval } from "../monitoring/RefreshControl";
+import { useSnapshotQuery } from "../monitoring/useSnapshotQuery";
 import {
   filterProcesses, metricSeries, metricValue, parseTarget, sortProcesses, sumProcesses, type Metric, type ProcessSortKey,
 } from "./processes";
@@ -150,14 +150,10 @@ function ProcessView({ target }: { target: string }) {
   const interval = useRefreshInterval();
   const { renderLink } = useRouter();
   const parsed = useMemo(() => parseTarget(target), [target]);
-  const query = useQuery({
-    queryKey: ["top-processes", parsed],
-    queryFn: ({ signal }) => fetchTopProcesses(parsed, signal),
-    retry: false,
-    refetchOnWindowFocus: interval !== false,
-    refetchOnReconnect: interval !== false,
-    // A refused reading is not polled again until Retry: the server would refuse it every second.
-    refetchInterval: current => current.state.status === "error" ? false : refreshAt(interval, current.state.data?.polling?.minimumIntervalMs),
+  const query = useSnapshotQuery({
+    key: ["top-processes", parsed],
+    read: ({ signal }) => fetchTopProcesses(parsed, signal),
+    stream: topFollow(topProcessesUrl(parsed), interval),
   });
   const [history, setHistory] = useState<TopProcesses[]>([]);
   useEffect(() => {
@@ -185,13 +181,13 @@ function ProcessView({ target }: { target: string }) {
       </label>
       {query.isError && (
         <div className="space-y-2">
-          <p role="alert">{query.error.message}</p>
+          <p role="alert">{query.error?.message}</p>
           <Button onClick={() => void query.refetch()}>Retry</Button>
         </div>
       )}
       {query.isPending && <p role="status">Reading processes…</p>}
       {latest && total && latest.processes.length === 0 && (
-        <p className="text-sm text-muted-foreground">No process {"pid" in parsed ? `${parsed.pid} is running` : `runs ${parsed.name}`} right now. This page keeps polling.</p>
+        <p className="text-sm text-muted-foreground">No process {"pid" in parsed ? `${parsed.pid} is running` : `runs ${parsed.name}`} right now.</p>
       )}
       {latest && total && latest.processes.length > 0 && (
         <>
@@ -199,7 +195,7 @@ function ProcessView({ target }: { target: string }) {
             {METRIC_VIEWS.map(view => <MetricTile key={view.metric} view={view} usage={total} host={latest.host} series={series[view.metric]} />)}
           </div>
           <p className="text-sm text-muted-foreground">Hogs exceed 25% of all cores, physical RAM, or swap capacity and stay pinned for 120 seconds after their last spike. On macOS, Compressed includes swapped-out pages; per-process disk swap is unavailable (–). Terminate sends SIGTERM to one process; renice changes its scheduling priority.</p>
-          {selected !== undefined && <FacetsPanel key={selected} pid={selected} minimumIntervalMs={latest.polling?.minimumIntervalMs} />}
+          {selected !== undefined && <FacetsPanel key={selected} pid={selected} />}
           {shown.length === 0
             ? <p className="text-sm text-muted-foreground">No process matches these filters.</p>
             : <ProcessTable processes={shown} sort={sort} onSort={setSort} selected={selected} onSelect={setSelected} cores={latest.host?.cores} sampledAt={latest.sampledAt} />}
@@ -209,7 +205,7 @@ function ProcessView({ target }: { target: string }) {
   );
 }
 
-/** The processes of a program (a name) or of a process and those under it (a numeric pid), polled every second, with their total use and its trend. */
+/** The processes of a program or process tree, with their live usage trend. */
 export default function ProcessPage({ target }: { target: string }) {
   // A new target starts a new history.
   return <ProcessView key={target} target={target} />;

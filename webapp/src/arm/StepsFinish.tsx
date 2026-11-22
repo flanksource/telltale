@@ -3,6 +3,7 @@ import { Button, Checkbox, CopyButton, Field, InputField, SegmentedControl } fro
 import { Badge, Callout } from "@flanksource/clicky-ui/data";
 import { UiLoader, UiPlay } from "@flanksource/clicky-ui/icons";
 import { StartRunError, startRun, type RunTraces } from "../traces/api";
+import { captureBackend } from "./backends";
 import { errorAt, type ArmCatalog, type StepProps } from "./catalog";
 import { SEAMS, buildStartRequest, captureAt, capturePointers, captureTargetText, cliEquivalent, kindByName, stepForError, validate, type ArmDraft, type DraftError, type StepId, type StopMode } from "./model";
 
@@ -51,7 +52,7 @@ function ReviewRows({ catalog, draft }: { catalog: ArmCatalog; draft: ArmDraft }
       {draft.captures.map(capture => (
         <li key={capture.id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5">
           <span className="flex items-center gap-2">
-            <span className="font-medium">{kindByName(catalog.kinds, capture.kind).title}</span>
+            <span className="font-medium">{captureBackend(capture)?.title ?? kindByName(catalog.kinds, capture.kind).title}</span>
             <span className="font-mono text-[11px] text-muted-foreground">{pointers.get(capture.id)}</span>
           </span>
           <span className="flex items-center gap-2 text-xs text-muted-foreground"><Badge size="xs" variant="outline">{SEAMS[capture.seam].label}</Badge><span className="font-mono">{captureTargetText(capture) || "—"}</span></span>

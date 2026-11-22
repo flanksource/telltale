@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Button } from "@flanksource/clicky-ui/components";
 import { CodeBlock, DataTable, type DataTableColumn } from "@flanksource/clicky-ui/data";
+import { appendTailRows } from "@flanksource/clicky-ui/hooks";
 import { useRefreshInterval } from "../monitoring/RefreshControl";
-import { fetchRuleEvents, type EventFilters, type RuleEvent } from "./api";
+import { fetchRuleEvents, ruleEventsOperation, type EventFilters, type RuleEvent } from "./api";
+import { useSnapshotQuery } from "../monitoring/useSnapshotQuery";
 import { useDebouncedFilters, useRuleConfig, useRuleFilters, useRulesStatus } from "./useRules";
 import { HookLabel, QueryError, RulesStatus, StateBadge } from "./RuleStatus";
 import { TargetsView } from "./TargetsView";
@@ -19,7 +20,11 @@ export function EventsPanel() {
   const criteria = useMemo<EventFilters>(() => ({ rule: filters.rule, group: filters.group, incident: filters.incident, since: filters.since, limit: filters.limit }), [filters.rule, filters.group, filters.incident, filters.since, filters.limit]);
   const debounced = useDebouncedFilters(criteria);
   const [payloadOpen, setPayloadOpen] = useState(false);
-  const query = useQuery({ queryKey: ["rules-events", debounced], queryFn: ({ signal }) => fetchRuleEvents(debounced, signal), enabled: status.data?.enabled === true, retry: false, refetchInterval: interval });
+  const query = useSnapshotQuery<RuleEvent[], { events: RuleEvent[]; reset?: boolean }>({
+    key: ["rules-events", debounced], read: ({ signal }) => fetchRuleEvents(debounced, signal), enabled: status.data?.enabled === true,
+    stream: interval === false ? null : `/api/rules${ruleEventsOperation(debounced, true)}`,
+    merge: (previous, { events, reset }) => reset ? events : appendTailRows(previous ?? [], events, { limit: Number(debounced.limit) }).rows,
+  });
   const rows: EventRow[] = (query.data ?? []).map(event => ({ id: `${event.mode}:${event.kind}:${event.incident.id}:${event.incident.step}:${event.at}`, at: event.at, rule: event.incident.rule, group: event.incident.group, incident: event.incident.id, kind: event.kind, outcome: event.result?.status || event.incident.state, mode: event.mode || "unknown", step: event.decision ? String(event.decision.incident.step + 1) : "—", event })).reverse();
   const selected = rows.find(row => row.id === filters.selectedEvent)?.event;
   const columns: DataTableColumn<EventRow>[] = [
@@ -45,7 +50,7 @@ export function EventsPanel() {
       <Button variant="outline" size="sm" onClick={() => setFilters({ rule: "", group: "", incident: "", since: "", limit: "100", selectedEvent: "" })}>Clear filters</Button>
     </div>
     {config.isError && <QueryError error={config.error} retry={() => void config.refetch()} />}
-    {query.isError && <QueryError error={query.error} retry={() => void query.refetch()} />}
+    {query.error && <QueryError error={query.error} retry={() => void query.refetch()} />}
     {status.data?.enabled && <><p className="text-xs text-muted-foreground">Latest {filters.limit} matching events · newest first · {rows.length} shown</p><DataTable data={rows} columns={columns} getRowId={row => row.id} loading={query.isPending} emptyMessage={query.isError ? "Event history unavailable. Retry above." : "No events match these filters."} scrollContainerClassName="max-h-[32rem]" showFullscreenControl={false} /></>}
     {query.isSuccess && filters.selectedEvent && !selected && <p role="alert" className="text-sm">The selected event is outside the loaded history. Increase the event limit or clear the filters.</p>}
     {selected && <section aria-label="Event details" className="space-y-3 rounded-lg border border-border p-4">

@@ -14,9 +14,9 @@ export function QueryError({ error, retry }: { error: Error; retry: () => void }
   return <div className="flex flex-wrap items-center gap-3"><p role="alert" className="text-sm text-destructive">{error.message}</p><Button variant="outline" size="sm" onClick={retry}>Retry</Button></div>;
 }
 export function RulesStatus({ query }: { query: ReturnType<typeof useRulesStatus> }) {
-  if (query.isPending) return <p role="status">Reading monitoring status…</p>;
-  if (query.isError) return <QueryError error={query.error} retry={() => void query.refetch()} />;
+  if (query.error && !query.data) return <QueryError error={query.error} retry={() => void query.refetch()} />;
   const status = query.data;
+  if (!status) return <p role="status">Reading monitoring status…</p>;
   if (!status.enabled) return <p className="rounded border border-border bg-muted/30 p-4 text-sm">Start Telltale with <code>serve --rules &lt;file&gt;</code> to observe resource rules. Add <code>--enforce-rules</code> to execute configured hooks.</p>;
   return (
     <div className="space-y-2">

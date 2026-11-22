@@ -43,7 +43,7 @@ export function RefreshControl({ minimumIntervalMs = 0 }: { minimumIntervalMs?: 
       </label>
       <Button variant="outline" size="sm" disabled={fetching > 0} onClick={() => void client.refetchQueries({ type: "active", predicate: monitoringQuery })}>Refresh now</Button>
       {interval !== false && minimumIntervalMs > interval && (
-        <span className="text-muted-foreground">Polling every {Math.ceil(minimumIntervalMs / 100) / 10}s to limit CPU overhead</span>
+        <span className="text-muted-foreground">Updates every {Math.ceil(minimumIntervalMs / 100) / 10}s to limit CPU overhead</span>
       )}
     </div>
   );

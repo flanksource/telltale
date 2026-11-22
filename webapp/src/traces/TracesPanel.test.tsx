@@ -42,6 +42,28 @@ function renderPanel() {
 }
 
 describe("run trace layout", () => {
+  it("shows a capture-catalog error and lets the user recover the Top tab", async () => {
+    let catalog = 0;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      const request = new URL(url, window.location.origin);
+      if (request.pathname.endsWith("/kinds")) return ++catalog === 1 ? new Response("Store is busy", { status: 500 }) : Response.json([
+        { name: "sql_top", title: "SQL", top: { identity: ["operationId"] } },
+      ]);
+      if (request.pathname.endsWith("/processes")) return Response.json({ armed: false, rows: [] });
+      if (request.searchParams.has("view")) {
+        if (request.searchParams.get("view") === "frames") return Response.json([]);
+        if ((init?.headers as Record<string, string>)?.Accept === "application/schema+json") return Response.json({ columns: [] });
+        return new Response("No complete samples", { status: 409 });
+      }
+      return Response.json({ rows: [], nextCursor: "" });
+    }));
+    const recorded: RunTraces = { runId: run.runId, mount: run.mount, dir: run.dir, status: "succeeded", captures: [{ kind: "sql_top", ref: { kind: "sql_top", stream: "sql" } }] };
+    render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><TracesPanel run={recorded} /></QueryClientProvider>);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Store is busy");
+    fireEvent.click(screen.getByRole("button", { name: "Retry capture catalog" }));
+    expect(await screen.findByRole("tab", { name: "Top" })).toHaveAttribute("aria-selected", "true");
+  });
+
   it("keeps protocol Top captures out of the event tabs while retaining the Top view", async () => {
     const topKinds = ["http_top", "sql_top", "jms_top"];
     window.history.replaceState(null, "", "/?viewer=1&runView=events");

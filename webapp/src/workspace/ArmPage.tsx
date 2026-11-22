@@ -19,7 +19,7 @@ export default function ArmPage({ agent, probe }: { agent?: string; probe?: stri
   const deployed = useDeployedTargets();
   const kinds = useMemo(() => (form.data ? readKinds(form.data) : undefined), [form.data]);
   const loading = [form, connections, definitions, agents, deployed].find(query => query.isPending);
-  const failed = [form, connections, definitions, agents, deployed].find(query => query.isError);
+  const failed = [form, definitions, agents, deployed].find(query => query.isError) ?? (connections.isLoadingError ? connections : undefined);
   const header = (
     <>
       <h1 className="text-2xl font-semibold">Arm captures</h1>
@@ -36,6 +36,7 @@ export default function ArmPage({ agent, probe }: { agent?: string; probe?: stri
   return (
     <div className="space-y-4">
       {header}
+      {connections.isRefetchError && <p role="alert" className="text-sm text-destructive">{connections.error.message}</p>}
       <ArmWizard key={`${agent}:${probe}`} catalog={catalog} initial={initial} {...(agent && probe ? { initialStep: "captures" as const } : {})} onStarted={run => navigate(`/?run=${encodeURIComponent(run.runId)}`)} />
     </div>
   );

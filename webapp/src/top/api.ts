@@ -185,10 +185,17 @@ export interface TopQuery {
 
 /** The latest frame of the host's process groups. */
 export async function fetchTopFrame({ all, net }: TopQuery, signal?: AbortSignal): Promise<Frame> {
-  const query = new URLSearchParams({ all: String(all), net: String(net) });
-  const res = await fetch(`${TOP_ENDPOINT}?${query}`, { headers: { Accept: "application/json" }, ...(signal ? { signal } : {}) });
+  const res = await fetch(topFrameUrl({ all, net }), { headers: { Accept: "application/json" }, ...(signal ? { signal } : {}) });
   if (!res.ok) throw await failure(res, "read process groups");
   return res.json() as Promise<Frame>;
+}
+
+export function topFrameUrl({ all, net }: TopQuery) {
+  return `${TOP_ENDPOINT}?${new URLSearchParams({ all: String(all), net: String(net) })}`;
+}
+
+export function topFollow(url: string, everyMs: number | false): string | null {
+  return everyMs === false ? null : `${url}&follow=1&everyMs=${everyMs}`;
 }
 
 export const TOP_PROCESSES_ENDPOINT = `${TOP_ENDPOINT}/processes`;
@@ -198,11 +205,14 @@ export type ProcessQuery = ProcessTarget | { q: string };
 
 /** The latest reading of the processes running a program (name), of a process and those under it (pid), or of those matching a search (q), including those no group holds. */
 export async function fetchTopProcesses(target: ProcessQuery, signal?: AbortSignal): Promise<TopProcesses> {
-  const pick: Record<string, string> = "name" in target ? { name: target.name } : "q" in target ? { q: target.q } : { pid: String(target.pid) };
-  const query = new URLSearchParams({ ...pick, all: "true" });
-  const res = await fetch(`${TOP_PROCESSES_ENDPOINT}?${query}`, { headers: { Accept: "application/json" }, ...(signal ? { signal } : {}) });
+  const res = await fetch(topProcessesUrl(target), { headers: { Accept: "application/json" }, ...(signal ? { signal } : {}) });
   if (!res.ok) throw await failure(res, "read processes");
   return res.json() as Promise<TopProcesses>;
+}
+
+export function topProcessesUrl(target: ProcessQuery) {
+  const pick: Record<string, string> = "name" in target ? { name: target.name } : "q" in target ? { q: target.q } : { pid: String(target.pid) };
+  return `${TOP_PROCESSES_ENDPOINT}?${new URLSearchParams({ ...pick, all: "true" })}`;
 }
 
 export const TOP_FACETS_ENDPOINT = `${TOP_ENDPOINT}/facets`;
@@ -222,10 +232,13 @@ export interface ProcessFacets {
 
 /** Reads the facets of a process the latest tick listed; a 404 means it did not list it. */
 export async function fetchTopFacets(pid: number, signal?: AbortSignal): Promise<ProcessFacets> {
-  const query = new URLSearchParams({ pid: String(pid), all: "true" });
-  const res = await fetch(`${TOP_FACETS_ENDPOINT}?${query}`, { headers: { Accept: "application/json" }, ...(signal ? { signal } : {}) });
+  const res = await fetch(topFacetsUrl(pid), { headers: { Accept: "application/json" }, ...(signal ? { signal } : {}) });
   if (!res.ok) throw await failure(res, `read the facets of pid ${pid}`);
   return res.json() as Promise<ProcessFacets>;
+}
+
+export function topFacetsUrl(pid: number) {
+  return `${TOP_FACETS_ENDPOINT}?${new URLSearchParams({ pid: String(pid), all: "true" })}`;
 }
 
 /** Rebuilds frames from a process_groups capture's rows: those of one tick make one frame, oldest first, rows in the order the capture holds them. */

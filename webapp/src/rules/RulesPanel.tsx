@@ -1,6 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
 import { DataTable, CodeBlock, type DataTableColumn } from "@flanksource/clicky-ui/data";
 import { useRefreshInterval } from "../monitoring/RefreshControl";
+import { useSnapshotQuery } from "../monitoring/useSnapshotQuery";
 import { fetchRules, type RulePreview } from "./api";
 import { useRuleConfig, useRuleFilters, useRulesStatus } from "./useRules";
 import { QueryError, RulesStatus, StateBadge } from "./RuleStatus";
@@ -12,7 +12,7 @@ export function RulesPanel() {
   const config = useRuleConfig(status.data);
   const interval = useRefreshInterval();
   const [filters, setFilters] = useRuleFilters();
-  const preview = useQuery({ queryKey: ["rules-preview"], queryFn: ({ signal }) => fetchRules<RulePreview[]>("/preview", signal), enabled: status.data?.enabled === true, retry: false, refetchInterval: interval });
+  const preview = useSnapshotQuery({ key: ["rules-preview"], read: ({ signal }) => fetchRules<RulePreview[]>("/preview", signal), enabled: status.data?.enabled === true, stream: interval === false ? null : "/api/rules/preview?follow=1" });
   const rows: RuleRow[] = (config.data?.config.rules ?? []).map(rule => {
     const incidents = status.data?.incidents.filter(incident => incident.rule === rule.name && incident.state !== "closed") ?? [];
     const readings = preview.data?.filter(item => item.rule === rule.name);
@@ -33,7 +33,7 @@ export function RulesPanel() {
   return <div className="space-y-4">
     <RulesStatus query={status} />
     {config.isError && <QueryError error={config.error} retry={() => void config.refetch()} />}
-    {preview.isError && <QueryError error={preview.error} retry={() => void preview.refetch()} />}
+    {preview.error && <QueryError error={preview.error} retry={() => void preview.refetch()} />}
     {status.data?.enabled && <DataTable data={rows} columns={columns} getRowId={row => row.name} loading={config.isPending} emptyMessage="No rules configured." scrollContainerClassName="max-h-72" showFullscreenControl={false} />}
     {config.data && filters.rule && !selected && <p role="alert">Rule {filters.rule} is not configured. Select an available rule above.</p>}
     {selected && <RuleDetail rule={selected} previews={preview.data?.filter(item => item.rule === selected.name) ?? []} incidents={status.data?.incidents.filter(incident => incident.rule === selected.name) ?? []} previewLoading={preview.isPending} previewError={preview.error?.message} onEvents={() => {

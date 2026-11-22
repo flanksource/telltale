@@ -19,7 +19,7 @@ it("shows snapshot metrics, unavailable CPU and deadlocks and freezes on stack i
   expect(screen.getByText(/Deadlock detected/)).toBeInTheDocument();
   fireEvent.click(screen.getByText("worker"));
   expect(await screen.findByText("worker stack")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Resume polling" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Resume live" })).toBeInTheDocument();
   expect(window.location.search).toContain("thread=7");
 });
 

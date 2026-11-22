@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { AppShell, Button } from "@flanksource/clicky-ui/components";
-import { useTheme } from "@flanksource/clicky-ui/hooks";
+import { createEventHub, EventSourceProvider, useTheme } from "@flanksource/clicky-ui/hooks";
 import { RouterProvider, useBrowserRouter, useRouter } from "@flanksource/clicky-ui/rpc";
 import { AppRoutes, matchRoute } from "./routes";
-import { basenameRouter } from "./base";
+import { basenameRouter, BASE_PATH } from "./base";
 import { CommandSearch } from "./search/CommandSearch";
 import TracesPage from "./traces/TracesPage";
 import { RunShellContext } from "./layout/run-shell";
@@ -53,5 +53,7 @@ function Shell() {
 export default function App() {
   const browser = useBrowserRouter();
   const router = useMemo(() => basenameRouter(browser), [browser]);
-  return <RouterProvider adapter={router}><Shell /></RouterProvider>;
+  const events = useMemo(() => createEventHub({ resume: true }), []);
+  const content = <RouterProvider adapter={router}><Shell /></RouterProvider>;
+  return BASE_PATH ? content : <EventSourceProvider value={events}>{content}</EventSourceProvider>;
 }

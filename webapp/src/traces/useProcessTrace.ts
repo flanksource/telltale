@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GoProfileRecord, StackRecord } from "@flanksource/clicky-ui/data";
+import { useEventSourceFactory, useLiveSnapshot } from "@flanksource/clicky-ui/hooks";
 import {
   checkpointSession,
   fetchLatestSeq,
   fetchTraceRecords,
+  followTraceRecords,
   TraceStreamNotFound,
   traceExportUrl,
   type ProcessSample,
@@ -12,8 +14,6 @@ import {
   type TraceRef,
 } from "./api";
 import { ProcessFacets, projectProcesses, type FacetChange, type ProcessIdentity, type ProcessMetric } from "./processData";
-
-const POLL_INTERVAL_MS = 1000;
 
 // SAMPLE_WINDOW bounds how many of the latest samples (of every process) a
 // read of the samples stream fetches, so a long run's history is not
@@ -36,7 +36,7 @@ export interface UseProcessTraceOptions {
   // sessions are the live capture's sessions; absent for a stored run, which
   // can be read but not checkpointed.
   sessions?: ProcessTraceSessions;
-  // done stops polling: a finished run is fetched once.
+  // A finished run is fetched once instead of being followed.
   done: boolean;
   // selectedKey is the process whose stack dumps and Go profiles are read.
   selectedKey?: string;
@@ -110,11 +110,18 @@ function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-function usePolled<T>(enabled: boolean, poll: boolean, load: () => Promise<T>, key: string) {
+function useRead<T>({ enabled, key, load, follow }: {
+  enabled: boolean;
+  key: string;
+  load: () => Promise<T>;
+  follow?: (initial: T, update: (change: (previous: T) => T) => void, report: (error: string | undefined) => void) => () => void;
+}) {
   const [value, setValue] = useState<T | null>(null);
   const [error, setError] = useState<string | undefined>(undefined);
   const loadRef = useRef(load);
   loadRef.current = load;
+  const followRef = useRef(follow);
+  followRef.current = follow;
 
   const reload = useCallback(async () => {
     try {
@@ -128,24 +135,33 @@ function usePolled<T>(enabled: boolean, poll: boolean, load: () => Promise<T>, k
   useEffect(() => {
     if (!enabled) return;
     let cancelled = false;
-    const run = () => {
-      loadRef.current().then(next => {
-        if (cancelled) return;
-        setValue(next);
-        setError(undefined);
-      }).catch((e: unknown) => {
-        if (!cancelled) setError(message(e));
-      });
-    };
-    run();
-    const timer = poll ? window.setInterval(run, POLL_INTERVAL_MS) : undefined;
+    let close: (() => void) | undefined;
+    loadRef.current().then(next => {
+      if (cancelled) return;
+      setValue(next);
+      setError(undefined);
+      close = followRef.current?.(next, change => setValue(previous => previous === null ? previous : change(previous)), setError);
+    }).catch((e: unknown) => {
+      if (!cancelled) setError(message(e));
+    });
     return () => {
       cancelled = true;
-      if (timer !== undefined) window.clearInterval(timer);
+      close?.();
     };
-  }, [enabled, poll, key]);
+  }, [enabled, key]);
 
   return { value, error, reload };
+}
+
+function useProcessRows<T>({ mount, ref, enabled, live }: { mount: string; ref: TraceRef | undefined; enabled: boolean; live: boolean }) {
+  const open = useEventSourceFactory();
+  return useRead<T[]>({ enabled: enabled && !!ref, key: `${mount}|${ref?.stream}|${live}`, load: () => readStream<T>(mount, ref!),
+    ...(live && ref ? { follow: (initial: T[], update: (change: (previous: T[]) => T[]) => void, report: (error: string | undefined) => void) => {
+      const afterSeq = initial.reduce((high, row) => Math.max(high, Number((row as { seq?: number }).seq) || 0), ref.afterSeq ?? 0);
+      return followTraceRecords({ mount, open, ref: { ...ref, afterSeq }, onRow: row => update(previous => [...previous, row as unknown as T]),
+        onError: error => report(error.message), onOpen: () => report(undefined), onEnd: () => {} });
+    } } : {}),
+  });
 }
 
 // useCheckpoint posts checkpoint params to a running session, then re-reads the
@@ -179,27 +195,33 @@ export function useProcessTrace({ mount, refs, sessions: reported, done, selecte
   const sessions = live ? reported : undefined;
 
   const reader = useMemo(() => mount && refs ? processReader(mount, refs) : undefined, [mount, refs?.tree.stream, refs?.samples.stream, refs?.facets.stream]);
-  const process = usePolled(enabled, live, () => reader!(), `${mount}|${refs?.tree.stream}`);
-  const stacked = usePolled<StackRecord[]>(
-    enabled && !!selectedKey, live, () => readStream<StackRecord>(mount!, refs!.stacks), `${mount}|${refs?.stacks.stream}`,
+  const process = useRead({ enabled: enabled && !live, load: () => reader!(), key: `${mount}|${refs?.tree.stream}` });
+  const details = useLiveSnapshot<{ identities: ProcessIdentity[]; metrics: ProcessMetric[]; facets: FacetChange[] }>(
+    mount && refs && live ? `${mount}/processes?${new URLSearchParams({ follow: "1", view: "detail", stream: refs.tree.stream })}` : null,
   );
-  const profiled = usePolled<GoProfileRecord[]>(
-    enabled && !!selectedKey && !!refs?.goprof, live, () => readStream<GoProfileRecord>(mount!, refs!.goprof!), `${mount}|${refs?.goprof?.stream}`,
-  );
+  const liveProcess = useMemo(() => {
+    if (!details.data) return undefined;
+    const facets = new ProcessFacets();
+    facets.apply(details.data.facets);
+    return projectProcesses(details.data.identities, details.data.metrics, facets);
+  }, [details.data]);
+  const projected = live ? liveProcess : process.value ?? liveProcess;
+  const stacked = useProcessRows<StackRecord>({ mount: mount ?? "", ref: refs?.stacks, enabled: enabled && !!selectedKey, live });
+  const profiled = useProcessRows<GoProfileRecord>({ mount: mount ?? "", ref: refs?.goprof, enabled: enabled && !!selectedKey, live });
 
   const stackCheckpoint = useCheckpoint(mount, sessions?.stacks, stacked.reload);
-  const sampleCheckpoint = useCheckpoint(mount, sessions?.samples, process.reload);
+  const sampleCheckpoint = useCheckpoint(mount, sessions?.samples, async () => { if (!live) await process.reload(); });
   const collectStack = useCallback(
     (key: string, transport: string) => stackCheckpoint.checkpoint({ key, transport, reason: "manual" }),
     [stackCheckpoint.checkpoint],
   );
   const refreshFacets = useCallback((key: string) => sampleCheckpoint.checkpoint({ key }), [sampleCheckpoint.checkpoint]);
 
-  const nodes = useMemo(() => process.value?.nodes ?? [], [process.value]);
-  const samples = useMemo(() => process.value?.samples ?? [], [process.value]);
+  const nodes = useMemo(() => projected?.nodes ?? [], [projected]);
+  const samples = useMemo(() => projected?.samples ?? [], [projected]);
   const stacks = useMemo(() => stacked.value ?? [], [stacked.value]);
   const goprof = useMemo(() => profiled.value ?? [], [profiled.value]);
-  const error = process.error ?? stacked.error ?? profiled.error;
+  const error = (live ? details.error?.message : process.error) ?? stacked.error ?? profiled.error;
 
   return {
     nodes,
@@ -207,7 +229,7 @@ export function useProcessTrace({ mount, refs, sessions: reported, done, selecte
     stacks,
     goprof,
     ...(mount && refs?.goprof ? { goprofExportUrl: traceExportUrl(mount, refs.goprof, "pprof") } : {}),
-    loading: enabled && process.value === null && !process.error,
+    loading: enabled && !projected && !error,
     ...(error ? { error } : {}),
     canCollect: enabled && !!sessions,
     collecting: stackCheckpoint.busy,
