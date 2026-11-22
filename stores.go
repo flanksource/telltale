@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/tracing"
 )
@@ -25,7 +26,7 @@ type StandingStore struct {
 	Info func(dataDir string) (RunInfo, bool, error)
 	// Open opens the store in dataDir to read, with the close that stops
 	// using it.
-	Open func(dataDir string) (*tracing.Runtime, func() error, error)
+	Open func(dataDir string, sessionStore query.SessionStore) (*tracing.Runtime, func() error, error)
 }
 
 var standing = struct {
@@ -100,9 +101,23 @@ func getStanding(dataDir, id string) (RunInfo, error) {
 
 // Reopen opens the store of runID in dataDir to read: a standing store
 // through its own opener, a run's from its directory.
-func Reopen(dataDir, runID string) (*tracing.Runtime, func() error, error) {
-	if store, ok := standingStore(runID); ok {
-		return store.Open(dataDir)
+func Reopen(dataDir, runID string, sessionStores ...traces.SessionStores) (*tracing.Runtime, func() error, error) {
+	var sessionStore query.SessionStore
+	if len(sessionStores) > 1 {
+		return nil, nil, errors.New("reopen accepts at most one session store provider")
 	}
-	return traces.Reopen(traces.StoreDir(dataDir, runID))
+	if len(sessionStores) == 1 && sessionStores[0] != nil {
+		var err error
+		sessionStore, err = sessionStores[0](runID)
+		if err != nil {
+			return nil, nil, err
+		}
+		if sessionStore == nil {
+			return nil, nil, fmt.Errorf("reopen run %s: session store provider returned no store", runID)
+		}
+	}
+	if store, ok := standingStore(runID); ok {
+		return store.Open(dataDir, sessionStore)
+	}
+	return traces.Reopen(traces.StoreDir(dataDir, runID), sessionStore)
 }

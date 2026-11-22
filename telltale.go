@@ -16,6 +16,7 @@ import (
 
 	"github.com/flanksource/commons-db/connection/crd"
 	"github.com/flanksource/commons-db/connection/store"
+	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/target"
@@ -96,6 +97,10 @@ type StartOptions struct {
 	// as sql_xevent's connection; nil answers none (OpenConnections is
 	// telltale's own).
 	Connections *store.Store
+	// SessionStore is scoped to this run. SessionStores selects one after
+	// the final run ID is known.
+	SessionStore  query.SessionStore
+	SessionStores traces.SessionStores
 	// RunConnections are connections this run alone defines, such as a trace
 	// definition's inline ones, layered over Connections for its captures
 	// (traces.OpenOptions.RunConnections).

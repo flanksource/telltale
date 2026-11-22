@@ -52,6 +52,8 @@ The normal server uses the same paged viewer and `GET /api/traces/{run}/records`
 
 Flag types, descriptions, defaults, choices, and required inputs come from the kind's parameter schema and also describe the generated arguments in `/api/openapi.json`. Nested fields use kebab-case flags such as `--environment-keys`; string maps take comma-separated `key=value` pairs, such as `--levels worker=debug,api=info`, and maps with arbitrary values take a JSON object, such as `--options '{"limit":100}'`. The goprof checkpoint schema describes `--profile`, `--seconds`, and `--source`, with defaults from the registered checkpoint. Common run controls remain `--data-dir`, `--duration`, and `--every`.
 
+In a terminal, `telltale run <kind>` opens a form for missing required parameters. For example, `telltale run sql_top --duration 30s` lets you pick a configured Postgres or SQL Server connection. Use `-i` to open the full argument form, or supply required flags explicitly in scripts.
+
 ```sh
 telltale run http --seam proxy --mode mitm --hosts '*.example.com' -- curl -sS https://api.example.com
 telltale run sql --seam proxy --env ORDERS_DB_URL --params -- go test ./...

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/httpproxy"
@@ -36,7 +37,9 @@ func init() {
 				{Kind: spans.Kind, Ref: tracing.TraceRef{Kind: spans.Kind, Stream: "received"}},
 			}}, true, nil
 		},
-		Open: func(string) (*tracing.Runtime, func() error, error) { return nil, nil, errFixtureOpen },
+		Open: func(string, query.SessionStore) (*tracing.Runtime, func() error, error) {
+			return nil, nil, errFixtureOpen
+		},
 	})
 }
 
@@ -107,9 +110,9 @@ var _ = Describe("standing stores", func() {
 		func(store telltale.StandingStore, message string) {
 			Expect(func() { telltale.MustRegisterStore(store) }).To(PanicWith(MatchError(ContainSubstring(message))))
 		},
-		Entry("a duplicate id", telltale.StandingStore{ID: fixtureStore, Info: func(string) (telltale.RunInfo, bool, error) { return telltale.RunInfo{}, false, nil }, Open: func(string) (*tracing.Runtime, func() error, error) { return nil, nil, nil }}, "registered twice"),
-		Entry("a run-shaped id", telltale.StandingStore{ID: "run-2026-10-30T09-00-00Z", Info: func(string) (telltale.RunInfo, bool, error) { return telltale.RunInfo{}, false, nil }, Open: func(string) (*tracing.Runtime, func() error, error) { return nil, nil, nil }}, "run id"),
-		Entry("a compact run-shaped id", telltale.StandingStore{ID: "buildhost20261107T123000Z_2", Info: func(string) (telltale.RunInfo, bool, error) { return telltale.RunInfo{}, false, nil }, Open: func(string) (*tracing.Runtime, func() error, error) { return nil, nil, nil }}, "run id"),
+		Entry("a duplicate id", telltale.StandingStore{ID: fixtureStore, Info: func(string) (telltale.RunInfo, bool, error) { return telltale.RunInfo{}, false, nil }, Open: func(string, query.SessionStore) (*tracing.Runtime, func() error, error) { return nil, nil, nil }}, "registered twice"),
+		Entry("a run-shaped id", telltale.StandingStore{ID: "run-2026-10-30T09-00-00Z", Info: func(string) (telltale.RunInfo, bool, error) { return telltale.RunInfo{}, false, nil }, Open: func(string, query.SessionStore) (*tracing.Runtime, func() error, error) { return nil, nil, nil }}, "run id"),
+		Entry("a compact run-shaped id", telltale.StandingStore{ID: "buildhost20261107T123000Z_2", Info: func(string) (telltale.RunInfo, bool, error) { return telltale.RunInfo{}, false, nil }, Open: func(string, query.SessionStore) (*tracing.Runtime, func() error, error) { return nil, nil, nil }}, "run id"),
 		Entry("no opener", telltale.StandingStore{ID: "no-opener", Info: func(string) (telltale.RunInfo, bool, error) { return telltale.RunInfo{}, false, nil }}, "Info and Open"),
 	)
 })
