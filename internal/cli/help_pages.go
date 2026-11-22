@@ -144,7 +144,7 @@ func traceRunHelp(cmd *cobra.Command) helpText {
 		if err != nil {
 			panic(err)
 		}
-		schema, err := plugin.Params()
+		schema, err := plugin.Schema()
 		if err != nil {
 			panic(fmt.Sprintf("trace kind %s params: %v", registration.Name, err))
 		}

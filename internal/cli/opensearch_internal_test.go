@@ -12,7 +12,7 @@ var _ = Describe("spans host seam arguments", func() {
 		command := &cobra.Command{Use: "test"}
 		var run runFlags
 		run.bind(command, false)
-		schema, err := spans.NewKind(nil).Params()
+		schema, err := spans.NewKind(nil).Schema()
 		Expect(err).NotTo(HaveOccurred())
 		params, err := bindParamFlags(command.Flags(), schema)
 		Expect(err).NotTo(HaveOccurred())
