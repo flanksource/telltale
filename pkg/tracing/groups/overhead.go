@@ -19,7 +19,7 @@ type overheadReader struct {
 
 // read is the overhead of a tick begun at started and ended at ended.
 func (r *overheadReader) read(started, ended time.Time) (Overhead, error) {
-	cpu, err := cpuTime()
+	cpu, err := CPUTime()
 	if err != nil {
 		return Overhead{}, err
 	}

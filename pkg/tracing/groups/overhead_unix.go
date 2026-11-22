@@ -8,9 +8,9 @@ import (
 	"time"
 )
 
-// cpuTime is the user and system CPU time of this process and of the
+// CPUTime is the user and system CPU time of this process and of the
 // children it has waited on.
-func cpuTime() (time.Duration, error) {
+func CPUTime() (time.Duration, error) {
 	var total time.Duration
 	for _, who := range []int{syscall.RUSAGE_SELF, syscall.RUSAGE_CHILDREN} {
 		var usage syscall.Rusage

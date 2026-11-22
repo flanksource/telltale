@@ -236,7 +236,8 @@ var _ = Describe("http trace kind", func() {
 			"statuses":   Equal(map[string]int{"200": 1, "404": 1, "0": 1}),
 			"requests": ConsistOf(
 				MatchAllKeys(Keys{"method": Equal("POST"), "url": Equal(server.URL + "/api"), "host": Equal(host), "path": Equal("/api"),
-					"status": Equal(200), "duration_ms": BeNumerically(">=", 0), "error": BeEmpty(),
+					"direction": Equal("outgoing"),
+					"status":    Equal(200), "duration_ms": BeNumerically(">=", 0), "error": BeEmpty(),
 					"mime": Equal("application/json"), "tunnelled": BeFalse(),
 					"request_headers": Not(BeNil()), "response_headers": HaveKeyWithValue("Content-Type", "application/json"),
 					"query": BeEmpty(), "body": MatchJSON(`{"q": 1}`),
