@@ -10,7 +10,6 @@ import (
 	"github.com/flanksource/commons-db/cmd/query/profiles"
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/query"
-	"github.com/flanksource/commons-db/query/profilestore"
 	"github.com/flanksource/commons-db/types"
 )
 
@@ -95,22 +94,7 @@ func (h *sessionHandler) writeLive(w http.ResponseWriter, r *http.Request, statu
 // Wrap, as every profile read does, and `profiles.<name>` resolves from the
 // handler's store.
 func (h *sessionHandler) sessionContext(r *http.Request) dbcontext.Context {
-	return withSessionProfiles(h.ctx.Wrap(context.WithoutCancel(r.Context())), h.store, h.registry)
-}
-
-// withSessionProfiles binds the `profiles.<name>` references a top or trace
-// session started under execCtx reads to store. Each is prepared by registry's
-// BeforeRead under the context the reference is read in — the session's run
-// context, which keeps the starting caller's values — as the session's own
-// read is, at its start and before every later sample.
-func withSessionProfiles(execCtx dbcontext.Context, store profilestore.Store, registry *query.SessionRegistry) dbcontext.Context {
-	return query.WithProfileResolver(execCtx, query.ProfileResolver{
-		Resolve: func(ctx context.Context, name string) (query.Profile, error) {
-			resolved, err := profiles.Resolve(ctx, store, name)
-			return resolved.Profile, err
-		},
-		Prepare: registry.PrepareRead,
-	})
+	return profiles.WithSessionProfiles(h.ctx.Wrap(context.WithoutCancel(r.Context())), h.store, h.registry)
 }
 
 // sessionSpec is the transport's side of a session request: the HTTP query

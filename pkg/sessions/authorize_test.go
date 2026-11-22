@@ -12,7 +12,9 @@ import (
 	. "github.com/onsi/gomega"
 
 	profilepkg "github.com/flanksource/commons-db/cmd/query/profiles"
+	"github.com/flanksource/commons-db/cmd/query/sessionstore"
 	dbcontext "github.com/flanksource/commons-db/context"
+	"github.com/flanksource/commons-db/dbtest"
 	"github.com/flanksource/commons-db/query"
 )
 
@@ -26,7 +28,7 @@ var _ = ginkgo.Describe("stream sessions authorized per profile", func() {
 	var (
 		handler  *sessionHandler
 		registry *query.SessionRegistry
-		store    *Store
+		store    *sessionstore.Store
 	)
 
 	authorize := func(_ *http.Request, profile string, _ Action) error {
@@ -49,7 +51,18 @@ var _ = ginkgo.Describe("stream sessions authorized per profile", func() {
 		for _, name := range []string{allowed, denied} {
 			Expect(profiles.Save(context.Background(), traceTestProfile(name, providerType))).To(Succeed())
 		}
-		store = newGormStore(sessionStoreDB(), time.Hour)
+		db := dbtest.ForGinkgo(dbtest.Options{Name: "trace_session_auth"}).Gorm()
+		Expect(db.Exec(`CREATE TABLE sessions (
+			id text PRIMARY KEY, profile_name text, kind text, role text, principal text, restart_of text,
+			state text, error text, event_count bigint, started_at timestamptz, stopped_at timestamptz,
+			start jsonb, status jsonb, created_at timestamptz DEFAULT now(), updated_at timestamptz
+		)`).Error).To(Succeed())
+		Expect(db.Exec(`CREATE TABLE session_events (
+			session_id text, sequence bigint, time timestamptz, payload jsonb, PRIMARY KEY (session_id, sequence)
+		)`).Error).To(Succeed())
+		store, err = sessionstore.NewStore(db, time.Hour)
+		Expect(err).NotTo(HaveOccurred())
+		ginkgo.DeferCleanup(store.Close)
 		registry = query.NewSessionRegistry(query.RegistryOptions{Store: store, Events: store})
 		store.BindResolver(registry.Get)
 		ginkgo.DeferCleanup(func() { Expect(registry.StopAll(context.Background())).To(Succeed()) })

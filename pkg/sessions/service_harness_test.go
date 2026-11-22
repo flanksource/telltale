@@ -15,6 +15,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	profilepkg "github.com/flanksource/commons-db/cmd/query/profiles"
+	"github.com/flanksource/commons-db/cmd/query/sessionstore"
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/commons-db/recordstore"
@@ -33,7 +34,7 @@ const (
 type apiHarness struct {
 	handler  *sessionHandler
 	registry *query.SessionRegistry
-	store    *KVStore
+	store    *sessionstore.KVStore
 	records  *recordstore.Notifier
 	epoch    time.Time
 
@@ -46,7 +47,7 @@ type apiHarness struct {
 func newAPIHarness() *apiHarness {
 	h := &apiHarness{epoch: contractEpoch(), unread: map[string]bool{}, uncontrol: map[string]bool{}, calls: map[string]int{}}
 	var err error
-	h.store, err = NewMemoryKVStore(KVStoreOptions{})
+	h.store, err = sessionstore.NewMemoryKVStore(sessionstore.KVStoreOptions{})
 	Expect(err).ToNot(HaveOccurred())
 	backend, err := kv.New(kv.Options{
 		Store: cache.NewMemory(), Prefix: "records", Schema: recordstoretest.Schema, TTL: time.Hour, MaxChunkBytes: 1 << 20,
