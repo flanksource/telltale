@@ -18,6 +18,11 @@ SQL Server Top leads with a syntax-highlighted statement. Open a row to see and 
 
 `telltale run sql_top --ui` receives completed samples over server-sent events. `--poll` controls how often the collector samples the database. Pause or open a row to inspect a fixed sample, then use **Resume live** to see the latest one.
 
+The server metrics above the request table show CPU and separate database read and write IOPS. SQL Server also shows Page Life Expectancy (PLE) in seconds. PostgreSQL shows the percentage of shared buffers in use. The metrics are recorded for each poll, including polls with no matching requests. Selecting a past sample ends the trends at that sample. CPU and IOPS require two polls and start a new baseline when the counters reset.
+
+- SQL Server shows CPU used by the database engine as a percentage of the available logical CPUs. It reads IOPS from database file counters and PLE from the Buffer Manager.
+- PostgreSQL 16 and later provides IOPS through `pg_stat_io`. Host CPU requires `pg_proctab` and permission to call `pg_cputime()`. Shared-buffer usage requires `pg_buffercache` with `pg_buffercache_summary()` and permission to execute it, typically through `pg_monitor`. Install the extensions in the database used by the saved connection. The capture reports unavailable metrics alongside the request table.
+
 After five minutes, row detail also shows transaction log records and bytes used and reserved across participating databases, plus the number of currently waiting tasks and the longest task wait. The capture uses read-only dynamic management views (DMVs). Use a login with `VIEW SERVER STATE` on SQL Server 2019 and earlier, or `VIEW SERVER PERFORMANCE STATE` on SQL Server 2022 and later.
 
 ```sh

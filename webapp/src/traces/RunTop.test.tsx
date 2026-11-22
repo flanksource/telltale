@@ -27,6 +27,30 @@ afterEach(()=> { vi.useRealTimers(); vi.unstubAllGlobals(); });
 function renderTop(currentRun = run){return render(<QueryClientProvider client={new QueryClient({defaultOptions:{queries:{retry:false}}})}><RunTop run={currentRun}/></QueryClientProvider>);}
 
 describe("run Top integration",()=>{
+  it("shows server metrics on empty SQL samples and ends each trend at the selected frame", async () => {
+    const readings = [15, 32, 78].map((cpuPercent, index) => ({
+      ...frame, id: `poll-${index + 1}`, tick: index + 1, completedAt: `2026-11-11T10:00:0${index + 1}Z`, retained: 0, observed: 0,
+      summary: { engine: "postgres", serverMetrics: { cpuPercent, readIOPS: 0, writeIOPS: 8, bufferUsagePercent: 72 } },
+    }));
+    const selected = readings[1]!;
+    window.history.replaceState(null, "", `/?viewer=1&sampleFrame=${selected.id}`);
+    const baseFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn(async (input: string, init?: RequestInit) => {
+      const url = new URL(input, window.location.origin);
+      if (url.searchParams.get("view") === "frames") return Response.json(readings);
+      if (url.searchParams.get("view") !== "top" || (init?.headers as Record<string, string>)?.Accept === "application/schema+json") return baseFetch(input, init);
+      return Response.json({ selection: selected.id, frame: selected, rows: [], count: 0, table: { ...table, node: { ...table.node, rows: [] } } });
+    }));
+    renderTop();
+    const metrics = within(await screen.findByRole("region", { name: "Database server metrics" }));
+    expect(metrics.getByText("32%")).toBeInTheDocument();
+    expect(metrics.queryByText("78%")).not.toBeInTheDocument();
+    expect(metrics.getByText("0 ops/s")).toBeInTheDocument();
+    expect(metrics.getByText("72%")).toBeInTheDocument();
+    const trend = await metrics.findByRole("group", { name: "Host CPU over time" });
+    expect(trend.querySelector("polyline")?.getAttribute("points")?.split(" ")).toHaveLength(2);
+  });
+
   it("updates from samples over SSE and does not poll JSON while live", async () => {
     const opened: EventTarget[] = [];
     const close = vi.fn();
@@ -50,7 +74,9 @@ describe("run Top integration",()=>{
     expect(close).toHaveBeenCalledOnce();
   });
   it("puts SQL Server rollback progress on the table and keeps its filters available with zero results", async () => {
-    const rollbackFrame = { ...frame, summary: { engine: "sqlserver" } };
+    const rollbackFrame = { ...frame, summary: { engine: "sqlserver", serverMetrics: {
+      pageLifeExpectancySeconds: 345, unavailable: { cpuPercent: "Waiting for next sample" },
+    } } };
     const rollbackSQL = "UPDATE orders\nSET paid = 1";
     const samples: Record<string, string | number>[] = [
       { seq: 1, sessionId: 12, engine: "sqlserver", sql: rollbackSQL, command: "KILLED/ROLLBACK", elapsedMs: 360_000, percentComplete: 0, estimatedRemainingMs: 120_000 },
@@ -86,6 +112,12 @@ describe("run Top integration",()=>{
     }));
     renderTop();
     expect(await screen.findByRole("progressbar", { name: "Rollback progress" })).toHaveAttribute("value", "0");
+    const server = within(screen.getByRole("region", { name: "Database server metrics" }));
+    expect(server.getByText("Page life expectancy")).toBeInTheDocument();
+    expect(server.getByText("345 s")).toBeInTheDocument();
+    expect(server.getByText("SQL Server CPU")).toBeInTheDocument();
+    expect(server.getByText("Waiting for next sample")).toBeInTheDocument();
+    expect(server.queryByText("Shared buffers used")).not.toBeInTheDocument();
     expect(screen.queryAllByRole("checkbox", { name: /^Select row / })).toHaveLength(0);
     expect(screen.getAllByRole("progressbar", { name: /progress/i })).toHaveLength(1);
     expect(screen.getByText("6 min", { exact: true })).toBeInTheDocument();

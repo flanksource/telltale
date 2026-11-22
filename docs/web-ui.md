@@ -30,3 +30,9 @@ The `/otel` page puts these filters on one bar: **Received** (the receiver run) 
 For OpenSearch, set the saved connection's `index`, `format` (`flat` or `jaeger`), and field mappings, or override the index/format in the form. OpenTelemetry connections reference an underlying OpenSearch connection. Jaeger documents use `startTimeMillis`, `traceID`, `spanID`, `process.serviceName`, `operationName`, and `CHILD_OF` references by default. OpenSearch imports are the `spans` kind's host seam (`run spans --seam host --opensearch-connection <name>`); `--opensearch-follow-index` keeps reading newly indexed spans, `--follow` prints captured rows, and `--opensearch-search` accepts a structured search JSON object.
 
 Servers bound beyond loopback require API-scope authentication for these API routes, following the existing Telltale token policy.
+
+## Live Top and event history
+
+HTTP, JMS, and SQL capture Top views receive each committed sample over server-sent events. The host and JVM Top screens use the same snapshot subscription in the UI. Collectors still sample at their configured intervals. Pause a Top view to inspect a sample, then resume to jump to the latest one. The run list and rule panels also receive their status and events over SSE.
+
+To consume a sampled capture, open its records URL with `view=top&follow=1`. The first message supplies the current frame list and latest complete result. Subsequent messages carry new frames and any updated result. For run events and captured logs, request a bounded history page with `tail=1&limit=100` on the run's combined `/records` endpoint. Pass the returned `resume` value to `follow=1` on that endpoint with the same filters. Reconnecting clients can send the last delivered SSE ID in `Last-Event-ID`. A `409` means the saved position has expired and the client needs a fresh history page.

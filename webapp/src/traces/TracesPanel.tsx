@@ -38,6 +38,7 @@ export function TracesPanel({ run, summary }: { run: RunTraces; summary?: ReactN
     done: !live,
   });
   const hasDetails = !!run.process || !!processGroupsCapture(run);
+  const hasProcessCapture = run.captures?.some(capture => capture.kind === "process") === true;
   const taskCapture = run.captures?.find(capture => capture.kind === "task");
   const catalog = useQuery({ queryKey: ["sample-kinds", run.mount], queryFn: () => fetchTraceKinds(run.mount), retry: false });
   const kinds = [...new Set([...(run.captures ?? []).map(capture => capture.kind), ...(run.process ? ["stacks"] : [])])].filter(kind => kind !== "process" && !catalog.data?.some(info => info.name === kind && info.top));
@@ -45,7 +46,7 @@ export function TracesPanel({ run, summary }: { run: RunTraces; summary?: ReactN
   const tabs = [...(hasTop ? [{ id: "top", label: "Top" }] : []), { id: "events", label: "History" }, ...(taskCapture ? [{ id: "tasks", label: "Tasks" }] : []), ...(hasDetails ? [{ id: "process", label: "Process details" }] : [])];
   const activeView: RunView = tabs.some(tab => tab.id === view) ? view : "events";
   const processes = useSnapshotQuery({
-    key: ["trace-process-header", run.runId, run.mount],
+    key: ["trace-process-header", run.runId, run.mount, live],
     read: async ({ signal }) => {
       const response = await fetch(`${run.mount}/processes`, { signal });
       if (!response.ok) throw await failure(response, "Read process measurements");
@@ -53,11 +54,9 @@ export function TracesPanel({ run, summary }: { run: RunTraces; summary?: ReactN
       if (!snapshot || typeof snapshot.armed !== "boolean" || !Array.isArray(snapshot.rows)) throw new Error("Expected a process snapshot with armed and rows fields");
       return snapshot;
     },
-    stream: live && run.captures?.some(capture => capture.kind === "process") ? `${run.mount}/processes?follow=1` : null,
-    enabled: !run.process && !catalog.isPending,
+    stream: live ? `${run.mount}/processes?follow=1` : null,
+    enabled: !run.process && hasProcessCapture,
   });
-  const refreshProcesses = processes.refetch;
-  useEffect(() => { if (!live && !run.process && !catalog.isPending) void refreshProcesses(); }, [live, run.process, refreshProcesses, catalog.isPending]);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (showExited) params.set("showExited", "1"); else params.delete("showExited");
@@ -80,7 +79,7 @@ export function TracesPanel({ run, summary }: { run: RunTraces; summary?: ReactN
         loading={trace.loading} {...(trace.error ? { error: trace.error } : {})}
         onSelect={key => { setSelectedKey(key); setView("process"); }} />
     </section>}
-    {!run.process && (processes.data?.armed || processes.error || (processes.isPending && run.captures?.some(capture => capture.kind === "process"))) && <ProcessTraceHeader
+    {!run.process && hasProcessCapture && (processes.data?.armed || processes.error || processes.isPending) && <ProcessTraceHeader
       rows={processes.data?.rows ?? []} showExited={showExited} onShowExitedChange={setShowExited} loading={processes.isPending}
       {...(processes.error ? { error: processes.error.message } : {})}
     />}

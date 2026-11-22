@@ -2,21 +2,22 @@ import { useEffect, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Tabs } from "@flanksource/clicky-ui/components";
 import { useLiveSnapshot } from "@flanksource/clicky-ui/hooks";
-import { TopView, serverFiltersToFilterBar, type DataTableFilterSelection, type SampleFrame, type TopViewState, type WeightedHierarchy } from "@flanksource/clicky-ui/data";
+import { TopView, serverFiltersToFilterBar, type DataTableFilterSelection, type TopViewState, type WeightedHierarchy } from "@flanksource/clicky-ui/data";
 import type { ClickyDocument, ClickyRow } from "@flanksource/clicky-ui/clicky";
 import { failure, fetchTraceKinds, traceRecordsUrl, type CaptureResult, type RunTraces, type TraceKindInfo } from "./api";
 import { recordQueryColumns, type RecordProfileColumn } from "./recordQuery";
 import { TopRowDetail } from "./TopRowDetail";
 import { ProfileSnapshotStatus } from "./ProfileSnapshotStatus";
 import { sqlServerCellRenderers, sqlServerFilters, sqlServerTable } from "./SQLServerTop";
+import { SQLTopServerMetrics, type SQLTopSample as TopSample } from "./SQLTopServerMetrics";
 
 interface SampleState extends TopViewState { selected: string; kind: string; stream: string; sort: string; desc: boolean; filters: DataTableFilterSelection }
-type TopSample = SampleFrame & { summary?: { engine?: string } };
 interface TopResponse { selection: string; frame: TopSample; frames?: TopSample[]; rows: Record<string,unknown>[]; table: ClickyDocument; hierarchy?: WeightedHierarchy; metric?: string; metrics?: NonNullable<TraceKindInfo["top"]>["metrics"]; count: number; nextCursor?: string }
 interface TopUpdate { frames: TopSample[]; result?: TopResponse; reset?: boolean }
 type TopSnapshot = Pick<TopUpdate, "frames" | "result">;
 
 function mergeTop(previous: TopSnapshot | undefined, update: TopUpdate): TopSnapshot {
+  if (!Array.isArray(update?.frames)) throw new Error("Invalid Top sample update");
   const result = update.result ?? (update.reset ? undefined : previous?.result);
   return { frames: update.reset ? update.frames : [...(previous?.frames ?? []), ...update.frames], ...(result ? { result } : {}) };
 }
@@ -96,6 +97,7 @@ function CaptureTop({ run, capture, info, state, onChange }: { run: RunTraces; c
   };
   return <>
     <ProfileSnapshotStatus frames={statusFrames} live={live} />
+    {capture.kind === "sql_top" && data && <SQLTopServerMetrics frame={data.frame} frames={allFrames} />}
     <TopView frames={allFrames} perSource={!!info.top?.perSource} metrics={data?.metrics ?? info.top?.metrics ?? []} state={state} onChange={change} onRefresh={() => { if (live) stream.refresh(); else { void result.refetch(); void frames.refetch(); } }} loading={live ? !data && !stream.ended && !stream.error : result.isFetching}
     {...(data ? { frame: data.frame, table: sqlServer ? sqlServerTable(data.table) : data.table } : {})} {...(data?.hierarchy ? { hierarchy: data.hierarchy } : {})}
     {...(data?.frames ? {selectedFrames:data.frames} : {})}

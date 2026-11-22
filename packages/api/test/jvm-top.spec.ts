@@ -46,6 +46,27 @@ it("reads live JVM Top through RPC and remote CLI and inspects a sampled thread"
     expect(frame.agentId).toBe(id);
     expect(frame.metrics.memory).toBeDefined();
     expect(frame.threads.threads.length).toBeGreaterThan(0);
+    const streamURL = `${address}/api/v1/jvm/top?agent=${encodeURIComponent(id!)}`;
+    expect((await fetch(streamURL)).status).toBe(401);
+    const controller = new AbortController();
+    const stream = await fetch(streamURL, { headers, signal: controller.signal });
+    expect(stream.headers.get("content-type")).toBe("text/event-stream");
+    const reader = stream.body!.pipeThrough(new TextDecoderStream()).getReader();
+    try {
+      let payload = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) throw new Error("JVM Top stream ended before delivering a sample");
+        payload += value;
+        const data = /^data: (.*)\n\n/m.exec(payload);
+        if (!data) continue;
+        expect(JSON.parse(data[1])).toMatchObject({ agentId: id, threads: { threads: expect.any(Array) } });
+        break;
+      }
+    } finally {
+      await reader.cancel();
+      controller.abort();
+    }
     const cli = await run(".bin/telltale", ["jvm", "top", "--server", address, "--agent", id!, "--once", "--format", "json"], { env: { ...env, TELLTALE_API_TOKEN: apiToken } });
     expect(JSON.parse(cli.stdout)).toMatchObject({ agentId: id, threads: { cpuTimeEnabled: expect.any(Boolean) } });
     const stack = await fetch(`${address}/api/agents/${encodeURIComponent(id!)}/call`, { method: "POST", headers, body: JSON.stringify({ operation: "jvm.threads.stack", params: { id: frame.threads.threads[0]!.id } }) });

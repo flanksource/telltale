@@ -64,21 +64,23 @@ describe("run trace layout", () => {
     expect(await screen.findByRole("tab", { name: "Top" })).toHaveAttribute("aria-selected", "true");
   });
 
-  it("keeps protocol Top captures out of the event tabs while retaining the Top view", async () => {
+  it("keeps protocol Top captures out of the event tabs and skips the unarmed process snapshot", async () => {
     const topKinds = ["http_top", "sql_top", "jms_top"];
     window.history.replaceState(null, "", "/?viewer=1&runView=events");
-    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    const fetchMock = vi.fn(async (url: string) => {
       const path = new URL(url, window.location.origin).pathname;
       if (path.endsWith("/kinds")) return Response.json(["http", ...topKinds].map(name => ({ name, title: name, exportFormats: [], ...(topKinds.includes(name) ? { top: { identity: ["id"] } } : {}) })));
       if (path.endsWith("/processes")) return Response.json({ armed: false, rows: [] });
       if (path.endsWith("/records")) return Response.json({ rows: [], nextCursor: "" });
       return new Response("Unexpected request", { status: 404 });
-    }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
     const recorded: RunTraces = { runId: run.runId, mount: run.mount, dir: run.dir, status: "succeeded", captures: ["http", ...topKinds].map(kind => ({ kind, ref: { kind, stream: kind } })) };
     render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><TracesPanel run={recorded} /></QueryClientProvider>);
     await screen.findByRole("tab", { name: "Top" });
     expect(screen.getByRole("tab", { name: /^http(?:\s|$)/ })).toBeInTheDocument();
     for (const kind of topKinds) expect(screen.queryByRole("tab", { name: new RegExp(`^${kind}(?:\\s|$)`) })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.map(([url]) => url)).not.toContain(`${recorded.mount}/processes`);
   });
 
   it("keeps the existing process tree row above the tabs and opens its details on selection", async () => {

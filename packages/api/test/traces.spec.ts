@@ -36,7 +36,7 @@ beforeAll(async () => {
   upstream = createServer((_, response) => response.end("traced"));
   upstream.listen(0, "127.0.0.1");
   await once(upstream, "listening");
-  upstreamURL = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}/hello`;
+  upstreamURL = `http://127.0.0.1:${(upstream.address() as AddressInfo).port}/example.git/info/refs?service=git-upload-pack`;
   await run(".bin/telltale", ["trace", "run", "--data-dir", testDir, "--", "curl", "-sS", upstreamURL], { env: { ...process.env, XDG_CONFIG_HOME: join(testDir, "config") } });
   apiURL = await serve();
 });
@@ -72,6 +72,16 @@ interface Listed {
 }
 
 describe("recorded trace runs", () => {
+  it("seeds the event tail with a resumable cursor", async () => {
+    const listed = await (await fetch(`${apiURL}/api/traces`)).json() as Listed;
+    const endpoint = `${apiURL}${listed.runs[0].mount}/records`;
+    const page = await (await fetch(`${endpoint}?kind=http&tail=1&limit=1`)).json() as { rows: unknown[]; resume: string };
+    expect(page.rows).toHaveLength(1);
+    expect(page.resume).toBeTruthy();
+    const followed = await fetch(`${endpoint}?kind=http&follow=1`, { headers: { "Last-Event-ID": page.resume } });
+    expect(followed.headers.get("content-type")).toBe("text/event-stream");
+    expect(await followed.text()).toBe("event: end\ndata: {}\n\n");
+  });
 	 it("serves pinned process measurements separately from the styled event stream", async () => {
     const listed = await (await fetch(`${apiURL}/api/traces`)).json() as Listed;
     const recorded = listed.runs[0];
@@ -83,7 +93,11 @@ describe("recorded trace runs", () => {
     const page = await events.json() as { rows: { kind: string; ansi: string }[] };
     expect(page.rows).toHaveLength(1);
     expect(page.rows[0].kind).toBe("http");
-    expect(page.rows[0].ansi).toContain("GET");
+    expect(page.rows[0].ansi).toContain("git");
+    expect(page.rows[0].ansi).toContain("info/refs");
+    expect(page.rows[0].ansi).toContain("/example.git");
+    expect(page.rows[0].ansi).not.toContain("GET");
+    expect(page.rows[0].ansi).not.toContain(upstreamURL);
     expect(page.rows[0].ansi).toContain("\u001b[");
     const raw = await (await fetch(`${apiURL}${recorded.mount}/records?kind=http&limit=1`)).json() as { rows: Record<string, unknown>[] };
     expect(raw.rows[0]).not.toHaveProperty("ansi");
@@ -131,10 +145,26 @@ describe("recorded trace runs", () => {
     const path = `${apiURL}${recorded.mount}/traces/http/records?stream=${encodeURIComponent(capture.ref.stream)}`;
     const schema = await fetch(path, { headers: { Accept: "application/schema+json" } });
     expect(schema.status).toBe(200);
-    expect(await schema.json()).toMatchObject({ optionsSchema: { properties: { where: { type: "string" } } }, columns: expect.arrayContaining([expect.objectContaining({ name: "url" })]) });
-    const rows = await fetch(path + "&limit=1");
+    expect(await schema.json()).toMatchObject({
+      optionsSchema: { properties: { where: { type: "string" } } },
+      columns: expect.arrayContaining([
+        expect.objectContaining({ name: "url" }),
+        expect.objectContaining({ name: "protocol", filter: expect.objectContaining({
+          key: "filter.protocol", kind: "terms", options: ["git", "github", "kubernetes", "anthropic", "openai", "s3", "aws"],
+        }) }),
+        expect.objectContaining({ name: "operation", filter: expect.objectContaining({ key: "filter.operation", kind: "terms", lookup: false }) }),
+        expect.objectContaining({ name: "decoded" }),
+      ]),
+    });
+    const filters = new URLSearchParams([["filter", "protocol=git"], ["filter", "operation=info/refs"], ["limit", "1"]]);
+    const rows = await fetch(path + "&" + filters);
     expect(rows.status).toBe(200);
-    expect(await rows.json()).toMatchObject({ rows: [expect.objectContaining({ url: upstreamURL })] });
+    expect(await rows.json()).toMatchObject({
+      rows: [{ method: "GET", url: upstreamURL, protocol: "git", operation: "info/refs", decoded: { repository: "example.git", git: { service: "git-upload-pack" } } }],
+    });
+    const otherProtocol = await fetch(path + "&filter=protocol%3Daws");
+    expect(otherProtocol.status).toBe(200);
+    expect(await otherProtocol.json()).toMatchObject({ rows: [] });
   });
   it("lists the run with the proxy capture it armed", async () => {
     const response = await fetch(`${apiURL}/api/traces`);
@@ -237,6 +267,34 @@ describe("runs started over the API", () => {
     const form = await response.json() as { schema: { required: string[] }; defaults: { traces: Record<string, { enabled: boolean }> } };
     expect(form.schema.required).toBeUndefined();
     expect(form.defaults.traces.http.enabled).toBe(true);
+  });
+
+  it("offers the native cloud log options on the start form", async () => {
+    const response = await fetch(`${apiURL}/api/traces/start`);
+    expect(response.status).toBe(200);
+    type CaptureSchema = { type: string; allOf: { then: { properties: Record<string, unknown> } }[] };
+    const form = await response.json() as { schema: { properties: { traces: { properties: Record<string, { oneOf: [CaptureSchema, { type: string; minItems: number; items: CaptureSchema }] }> } } } };
+    const [single, multiple] = form.schema.properties.traces.properties.logs.oneOf;
+    expect(multiple).toMatchObject({ type: "array", minItems: 1, items: single });
+    const [enabled] = single.allOf;
+    expect(enabled.then.properties.options).toMatchObject({
+      "x-telltale-provider-options": {
+        loki: { properties: { direction: { type: "string" } } },
+        cloudwatch: { properties: { logGroup: { type: "string" } } },
+      },
+    });
+  });
+
+  it("offers an optional session name for new Extended Events captures", async () => {
+    const response = await fetch(`${apiURL}/api/traces/start`);
+    expect(response.status).toBe(200);
+    type Capture = { allOf: { then: { required: string[]; allOf?: unknown[]; properties: Record<string, unknown> } }[] };
+    const { schema } = await response.json() as { schema: { properties: { traces: { properties: Record<string, { oneOf: Capture[] }> } } } };
+    const [capture] = schema.properties.traces.properties.sql_xevent.oneOf;
+    const enabled = capture.allOf[0].then;
+    expect(enabled.required).toEqual(["connection"]);
+    expect(enabled.allOf).toBeUndefined();
+    expect(enabled.properties.sessionName).toMatchObject({ type: "string", description: expect.stringContaining("telltale_<db>_<date>") });
   });
 
   it("runs a shell command under the proxy it arms and records its exchange", async () => {
