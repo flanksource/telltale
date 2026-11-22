@@ -12,6 +12,10 @@ func addRulesPaths(spec *rpc.OpenAPISpec) {
 	schemas := map[string]*rpc.OpenAPISchema{"": {Type: "object", Properties: map[string]*rpc.OpenAPISchema{"config": rules.Schema(), "revision": {Type: "string"}, "bindings": {Type: "object"}, "schema": {Type: "object"}}}, "/status": rpc.SchemaForStruct(rules.Status{}), "/preview": {Type: "array", Items: rpc.SchemaForStruct(rules.Preview{})}, "/events": {Type: "array", Items: rpc.SchemaForStruct(rules.Event{})}}
 	for suffix, schema := range schemas {
 		operation := &rpc.OpenAPIOperation{Summary: "Read resource rules " + suffix, Tags: []string{"Rules"}, Responses: map[string]rpc.OpenAPIResponse{"200": {Description: "Resource rules result", Content: map[string]rpc.OpenAPIMediaType{"application/json": {Schema: schema}}}, "503": {Description: "Rules are not enabled"}, "400": {Description: "Invalid query or no snapshot available"}}}
+		if suffix != "" {
+			operation.Parameters = append(operation.Parameters, followParam())
+			operation.Responses["200"].Content["text/event-stream"] = eventStream("Rule status or preview snapshots, or resumable journal entries for events.")
+		}
 		if suffix == "/events" {
 			for _, name := range []string{"rule", "group", "incident", "since", "limit"} {
 				operation.Parameters = append(operation.Parameters, rpc.OpenAPIParameter{Name: name, In: "query", Schema: &rpc.OpenAPISchema{Type: "string"}})

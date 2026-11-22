@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/flanksource/telltale/internal/livestream"
 	"github.com/flanksource/telltale/pkg/tracing/groups"
 	"github.com/flanksource/telltale/pkg/tracing/process"
 )
@@ -47,6 +48,7 @@ type TopFrame struct {
 // TopHandler samples on demand. All views share one rolling CPU budget.
 type TopHandler struct {
 	sampler  *process.Sampler
+	updates  livestream.Sampler[topChoice, TopFrame]
 	gate     chan struct{}
 	done     chan struct{}
 	tops     map[topChoice]*liveTop
@@ -116,6 +118,10 @@ func (h *TopHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		read = func(live *liveTop, _ TopPolling) (any, error) { return live.top.Facets(r.Context(), pid) }
 	default:
 		http.NotFound(w, r)
+		return
+	}
+	if r.URL.Query().Get("follow") == "1" {
+		h.follow(w, r, choice, read)
 		return
 	}
 	body, err := h.latest(r.Context(), choice, read)
@@ -202,6 +208,7 @@ func (h *TopHandler) open(ctx context.Context, choice topChoice) (*liveTop, erro
 
 // Close stops every live Top.
 func (h *TopHandler) Close() error {
+	h.updates.Close()
 	h.gate <- struct{}{}
 	defer func() { <-h.gate }()
 	select {

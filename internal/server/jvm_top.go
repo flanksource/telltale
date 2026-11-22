@@ -21,4 +21,7 @@ func addJVMTopPath(spec *rpc.OpenAPISpec) {
 	}
 	spec.Components.Schemas["JVMTopFrame"] = rpc.SchemaForStruct(top.Frame{})
 	path["post"] = operation
+	path["get"] = rpc.OpenAPIOperation{Summary: "Follow JVM Top snapshots", Tags: []string{"JVM"}, Parameters: []rpc.OpenAPIParameter{
+		{Name: "agent", In: "query", Required: true, Schema: &rpc.OpenAPISchema{Type: "string"}},
+	}, Responses: map[string]rpc.OpenAPIResponse{"200": {Description: "Live JVM Top frames", Content: map[string]rpc.OpenAPIMediaType{"text/event-stream": eventStream("A JSON JVMTopFrame on each sample.")}}}}
 }
