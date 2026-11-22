@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -20,59 +21,91 @@ type Metadata struct {
 	ErrorCode string `json:"errorCode,omitempty"`
 }
 
+type Scope struct {
+	Service string
+	Region  string
+}
+
+// SigningScope projects the non-credential part of a SigV4 signing scope.
+func SigningScope(req *http.Request) (Scope, error) {
+	if req == nil || req.URL == nil {
+		return Scope{}, fmt.Errorf("AWS signing scope requires a request URL")
+	}
+	credential := req.URL.Query().Get("X-Amz-Credential")
+	if authorization := req.Header.Get("Authorization"); strings.HasPrefix(authorization, "AWS4-") {
+		_, rest, found := strings.Cut(authorization, "Credential=")
+		if !found {
+			return Scope{}, fmt.Errorf("AWS authorization has no credential scope")
+		}
+		credential, _, _ = strings.Cut(rest, ",")
+	}
+	if credential == "" {
+		return Scope{}, nil
+	}
+	parts := strings.Split(strings.TrimSpace(credential), "/")
+	if len(parts) == 4 && parts[0] != "" && len(parts[1]) == 8 && scopeLabel(parts[2]) && parts[3] == "aws4_request" {
+		return Scope{Service: parts[2]}, nil // SigV4a omits the region from the scope.
+	}
+	if len(parts) != 5 || parts[0] == "" || len(parts[1]) != 8 || !scopeLabel(parts[2]) || !scopeLabel(parts[3]) || parts[4] != "aws4_request" {
+		return Scope{}, fmt.Errorf("invalid AWS credential scope")
+	}
+	return Scope{Region: parts[2], Service: parts[3]}, nil
+}
+
+func scopeLabel(value string) bool {
+	return len(value) > 0 && len(value) <= 64 && strings.IndexFunc(value, func(c rune) bool {
+		return (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '-'
+	}) == -1
+}
+
 func Decode(req *http.Request, response *http.Response, requestBody, responseBody []byte) (Metadata, error) {
 	if req == nil || req.URL == nil {
 		return Metadata{}, fmt.Errorf("AWS metadata requires a request URL")
 	}
-	m := Metadata{}
-	query, err := url.ParseQuery(req.URL.RawQuery)
-	if err != nil {
-		return m, fmt.Errorf("AWS request query: %w", err)
-	}
-	credential := query.Get("X-Amz-Credential")
-	if authorization := req.Header.Get("Authorization"); strings.HasPrefix(authorization, "AWS4-") {
-		_, rest, found := strings.Cut(authorization, "Credential=")
-		if !found {
-			return m, fmt.Errorf("AWS authorization has no credential scope")
-		}
-		credential, _, _ = strings.Cut(rest, ",")
-	}
-	if credential != "" {
-		parts := strings.Split(strings.TrimSpace(credential), "/")
-		if len(parts) != 5 || parts[0] == "" || len(parts[1]) != 8 || parts[2] == "" || parts[3] == "" || parts[4] != "aws4_request" {
-			return m, fmt.Errorf("invalid AWS credential scope")
-		}
-		m.Region, m.Service = parts[2], parts[3]
-	}
-	m.Operation = query.Get("Action")
-	if target := req.Header.Get("X-Amz-Target"); target != "" {
-		_, operation, ok := strings.Cut(target, ".")
-		if !ok || operation == "" {
-			return m, fmt.Errorf("invalid AWS operation target")
-		}
-		m.Operation = operation
-	}
-	mediaType, _, _ := mime.ParseMediaType(req.Header.Get("Content-Type"))
-	if mediaType == "application/x-www-form-urlencoded" && len(requestBody) > 0 {
-		form, err := url.ParseQuery(string(requestBody))
-		if err != nil {
-			return m, fmt.Errorf("AWS query payload: %w", err)
-		}
-		m.Operation = form.Get("Action")
-	}
+	scope, scopeErr := SigningScope(req)
+	operation, operationErr := decodeOperation(req, requestBody)
+	m := Metadata{Service: scope.Service, Region: scope.Region, Operation: operation}
 	if response == nil {
-		return m, nil
+		return m, errors.Join(scopeErr, operationErr)
 	}
 	m.RequestID = response.Header.Get("X-Amzn-Requestid")
 	if m.RequestID == "" {
 		m.RequestID = response.Header.Get("X-Amz-Request-Id")
 	}
+	if m.RequestID == "" {
+		m.RequestID = response.Header.Get("X-Amzn-Request-Id")
+	}
+	var responseErr error
 	if response.StatusCode >= 400 && len(responseBody) > 0 {
-		if err := m.decodeError(responseBody); err != nil {
-			return m, err
+		responseErr = m.decodeError(responseBody)
+	}
+	return m, errors.Join(scopeErr, operationErr, responseErr)
+}
+
+func decodeOperation(req *http.Request, requestBody []byte) (string, error) {
+	query, err := url.ParseQuery(req.URL.RawQuery)
+	if err != nil {
+		return query.Get("Action"), fmt.Errorf("AWS request query: %w", err)
+	}
+	operation := query.Get("Action")
+	if target := req.Header.Get("X-Amz-Target"); target != "" {
+		_, name, ok := strings.Cut(target, ".")
+		if !ok || name == "" {
+			return operation, fmt.Errorf("invalid AWS operation target")
+		}
+		operation = name
+	}
+	mediaType, _, _ := mime.ParseMediaType(req.Header.Get("Content-Type"))
+	if mediaType == "application/x-www-form-urlencoded" && len(requestBody) > 0 {
+		form, err := url.ParseQuery(string(requestBody))
+		if err != nil {
+			return operation, fmt.Errorf("AWS query payload: %w", err)
+		}
+		if action := form.Get("Action"); action != "" {
+			operation = action
 		}
 	}
-	return m, nil
+	return operation, nil
 }
 
 func (m *Metadata) decodeError(body []byte) error {
@@ -89,7 +122,7 @@ func (m *Metadata) decodeError(body []byte) error {
 			return fmt.Errorf("AWS JSON error: %w", err)
 		}
 		m.ErrorCode = fields.Code
-		if m.ErrorCode == "" {
+		if m.ErrorCode == "" || strings.Contains(m.ErrorCode, "****") || m.ErrorCode == "[REDACTED]" {
 			_, m.ErrorCode, _ = strings.Cut(fields.Type, "#")
 			if m.ErrorCode == "" {
 				m.ErrorCode = fields.Type
