@@ -134,9 +134,13 @@ export interface HostUsage {
 
 /** What reading a live tick cost telltale itself (groups.Overhead); the CPU is missing on the first tick. */
 export interface Overhead {
-  /** telltale's CPU and that of the commands it ran, of one core, since the tick before. */
+  /** CPU used to collect Top samples and run their commands, as a share of one core over the last minute. */
   cpuPercent?: number;
   tickMillis: number;
+}
+
+export interface TopPolling {
+  minimumIntervalMs: number;
 }
 
 /** Every group shown at one tick, parents before their children (groups.Frame); recorded frames hold no host or overhead. */
@@ -145,6 +149,7 @@ export interface Frame {
   tick: number;
   host?: HostUsage;
   overhead?: Overhead;
+  polling?: TopPolling;
   groups: GroupSample[];
 }
 
@@ -164,6 +169,7 @@ export interface TopProcesses {
   sampledAt: string;
   tick: number;
   host?: HostUsage;
+  polling?: TopPolling;
   processes: ProcessSample[];
 }
 

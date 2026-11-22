@@ -43,7 +43,7 @@ var _ = Describe("styled trace records", func() {
 		{"goprof", query.Row{"pid": 123, "profile": "heap", "value": 4096, "unit": "bytes", "frames": []map[string]any{{"func": "checkout.allocate"}}}, []string{"123", "heap", "checkout.allocate"}},
 		{"stacks", query.Row{"pid": 123, "goroutineId": 7, "state": "IO wait", "frames": []map[string]any{{"func": "checkout.read"}}}, []string{"123", "7", "IO wait", "checkout.read"}},
 		{"jvm_jfr", query.Row{"event": "alloc", "thread": "worker", "frame": "Checkout.allocate", "value": 4096, "unit": "bytes"}, []string{"alloc", "worker", "Checkout.allocate"}},
-		{"http_top", query.Row{"direction": "outgoing", "method": "GET", "url": "https://example.test/orders/7", "elapsedMs": 125.0}, []string{"outgoing", "GET", "https://example.test/orders/7", "125"}},
+		{"http_top", query.Row{"direction": "outgoing", "method": "GET", "url": "https://example.test/orders/7", "elapsedMs": 125.0}, []string{"→", "GET", "https://example.test/orders/7", "125"}},
 		{"jms", query.Row{"operation": "send", "direction": "outgoing", "outcome": "success", "destination": "orders"}, []string{"send", "outgoing", "success", "orders"}},
 		{"jvm_notifications", query.Row{"type": "java.management.memory.threshold.exceeded", "sequenceNumber": 12, "message": "heap threshold exceeded", "source": "java.lang:type=Memory"}, []string{"java.management.memory.threshold.exceeded", "heap threshold exceeded", "java.lang:type=Memory", "12"}},
 		{"jvm_ognl", query.Row{"expression": "@java.lang.Runtime@getRuntime().freeMemory()", "result": 4096}, []string{"@java.lang.Runtime@getRuntime().freeMemory()"}},

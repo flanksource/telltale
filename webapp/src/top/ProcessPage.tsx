@@ -10,7 +10,7 @@ import { toneOf } from "./HostStrip";
 import { isCPUHog } from "./cpu";
 import { hogLabel } from "./hogs";
 import { ProcessActions } from "./ProcessActions";
-import { RefreshControl, useRefreshInterval } from "../monitoring/RefreshControl";
+import { RefreshControl, refreshAt, useRefreshInterval } from "../monitoring/RefreshControl";
 import {
   filterProcesses, metricSeries, metricValue, parseTarget, sortProcesses, sumProcesses, type Metric, type ProcessSortKey,
 } from "./processes";
@@ -154,8 +154,10 @@ function ProcessView({ target }: { target: string }) {
     queryKey: ["top-processes", parsed],
     queryFn: ({ signal }) => fetchTopProcesses(parsed, signal),
     retry: false,
+    refetchOnWindowFocus: interval !== false,
+    refetchOnReconnect: interval !== false,
     // A refused reading is not polled again until Retry: the server would refuse it every second.
-    refetchInterval: current => current.state.status === "error" ? false : interval,
+    refetchInterval: current => current.state.status === "error" ? false : refreshAt(interval, current.state.data?.polling?.minimumIntervalMs),
   });
   const [history, setHistory] = useState<TopProcesses[]>([]);
   useEffect(() => {
@@ -175,7 +177,7 @@ function ProcessView({ target }: { target: string }) {
         {renderLink({ to: "/top", className: "text-sm underline underline-offset-4", children: "← Process groups" })}
         <h2 className="text-xl font-semibold tracking-tight">{heading}</h2>
         {latest && <span className="text-sm text-muted-foreground">tick {latest.tick} · {new Date(latest.sampledAt).toLocaleTimeString()} · {latest.processes.length} {latest.processes.length === 1 ? "process" : "processes"}</span>}
-        <RefreshControl />
+        <RefreshControl minimumIntervalMs={latest?.polling?.minimumIntervalMs} />
       </div>
       <label className="flex items-center gap-2 text-sm">
         Filter
@@ -197,7 +199,7 @@ function ProcessView({ target }: { target: string }) {
             {METRIC_VIEWS.map(view => <MetricTile key={view.metric} view={view} usage={total} host={latest.host} series={series[view.metric]} />)}
           </div>
           <p className="text-sm text-muted-foreground">Hogs exceed 25% of all cores, physical RAM, or swap capacity and stay pinned for 120 seconds after their last spike. On macOS, Compressed includes swapped-out pages; per-process disk swap is unavailable (–). Terminate sends SIGTERM to one process; renice changes its scheduling priority.</p>
-          {selected !== undefined && <FacetsPanel key={selected} pid={selected} />}
+          {selected !== undefined && <FacetsPanel key={selected} pid={selected} minimumIntervalMs={latest.polling?.minimumIntervalMs} />}
           {shown.length === 0
             ? <p className="text-sm text-muted-foreground">No process matches these filters.</p>
             : <ProcessTable processes={shown} sort={sort} onSort={setSort} selected={selected} onSelect={setSelected} cores={latest.host?.cores} sampledAt={latest.sampledAt} />}

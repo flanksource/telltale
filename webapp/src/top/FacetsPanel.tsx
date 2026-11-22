@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Button, Tabs } from "@flanksource/clicky-ui/components";
 import { ProcessFacetTable, SAMPLE_FACET_ORDER, SAMPLE_FACETS, type ProcessSampleFacet } from "@flanksource/clicky-ui/data";
 import { fetchTopFacets, type GroupContext } from "./api";
-import { useRefreshInterval } from "../monitoring/RefreshControl";
+import { refreshAt, useRefreshInterval } from "../monitoring/RefreshControl";
 
 /** How often a process's facets are read again: each reading runs lsof over it. */
 export const FACETS_POLL_MS = 5000;
@@ -36,14 +36,16 @@ function ContextList({ context }: { context: GroupContext }) {
 }
 
 /** One process's context and facets, as process_tree and process_samples record them: its environment (secrets masked) and its open files, sockets, ports and connections, read live every few seconds. */
-export function FacetsPanel({ pid }: { pid: number }) {
+export function FacetsPanel({ pid, minimumIntervalMs = 0 }: { pid: number; minimumIntervalMs?: number }) {
   const interval = useRefreshInterval();
   const [tab, setTab] = useState<FacetTab>("env");
   const query = useQuery({
     queryKey: ["top-facets", pid],
     queryFn: ({ signal }) => fetchTopFacets(pid, signal),
     retry: false,
-    refetchInterval: current => current.state.status === "error" || interval === false ? false : Math.max(FACETS_POLL_MS, interval),
+    refetchOnWindowFocus: interval !== false,
+    refetchOnReconnect: interval !== false,
+    refetchInterval: current => current.state.status === "error" ? false : refreshAt(interval, Math.max(FACETS_POLL_MS, minimumIntervalMs)),
   });
   const facets = query.data;
   const tabs = [

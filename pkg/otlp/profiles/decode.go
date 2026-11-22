@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/flanksource/telltale/pkg/tracing"
+	sdkprofiles "github.com/flanksource/telltale/sdk/profiles"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pprofile"
@@ -96,7 +97,7 @@ func validateIdentity(s Snapshot, o Options) error {
 	if o.ExpectedSource != "" && s.Source != o.ExpectedSource {
 		return fmt.Errorf("profile source %q does not match authenticated agent", s.Source)
 	}
-	return validate(s)
+	return sdkprofiles.Validate(sdkprofiles.Snapshot(s))
 }
 
 func decodeSnapshot(d pprofile.ProfilesDictionary, p pprofile.Profile) (Snapshot, error) {
@@ -153,7 +154,7 @@ func decodeSnapshot(d pprofile.ProfilesDictionary, p pprofile.Profile) (Snapshot
 	if err != nil {
 		return s, err
 	}
-	if metric != sampleTypes[s.Kind] || unit != "ns" {
+	if metric != sdkprofiles.SampleType(s.Kind) || unit != "ns" {
 		return s, fmt.Errorf("profile sample type must describe elapsed nanoseconds")
 	}
 	s.Rows, err = decodeSamples(d, p, s)
@@ -300,8 +301,7 @@ func nativeProfile(dictionary pprofile.ProfilesDictionary, resource pprofile.Res
 		}
 	}
 	// Rebuild references after masking so unused dictionary strings cannot retain secrets.
-	redacted := pprofile.NewProfiles()
-	newDictionary(redacted.Dictionary())
+	redacted := sdkprofiles.NewProfileData()
 	if err := value.MergeTo(redacted); err != nil {
 		return nil, fmt.Errorf("rebuild redacted profile dictionary: %w", err)
 	}

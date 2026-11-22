@@ -17,4 +17,11 @@ telltale run http --agent java/checkout --allow-mutation --direction both --dura
 ```
 
 Use `instrument.jvm.http` in a TraceDefinition. For the current active operations without retained bodies, use [http_top](/traces/http_top).
+
+The Go SDK labels traffic through `telltale.Handler` as incoming and traffic through `telltale.Transport` or the commons-db adapter as outgoing. The **Direction** column in the HTTP records view can filter either value. Use `--direction`, `--hosts`, and `--paths` to select traffic at the agent and `--bodies 0` to omit bodies.
+
+```sh
+telltale run http --agent AGENT_ID --direction incoming --paths /api/projects --bodies 0 --duration 30s
+```
+
 <KindReference kind="http" />
