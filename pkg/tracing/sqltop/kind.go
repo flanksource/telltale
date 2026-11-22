@@ -145,7 +145,7 @@ func (handler) Prepare(ctx dbcontext.Context, p Params, out tracing.Emitter[Samp
 	}
 	engine := engines[connType]
 	c, err := newCapture(p.Options, engine, func(ctx context.Context, idle bool) (snapshot, error) {
-		return sqlactivity.Read(ctx, pool, engine, sqlactivity.Filter{Idle: idle})
+		return sqlactivity.Read(ctx, pool, engine, sqlactivity.Filter{Idle: idle, SQLServerProgress: engine == EngineSQLServer})
 	})
 	if err != nil {
 		release()

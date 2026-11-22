@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/flanksource/telltale/internal/protocol/httpdecode"
 	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/tracing/seam"
 	"github.com/flanksource/telltale/sdk/protocol"
@@ -21,16 +22,31 @@ const (
 type Selection = protocol.HTTPSelection
 
 type Metadata struct {
-	Direction Direction `json:"direction,omitempty" pretty:"label=Direction" filter:"terms"`
-	RequestID string    `json:"requestId,omitempty"`
-	Route     string    `json:"route,omitempty" filter:"text"`
-	Handler   string    `json:"handler,omitempty" filter:"text"`
-	Phase     string    `json:"phase,omitempty" filter:"terms"`
-	ThreadID  int64     `json:"threadId,omitempty"`
-	Thread    string    `json:"thread,omitempty"`
-	TraceID   string    `json:"traceId,omitempty"`
-	SpanID    string    `json:"spanId,omitempty"`
-	Sampled   *bool     `json:"sampled,omitempty"`
+	Direction Direction           `json:"direction,omitempty" pretty:"label=Direction" filter:"terms"`
+	RequestID string              `json:"requestId,omitempty"`
+	Route     string              `json:"route,omitempty" filter:"text"`
+	Handler   string              `json:"handler,omitempty" filter:"text"`
+	Phase     string              `json:"phase,omitempty" filter:"terms"`
+	ThreadID  int64               `json:"threadId,omitempty"`
+	Thread    string              `json:"thread,omitempty"`
+	TraceID   string              `json:"traceId,omitempty"`
+	SpanID    string              `json:"spanId,omitempty"`
+	Sampled   *bool               `json:"sampled,omitempty"`
+	Protocol  string              `json:"protocol,omitempty" pretty:"label=Protocol" filter:"terms,options=git|github|kubernetes|anthropic|openai|s3|aws"`
+	Operation string              `json:"operation,omitempty" pretty:"label=Operation" filter:"terms,lookup=false"`
+	Decoded   *httpdecode.Details `json:"decoded,omitempty" pretty:"label=Decoded"`
+}
+
+// DecodeProtocol enriches a completed exchange before it enters the store.
+func (e *Exchange) DecodeProtocol(options httpdecode.Options) {
+	if e.Tunnelled {
+		return
+	}
+	options.RequestEncoding, options.ResponseEncoding = e.RequestEncoding, e.Encoding
+	result := httpdecode.Decode(e.Entry, options)
+	e.Protocol, e.Operation, e.Decoded = result.Protocol, result.Operation, result.Details
+	httpdecode.RedactSigning(&e.Entry)
+	e.URL = e.Request.URL
 }
 
 func DecodeRecord(raw json.RawMessage) (Exchange, error) {
@@ -50,6 +66,7 @@ func DecodeRecord(raw json.RawMessage) (Exchange, error) {
 		record.Error = record.Entry.Error
 	}
 	record.Entry.Error = record.Error
+	record.DecodeProtocol(httpdecode.Options{})
 	return record, nil
 }
 

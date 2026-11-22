@@ -61,10 +61,10 @@ func (k *Kinds) RegisterKind(name string, plugin TracePlugin) error {
 	if plugin.Capabilities() == (Capabilities{}) {
 		return fmt.Errorf("trace kind %q declares no capabilities", name)
 	}
-	if _, err := plugin.Params(); err != nil {
+	if _, err := plugin.Schema(); err != nil {
 		return fmt.Errorf("trace kind %q: %w", name, err)
 	}
-	schema, err := plugin.Schema(name)
+	schema, err := plugin.RecordSchema(name)
 	if err != nil {
 		return fmt.Errorf("trace kind %q: %w", name, err)
 	}
@@ -73,7 +73,7 @@ func (k *Kinds) RegisterKind(name string, plugin TracePlugin) error {
 			found := false
 			for _, result := range plugin.ResultTables() {
 				if result.Name == top.Result {
-					schema, err = result.plugin.Schema(name + "_" + top.Result)
+					schema, err = result.plugin.RecordSchema(name + "_" + top.Result)
 					found = true
 					break
 				}
@@ -107,7 +107,7 @@ func (k *Kinds) RegisterKind(name string, plugin TracePlugin) error {
 			return fmt.Errorf("result table %s already registered", storage)
 		}
 		seen[storage] = true
-		if _, err := table.plugin.Schema(storage); err != nil {
+		if _, err := table.plugin.RecordSchema(storage); err != nil {
 			return err
 		}
 	}
@@ -138,11 +138,11 @@ func (k *Kinds) List() ([]KindInfo, error) {
 	infos := make([]KindInfo, 0, len(k.plugins))
 	for _, name := range k.names() {
 		plugin := k.plugins[name]
-		params, err := plugin.Params()
+		params, err := plugin.Schema()
 		if err != nil {
 			return nil, fmt.Errorf("trace kind %q: %w", name, err)
 		}
-		schema, err := plugin.Schema(name)
+		schema, err := plugin.RecordSchema(name)
 		if err != nil {
 			return nil, fmt.Errorf("trace kind %q: %w", name, err)
 		}
@@ -152,7 +152,7 @@ func (k *Kinds) List() ([]KindInfo, error) {
 			ExportFormats: plugin.ExportFormats(),
 		})
 		for _, table := range plugin.ResultTables() {
-			schema, err := table.plugin.Schema(name + "_" + table.Name)
+			schema, err := table.plugin.RecordSchema(name + "_" + table.Name)
 			if err != nil {
 				return nil, err
 			}

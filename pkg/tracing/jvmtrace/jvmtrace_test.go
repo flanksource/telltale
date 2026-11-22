@@ -15,6 +15,17 @@ func TestJVMTrace(t *testing.T) { RegisterFailHandler(Fail); RunSpecs(t, "JVM me
 
 var worker = []jvmtrace.MethodTarget{{Class: "example.Worker", Method: "compute"}}
 
+var _ = Describe("checkpoint-only OGNL captures", func() {
+	It("requires an agent that supports checkpoint-only timing", func() {
+		options := jvmtrace.ExpressionOptions{Expression: "6 * 7", UntilStopped: true}
+		Expect(options.Validate()).To(Succeed())
+		Expect(options.CompatibleWith(protocol.ProbeSpec{Name: jvmtrace.ExpressionKind})).To(MatchError(ContainSubstring("untilStopped")))
+		Expect(options.CompatibleWith(protocol.ProbeSpec{Name: jvmtrace.ExpressionKind, Version: 1})).To(Succeed())
+		options.IntervalMs = 1000
+		Expect(options.Validate()).To(MatchError(ContainSubstring("takes no intervalMs")))
+	})
+})
+
 var _ = Describe("method trace contracts", func() {
 	It("rejects an empty target list and invalid value limits", func() {
 		Expect((jvmtrace.Options{}).Validate()).To(HaveOccurred())

@@ -2,9 +2,12 @@ package sqltop
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
+	"github.com/flanksource/clicky/formatters"
 	"github.com/flanksource/commons-db/query"
+	"github.com/flanksource/commons-db/query/sqlactivity"
 	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
 	"github.com/flanksource/commons-db/recordstore/recordresults/recordresultstest"
@@ -16,6 +19,57 @@ import (
 )
 
 var _ = Describe("SQL top active storage", func() {
+	It("retains SQL Server progress in both result streams and renders it in expanded Top detail", func() {
+		const stream = "sql-progress-test"
+		const update = "UPDATE orders\nSET paid = 1\nWHERE id = 42;"
+		const selectOrder = "SELECT id\nFROM orders\nWHERE id = 42;"
+		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{"sql_top": Kind()})
+		store, err := newActiveStore(env.Results.Backend, stream)
+		Expect(err).NotTo(HaveOccurred())
+		frame := sampleframe.Frame{Source: "connection://orders", StartedAt: serverTime, CompletedAt: serverTime, Observed: 2}
+		rows := []Sample{
+			{SampledAt: serverTime, StartedAt: serverTime, SessionID: 7, RequestID: 2, Engine: EngineSQLServer, Command: "KILLED/ROLLBACK", ElapsedMs: 301_000, SQL: update,
+				SQLServerProgress: sqlactivity.SQLServerProgress{PercentComplete: new(0.0), EstimatedRemainingMs: new(120_000.0), TransactionID: "9007199254740993",
+					TransactionState: "rolling back", RowsReturned: new(int64(0)), TransactionLogBytesUsed: new(int64(16_384)), WaitingTaskCount: new(int64(2)),
+					LongestTaskWaitType: "WRITELOG", LongestTaskWaitMs: new(2_500.0)}},
+			{SampledAt: serverTime, StartedAt: serverTime, SessionID: 7, RequestID: 3, Engine: EngineSQLServer, Command: "SELECT", ElapsedMs: 2_000, SQL: selectOrder},
+		}
+		Expect(store.append(context.Background(), frame, projectDatabase(frame.Source, rows), rows)).To(Succeed())
+		var active []query.Row
+		for kind, name := range map[string]string{"sql_top": stream, "sql_top_active": stream + "-active"} {
+			got := env.Read(kind, name, query.PageRequest{Limit: 20}, map[string]any{"sort": "-elapsedMs"})
+			Expect(got).To(HaveLen(2))
+			Expect(got[0]).To(SatisfyAll(HaveKeyWithValue("command", "KILLED/ROLLBACK"), HaveKeyWithValue("percentComplete", BeNumerically("==", 0)),
+				HaveKeyWithValue("transactionId", "9007199254740993"), HaveKeyWithValue("transactionLogBytesUsed", BeNumerically("==", 16_384)),
+				HaveKeyWithValue("sql", update)))
+			Expect(got[1]).To(SatisfyAll(HaveKeyWithValue("percentComplete", BeNil()), HaveKeyWithValue("sql", selectOrder)))
+			if kind == "sql_top_active" {
+				active = got
+			}
+		}
+		profile, err := env.Results.Registry.Get(context.Background(), "traces/sql_top_active")
+		Expect(err).NotTo(HaveOccurred())
+		result := query.Result{Rows: active, Presenter: profile.Presenter}
+		for _, format := range []string{"clicky-json", "table"} {
+			rendered, err := result.Render(profile.Columns, format)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rendered).To(ContainSubstring("0%"))
+			if format == "clicky-json" {
+				Expect(rendered).To(And(ContainSubstring("KILLED/ROLLBACK"), ContainSubstring("Transaction log used"), ContainSubstring("WRITELOG")))
+				var document formatters.ClickyDocument
+				Expect(json.Unmarshal([]byte(rendered), &document)).To(Succeed())
+				Expect(document.Node.Rows).To(HaveLen(2))
+				for index, statement := range []string{update, selectOrder} {
+					row := document.Node.Rows[index]
+					Expect(row.Cells["sql"]).To(SatisfyAll(HaveField("Kind", "code"), HaveField("Source", statement)))
+					Expect(row.Detail).NotTo(BeNil())
+					Expect(row.Detail.Children).NotTo(BeEmpty())
+					Expect(row.Detail.Children[0]).To(SatisfyAll(HaveField("Kind", "code"), HaveField("Source", statement)))
+				}
+			}
+		}
+	})
+
 	It("stores database details and the common top projection with an empty follow-up frame", func() {
 		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{"sql_top": Kind()})
 		store, err := newActiveStore(env.Results.Backend, "sql-active-test")

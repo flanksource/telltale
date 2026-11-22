@@ -6,6 +6,7 @@ import (
 	"time"
 
 	dbcontext "github.com/flanksource/commons-db/context"
+	"github.com/flanksource/commons-db/query/sqlactivity"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
 	"github.com/flanksource/telltale/pkg/otlp/profiles"
 	"github.com/flanksource/telltale/pkg/tracing"
@@ -35,6 +36,7 @@ func FromSnapshot(snapshot profiles.Snapshot) ([]ActiveSample, error) {
 		row.Source, row.OperationID, row.SampledAt = snapshot.Frame().Source, observation.OperationID, observation.SampledAt
 		row.ElapsedMs = float64(observation.ElapsedNS) / float64(time.Millisecond)
 		row.TraceID, row.SpanID = observation.TraceID, observation.SpanID
+		row.Command, row.SQLServerProgress = "", sqlactivity.SQLServerProgress{}
 		rows[i] = row
 	}
 	return rows, nil

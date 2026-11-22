@@ -36,6 +36,10 @@ type Runtime struct {
 	Kinds    *Kinds
 	Sessions *query.SessionRegistry
 	Probes   *probe.Manager
+	// SessionStore holds the start records and status served alongside Sessions.
+	SessionStore query.SessionStore
+	// RecoverSessions checks for abandoned sessions after taking the run's store lock.
+	RecoverSessions func(context.Context) error
 	// Results is the store the captures' records are committed to, opened
 	// with Kinds.RegisterResultTypes.
 	Results *recordresults.Results

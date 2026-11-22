@@ -132,7 +132,7 @@ var _ = Describe("Kinds", func() {
 			return nil
 		}}, tracing.Capabilities{Live: true}, "self").
 			WithDefaults(tickParams{Count: 7, Label: "host"})
-		schema, err := plugin.Params()
+		schema, err := plugin.Schema()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(schema.Properties["count"].Default).To(Equal(float64(7)))
 		Expect(schema.Properties["label"].Default).To(Equal("host"))

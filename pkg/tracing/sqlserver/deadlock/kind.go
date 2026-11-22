@@ -11,6 +11,7 @@ import (
 	"github.com/flanksource/clicky"
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/models"
+	"github.com/flanksource/commons-db/query/datetime"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
 	"github.com/flanksource/commons/collections"
 	"github.com/flanksource/telltale/pkg/tracing"
@@ -34,28 +35,30 @@ type Params struct {
 type Options struct {
 	Connection string   `json:"connection" clicky:"required,title=Connection"`
 	Databases  []string `json:"databases,omitempty" clicky:"title=Databases,desc=Participant database patterns; empty selects the connected database"`
-	From       string   `json:"from,omitempty" clicky:"title=From,desc=Historical window start in RFC3339; empty follows from now"`
-	To         string   `json:"to,omitempty" clicky:"title=To,desc=Historical window end in RFC3339; empty uses server time"`
+	From       string   `json:"from,omitempty" clicky:"title=From,desc=Historical window start as a timestamp or date math; empty follows from now"`
+	To         string   `json:"to,omitempty" clicky:"title=To,desc=Historical window end as a timestamp or date math; empty uses server time"`
 	Poll       string   `json:"poll,omitempty" clicky:"title=Poll,desc=Follow poll interval"`
 }
 
 func (p Options) window() (Window, error) {
 	var w Window
-	var err error
+	now := time.Now().UTC()
 	if p.From != "" {
-		w.From, err = time.Parse(time.RFC3339Nano, p.From)
+		bound, err := datetime.Parse(p.From, now)
 		if err != nil {
 			return w, fmt.Errorf("from: %w", err)
 		}
+		w.From = bound.Time
 	}
 	if p.To != "" {
 		if p.From == "" {
 			return w, fmt.Errorf("to requires from")
 		}
-		w.To, err = time.Parse(time.RFC3339Nano, p.To)
+		bound, err := datetime.Parse(p.To, now)
 		if err != nil {
 			return w, fmt.Errorf("to: %w", err)
 		}
+		w.To = bound.Time
 	}
 	if !w.To.IsZero() && !w.From.Before(w.To) {
 		return w, fmt.Errorf("from must precede to")
@@ -181,7 +184,11 @@ func (handler) Handle(ctx dbcontext.Context, _ Params, out tracing.Emitter[histo
 }
 
 func (handler) Checkpoint(ctx dbcontext.Context, _ Params, out tracing.Emitter[history.Row]) error {
-	return ctx.Value(captureKey{}).(*capture).read(ctx, out, false)
+	c := ctx.Value(captureKey{}).(*capture)
+	if !c.span.Follow() {
+		return nil
+	}
+	return c.read(ctx, out, false)
 }
 func Kind() *tracing.Handler[Params, history.Row] {
 	return tracing.NewHandler[Params, history.Row](handler{}, tracing.Capabilities{Historical: true, Follow: true}, target.Connection).WithDeduplication(func(r history.Row) string { return r.ID }, func(Params) time.Duration { return 24 * time.Hour })

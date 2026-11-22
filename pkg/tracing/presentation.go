@@ -58,7 +58,7 @@ func (k *Kinds) Present(kind string, row query.Row) (RecordPresentation, error) 
 	} else if table, ok := value.Interface().(api.TableProvider); ok {
 		summary = prettyRecordFields(table.Columns(), table.Row())
 	} else {
-		schema, err := plugin.Schema(kind)
+		schema, err := plugin.RecordSchema(kind)
 		if err != nil {
 			return RecordPresentation{}, err
 		}

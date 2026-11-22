@@ -39,6 +39,9 @@ type AgentSeam[P, R any] struct {
 	DecodeBlob   func(agentclient.Blob, map[string]string) (DecodedBlob[R], error)
 	HandleBlob   func(context.Context, agentclient.Blob, map[string]string, tracing.Emitter[R]) error
 	CommitBlob   func(agentclient.Blob) error
+	// SummarizeReports combines the latest report for each armed session.
+	// A session that has not reported yet contributes a nil map.
+	SummarizeReports func([]map[string]any) map[string]any
 }
 
 type stateKey struct{}
@@ -51,6 +54,8 @@ type capture struct {
 	local       *telltale.Agent
 	localClient *agentclient.Agent
 	report      map[string]any
+	sessionReports map[*agentclient.Session]map[string]any
+	summarizeReports func([]map[string]any) map[string]any
 }
 
 type agentFailure struct {
@@ -113,6 +118,10 @@ func (s AgentSeam[P, R]) Available(probe string, selection target.Target) (bool,
 func (s AgentSeam[P, R]) Prepare(ctx dbcontext.Context, params P, out tracing.Emitter[R]) (dbcontext.Context, func() error, error) {
 	selection := s.Target(params)
 	state := &capture{sessions: make(map[*agentclient.Agent]*agentclient.Session), dropped: make(map[*agentclient.Agent]uint64), report: make(map[string]any)}
+	if s.SummarizeReports != nil {
+		state.sessionReports = make(map[*agentclient.Session]map[string]any)
+		state.summarizeReports = s.SummarizeReports
+	}
 	var agents []*agentclient.Agent
 	if selection.Seam == target.Self {
 		state.local = telltale.Loopback()
@@ -214,6 +223,9 @@ func (s AgentSeam[P, R]) arm(ctx context.Context, state *capture, agent *agentcl
 	}
 	state.mu.Lock()
 	state.sessions[agent] = session
+	if state.sessionReports != nil {
+		state.sessionReports[session] = nil
+	}
 	state.mu.Unlock()
 	return nil
 }
@@ -516,7 +528,7 @@ func (s AgentSeam[P, R]) read(ctx context.Context, state *capture, agent *agentc
 		case warning := <-session.Warns:
 			out.Warn(warning.Message)
 		case report := <-session.Reports:
-			if err := state.mergeReport(report.Summary, out.Report); err != nil {
+			if err := state.mergeReport(session, report.Summary, out.Report); err != nil {
 				fail(err, false)
 				return
 			}
@@ -539,7 +551,7 @@ func (s AgentSeam[P, R]) read(ctx context.Context, state *capture, agent *agentc
 				case report := <-session.Reports:
 					// The agent reports after the blob it describes; one sent with
 					// the final blob is still queued when the capture ends.
-					if err := state.mergeReport(report.Summary, out.Report); err != nil {
+					if err := state.mergeReport(session, report.Summary, out.Report); err != nil {
 						fail(err, false)
 						return
 					}
@@ -570,20 +582,34 @@ func (state *capture) reportDropped(agent *agentclient.Agent, count uint64, repo
 	state.emitReport(report)
 }
 
-func (state *capture) mergeReport(summary json.RawMessage, report func(any)) error {
+func (state *capture) mergeReport(session *agentclient.Session, summary json.RawMessage, report func(any)) error {
 	var values map[string]any
 	if err := json.Unmarshal(summary, &values); err != nil {
 		return fmt.Errorf("decode agent report: %w", err)
 	}
 	state.mu.Lock()
 	defer state.mu.Unlock()
-	maps.Copy(state.report, values)
+	if state.sessionReports == nil {
+		maps.Copy(state.report, values)
+	} else {
+		if state.sessionReports[session] == nil {
+			state.sessionReports[session] = make(map[string]any)
+		}
+		maps.Copy(state.sessionReports[session], values)
+	}
 	state.emitReport(report)
 	return nil
 }
 
 func (state *capture) emitReport(report func(any)) {
 	values := maps.Clone(state.report)
+	if state.summarizeReports != nil {
+		reports := make([]map[string]any, 0, len(state.sessionReports))
+		for _, summary := range state.sessionReports {
+			reports = append(reports, summary)
+		}
+		values = state.summarizeReports(reports)
+	}
 	var total uint64
 	for _, value := range state.dropped {
 		total += value

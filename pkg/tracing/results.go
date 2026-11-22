@@ -84,13 +84,13 @@ func (k *Kinds) Schemas() ([]recordstore.KindSchema, error) {
 	schemas := []recordstore.KindSchema{}
 	for _, name := range k.names() {
 		plugin := k.plugins[name]
-		schema, err := plugin.Schema(name)
+		schema, err := plugin.RecordSchema(name)
 		if err != nil {
 			return nil, err
 		}
 		schemas = append(schemas, schema)
 		for _, result := range plugin.ResultTables() {
-			schema, err := result.plugin.Schema(name + "_" + result.Name)
+			schema, err := result.plugin.RecordSchema(name + "_" + result.Name)
 			if err != nil {
 				return nil, err
 			}

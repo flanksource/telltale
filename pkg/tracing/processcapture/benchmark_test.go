@@ -43,9 +43,9 @@ func BenchmarkProcessObservationStorage(b *testing.B) {
 				b.Fatal(err)
 			}
 			for kind, plugin := range map[string]interface {
-				Schema(string) (recordstore.KindSchema, error)
+				RecordSchema(string) (recordstore.KindSchema, error)
 			}{process.TreeKind: process.NewTreeKind(process.NewSampler(), process.TreeKindOptions{}), process.SamplesKind: process.NewSamplesKind(process.NewSampler())} {
-				schema, err := plugin.Schema(kind)
+				schema, err := plugin.RecordSchema(kind)
 				if err != nil {
 					b.Fatal(err)
 				}

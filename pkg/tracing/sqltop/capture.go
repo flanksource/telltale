@@ -63,7 +63,8 @@ func (c *capture) poll(ctx context.Context, out tracing.Emitter[Sample]) error {
 	if len(rows) > c.options.top() {
 		rows = rows[:c.options.top()]
 	}
-	if err := tracing.PublishFrame(ctx, out, sampleframe.Frame{Source: c.options.Connection, StartedAt: result.ServerTime, CompletedAt: result.ServerTime, Observed: active, Limit: c.options.top()}, rows); err != nil {
+	frame := sampleframe.Frame{Source: c.options.Connection, StartedAt: result.ServerTime, CompletedAt: result.ServerTime, Observed: active, Limit: c.options.top(), Summary: map[string]any{"engine": c.engine}}
+	if err := tracing.PublishFrame(ctx, out, frame, rows); err != nil {
 		return err
 	}
 	c.polls++

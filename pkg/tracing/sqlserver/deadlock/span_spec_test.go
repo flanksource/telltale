@@ -5,6 +5,8 @@ import (
 	"errors"
 	"time"
 
+	dbcontext "github.com/flanksource/commons-db/context"
+	"github.com/flanksource/telltale/pkg/tracing"
 	deadlockgraph "github.com/flanksource/telltale/pkg/tracing/sqlserver/deadlocks"
 	deadlocks "github.com/flanksource/telltale/pkg/tracing/sqlserver/history"
 
@@ -22,6 +24,12 @@ type fakeDeadlockReader struct {
 	graphs   []deadlockgraph.Graph
 	loads    []deadlocks.ReadOptions
 }
+
+type checkpointReport struct {
+	tracing.Emitter[deadlocks.Row]
+}
+
+func (checkpointReport) Report(any) {}
 
 func (f *fakeDeadlockReader) ServerNow(context.Context) (time.Time, error) {
 	Expect(f.nows).NotTo(BeEmpty(), "the span read the server clock more often than the spec scripted")
@@ -76,6 +84,14 @@ var _ = Describe("a sql_deadlock span", func() {
 		Expect(err).NotTo(HaveOccurred())
 		return span
 	}
+
+	It("leaves a historical window's only read to the capture itself", func() {
+		ctx := dbcontext.New()
+		span := begin(ctx, nil, Window{From: start, To: stop})
+		ctx = ctx.WithValue(captureKey{}, &capture{span: span})
+		Expect((handler{}).Checkpoint(ctx, Params{}, checkpointReport{})).To(Succeed())
+		Expect(reader.loads).To(BeEmpty())
+	})
 
 	It("reads the span without waiting when the server resolved no deadlock during it", func() {
 		reader.nows = []time.Time{start, stop}

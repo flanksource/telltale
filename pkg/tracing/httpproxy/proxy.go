@@ -167,7 +167,7 @@ func (r *recorder) dial(network, addr string) (net.Conn, error) {
 func (r *recorder) onRequest(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
 	state := exchangeState{started: time.Now()}
 	if r.rules.bodies > 0 && req.Body != nil && r.recordsExchange(req.URL) {
-		state.post, state.comment = r.rules.capturePostData(req)
+		r.rules.capturePostData(req, &state)
 	}
 	ctx.UserData = state
 	return req, nil

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/flanksource/clicky/rpc"
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/commons-db/recordstore"
@@ -90,6 +91,27 @@ func (c capture) AgentAvailable(probe string, t target.Target) (bool, error) {
 }
 func (capture) Params() Params                                  { return Params{} }
 func (capture) Schema() recordresults.ResultType[telltale.Span] { return ResultType() }
+
+func (capture) DescribeSchema(args *rpc.OpenAPISchema) {
+	field := args.Properties["opensearch"]
+	tracing.DescribeConnection(field.Properties["connection"], "opentelemetry")
+	field.Properties["connection"].Extensions["minLength"] = 1
+	field.Properties["format"].Enum = []any{"flat", "jaeger"}
+	field.Extensions = map[string]any{"if": map[string]any{
+		"required":   []string{"followIndex"},
+		"properties": map[string]any{"followIndex": map[string]bool{"const": true}},
+	}, "then": map[string]any{"properties": map[string]any{"to": map[string]string{"const": ""}}}}
+	hidden := *field
+	hidden.Extensions = map[string]any{"x-hidden": true}
+	args.Extensions["if"] = tracing.SeamCondition(target.Host)
+	args.Extensions["then"] = map[string]any{
+		"required": []string{"opensearch"}, "properties": map[string]any{"opensearch": map[string]string{"type": "object"}},
+	}
+	args.Extensions["else"] = map[string]any{
+		"not": map[string]any{"required": []string{"opensearch"}}, "properties": map[string]any{"opensearch": &hidden},
+	}
+}
+
 func (c capture) Prepare(ctx dbcontext.Context, p Params, out tracing.Emitter[telltale.Span]) (dbcontext.Context, func() error, error) {
 	if p.Target.Seam == target.Host {
 		return ctx, nil, nil

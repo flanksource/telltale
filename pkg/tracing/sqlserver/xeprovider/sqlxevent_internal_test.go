@@ -1,6 +1,7 @@
 package xeprovider
 
 import (
+	"strings"
 	"time"
 
 	"github.com/flanksource/commons-db/context"
@@ -83,8 +84,6 @@ var _ = Describe("SQL XEvents provider options", func() {
 		Entry("negative memory cap", XEventCaptureOptions{SessionName: "acme_capture", MaxMemoryKB: -1}, "maxMemoryKb -1: must not be negative"),
 		Entry("a database pattern SQL Server cannot evaluate",
 			XEventCaptureOptions{SessionName: "acme_capture", Databases: []string{"ware*house"}}, "* is a wildcard only at the start or end"),
-		Entry("no session name", XEventCaptureOptions{}, "sessionName is required"),
-		Entry("a blank session name", XEventCaptureOptions{SessionName: "  "}, "sessionName is required"),
 	)
 
 	// The name reaches the server, where it must not collide with a capture the
@@ -103,6 +102,12 @@ var _ = Describe("SQL XEvents provider options", func() {
 		create, _, err := XEventCaptureOptions{SessionName: "acme_capture", Databases: []string{xetrace.AllDatabases}}.CaptureOptions()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(create.Databases).To(Equal([]string{"*"}))
+	})
+
+	It("keeps the UTC date and suffix when a database name needs sanitizing and truncating", func() {
+		started := time.Date(2026, 11, 22, 23, 15, 30, 0, time.FixedZone("west", -2*60*60))
+		name := DefaultSessionName("East-West "+strings.Repeat("a", 128), started)
+		Expect(name).To(SatisfyAll(HaveLen(128), MatchRegexp(`^telltale_East_West_a+_20261123T011530Z_[0-9a-f]{12}$`)))
 	})
 })
 
@@ -135,6 +140,11 @@ var _ = Describe("SQL XEvents option decoding", func() {
 })
 
 var _ = Describe("SQL XEvents provider execution", func() {
+	It("requires a managed session name when streaming a query profile", func() {
+		err := (sqlXEventProvider{}).Stream(context.New(), query.ProviderRequest{}, func(query.Row) {})
+		Expect(err).To(MatchError(ContainSubstring("sessionName is required")))
+	})
+
 	It("is registered under its catalog type", func() {
 		provider, err := query.GetProvider(SQLXEventProviderType)
 		Expect(err).ToNot(HaveOccurred())

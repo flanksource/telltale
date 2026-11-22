@@ -38,6 +38,9 @@ var filterKinds = map[string]query.ColumnFilterKind{
 	"startedAt": "time", "transactionStartedAt": "time", "elapsedMs": "duration", "transactionMs": "duration",
 	"cpuMs": "duration", "logicalReads": "range", "reads": "range", "writes": "range", "memoryBytes": "range",
 	"openTransactions": "range", "queryId": "exact", "sql": "text",
+	"percentComplete": "range", "estimatedRemainingMs": "duration", "transactionId": "exact", "transactionState": "terms",
+	"rowsReturned": "range", "lastWaitType": "terms", "transactionLogRecords": "range", "transactionLogBytesUsed": "range",
+	"transactionLogBytesReserved": "range", "waitingTaskCount": "range", "longestTaskWaitType": "terms", "longestTaskWaitMs": "duration",
 }
 
 var _ = Describe("sql top result schema", func() {

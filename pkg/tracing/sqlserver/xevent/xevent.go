@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/flanksource/clicky/rpc"
 	"github.com/flanksource/commons/logger"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/sqlserver/xeprovider"
@@ -99,6 +101,13 @@ func (events[P]) Params() P {
 
 func (events[P]) ConnectionTypes() []string { return []string{models.ConnectionTypeSQLServer} }
 
+func (events[P]) DescribeSchema(args *rpc.OpenAPISchema) {
+	if name := args.Properties["sessionName"]; name != nil {
+		name.Title = "Session name"
+		name.Description = "Base name of the managed Extended Events session. Defaults to telltale_<db>_<date> using the connection database and UTC time. Telltale appends a unique suffix."
+	}
+}
+
 // Schema follows a capture's stream while it runs, and searches the text a
 // reader remembers of a statement rather than a column.
 func (events[P]) Schema() recordresults.ResultType[xesession.EventRow] {
@@ -122,13 +131,23 @@ func (e events[P]) Prepare(ctx dbcontext.Context, params P, records tracing.Emit
 		return ctx, nil, err
 	}
 	create, drain := options.Create, options.Drain
-	if len(create.Databases) == 0 {
+	generateName := create.Session == "" && create.Name == ""
+	if len(create.Databases) == 0 || generateName {
 		database, err := e.capture.CurrentDatabase(ctx, db)
 		if err != nil {
 			releaseDB()
-			return ctx, nil, err
+			return ctx, nil, fmt.Errorf("resolve connection database: %w", err)
 		}
-		create.Databases = []string{database}
+		if strings.TrimSpace(database) == "" {
+			releaseDB()
+			return ctx, nil, errors.New("resolve connection database: DB_NAME() named no database")
+		}
+		if len(create.Databases) == 0 {
+			create.Databases = []string{database}
+		}
+		if generateName {
+			create.Name = xeprovider.DefaultSessionName(database, time.Now())
+		}
 	}
 	create.Filter = create.DrainFilter()
 	session, opened, err := e.capture.NewSession(ctx, db, create)
