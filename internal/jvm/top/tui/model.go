@@ -105,6 +105,7 @@ func (m Model) key(key tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	if m.inspection != nil {
+		m.inspection.SetSize(m.width, max(0, m.height-2))
 		switch name {
 		case "q":
 			return m, tea.Quit

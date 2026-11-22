@@ -9,10 +9,13 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/flanksource/clicky"
 	"github.com/flanksource/clicky/tui/table"
 	"github.com/flanksource/commons-db/recordstore/sampleframe"
 	"github.com/flanksource/telltale/pkg/traces/read"
 	"github.com/flanksource/telltale/pkg/tracing"
+	tracehttp "github.com/flanksource/telltale/pkg/tracing/http"
+	"github.com/flanksource/telltale/pkg/tracing/httptop"
 )
 
 type sampledTab struct {
@@ -72,6 +75,16 @@ func (t *sampledTab) receive(result pageMsg) error {
 	}
 	if err := t.table.Set(result.top.Display, ids); err != nil {
 		return err
+	}
+	if t.ref.Kind == httptop.Kind {
+		for i, row := range result.top.Display.Rows {
+			direction, _ := result.top.Rows[i]["direction"].(string)
+			arrow := tracehttp.DirectionArrow(tracehttp.Direction(direction))
+			if cell, ok := row["direction"]; ok && arrow != "" {
+				cell.Textable = clicky.Text(arrow)
+				row["direction"] = cell
+			}
+		}
 	}
 	t.result, t.frames = result.top, result.frames
 	if t.linked && result.top.Count == 0 {
@@ -266,7 +279,8 @@ func (m Model) sampleView() tea.View {
 	if s.help {
 		lines = append(lines, "↑↓ move / scroll detail · enter inspect (freezes sample) · b blocker", "/ search · f native filter: column=expression · s sort · S reverse", "m metric · o source · c capture · p/n previous/next sample", "space pause/resume · h history · r resume live · q quit · ? close help")
 	} else {
-		lines = append(lines, strings.Split(s.table.View(width, max(1, height-len(lines)-1)), "\n")...)
+		s.table.SetSize(width, max(1, height-len(lines)-1))
+		lines = append(lines, strings.Split(s.table.View(), "\n")...)
 	}
 	for len(lines) < height-1 {
 		lines = append(lines, "")

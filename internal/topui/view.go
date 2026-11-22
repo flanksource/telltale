@@ -37,13 +37,17 @@ func (m Model) render() string {
 		return "Reading process groups…"
 	}
 	if m.inspection != nil {
-		return "Recorded process detail · paused\n" + m.inspection.View(m.width, max(1, m.height-2)) + "\n↑↓ scroll · esc close · space resume live"
+		m.inspection.SetSize(m.width, max(1, m.height-2))
+		return "Recorded process detail · paused\n" + m.inspection.View() + "\n↑↓ scroll · esc close · space resume live"
 	}
 	if m.help {
 		return "Process Top\n↑↓ select · ←→ fold · enter list processes\ns sort · S reverse · / filter · b group\nd inspect and freeze · P pause/resume\nf process pane · x terminate · r nice (confirmation required)\n? close help · q quit"
 	}
 	lines := m.header()
-	lines = append(lines, terminalui.PadLines(m.processTable().View(m.width, max(1, m.bodyHeight()+1)), max(1, m.bodyHeight()+1))...)
+	height := max(1, m.bodyHeight()+1)
+	processes := m.processTable()
+	processes.SetSize(m.width, height)
+	lines = append(lines, terminalui.PadLines(processes.View(), height)...)
 	lines = append(lines, m.renderDetail()...)
 	lines = append(lines, m.footer())
 	return strings.Join(lines[:min(len(lines), m.height)], "\n")
