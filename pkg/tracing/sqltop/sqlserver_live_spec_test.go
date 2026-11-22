@@ -81,5 +81,12 @@ var _ = Describe("sql top on a live SQL Server", func() {
 		Expect(blocker.State).To(Equal("sleeping"))
 		Expect(blocker.OpenTransactions).To(BeNumerically(">=", 1))
 		Expect(blocker.TransactionMs).To(BeNumerically(">", 0))
+		Expect(out.frames).To(HaveLen(2))
+		Expect(out.frames[1].Summary["serverMetrics"]).To(And(
+			HaveKeyWithValue(cpuPercent, And(BeNumerically(">=", 0), BeNumerically("<=", 100))),
+			HaveKeyWithValue(pageLifeSeconds, BeNumerically(">=", 0)),
+			HaveKeyWithValue(readIOPS, BeNumerically(">=", 0)),
+			HaveKeyWithValue(writeIOPS, BeNumerically(">=", 0)),
+		))
 	})
 })

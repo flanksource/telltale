@@ -157,6 +157,6 @@ var _ = Describe("sql top capture", func() {
 			return snapshot{}, errors.New("login failed")
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(c.poll(context.Background(), &recorder{})).To(MatchError("sample sqlserver requests: login failed"))
+		Expect(c.poll(context.Background(), &recorder{})).To(MatchError("sample sqlserver: login failed"))
 	})
 })

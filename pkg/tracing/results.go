@@ -3,9 +3,11 @@ package tracing
 import (
 	"context"
 	"fmt"
+
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
+	"github.com/flanksource/telltale/pkg/otlp/profilepublication"
 )
 
 type captureBackendKey struct{}
@@ -77,7 +79,7 @@ func (k *Kinds) CaptureRefs(ref TraceRef) []TraceRef {
 	return refs
 }
 
-// Schemas includes each kind's primary table and its named result tables.
+// Schemas declares the tables needed by RegisterResultTypes before opening a shared backend.
 func (k *Kinds) Schemas() ([]recordstore.KindSchema, error) {
 	k.mu.RLock()
 	defer k.mu.RUnlock()
@@ -97,5 +99,9 @@ func (k *Kinds) Schemas() ([]recordstore.KindSchema, error) {
 			schemas = append(schemas, schema)
 		}
 	}
-	return schemas, nil
+	identity, err := profilepublication.ResultType().KindSchema()
+	if err != nil {
+		return nil, err
+	}
+	return append(schemas, identity), nil
 }
