@@ -183,6 +183,7 @@ func (m Model) pressed(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	}
 	if m.inspection != nil {
+		m.inspection.SetSize(m.width, max(1, m.height-2))
 		switch msg.Keystroke() {
 		case "q":
 			return m, tea.Quit

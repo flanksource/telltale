@@ -19,11 +19,13 @@ func (m Model) View() tea.View {
 	footer := m.footer()
 	bodyHeight := max(0, m.height-min(len(header), max(1, m.height-3))-1)
 	header = header[:min(len(header), max(1, m.height-3))]
-	body := m.table.View(m.width, bodyHeight)
+	m.table.SetSize(m.width, bodyHeight)
+	body := m.table.View()
 	if m.inspection != nil {
 		header = []string{terminalui.Title.Render("JVM thread stack · paused")}
 		bodyHeight = max(0, m.height-2)
-		body = m.inspection.View(m.width, bodyHeight)
+		m.inspection.SetSize(m.width, bodyHeight)
+		body = m.inspection.View()
 	}
 	if m.help {
 		header = []string{terminalui.Title.Render("JVM Top help")}
