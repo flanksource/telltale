@@ -63,7 +63,7 @@ func routes(options HandlerOptions, ui http.Handler) (http.Handler, error) {
 	}
 	api := http.NewServeMux()
 	rpc.NewSwaggerServer(&rpc.ServeConfig{Version: options.Version}, options.Root,
-		&rpc.OpenAPIConfig{Title: "Telltale", Version: options.Version, Extensions: []func(*rpc.OpenAPISpec){addRulesPaths, connections.AddConnectionsOpenAPI, addConnectionPaths, addOtelPaths, addReceiverPath, addFeedPaths, addJVMSnapshotPath, addJVMTopPath}}).RegisterRoutes(route.NewRouter(api))
+		&rpc.OpenAPIConfig{Title: "Telltale", Version: options.Version, Extensions: []func(*rpc.OpenAPISpec){addRulesPaths, connections.AddConnectionsOpenAPI, addConnectionPaths, addOtelPaths, addReceiverPath, addFeedPaths, addJVMSnapshotPath, addJVMTopPath, addTopPaths}}).RegisterRoutes(route.NewRouter(api))
 	root := http.NewServeMux()
 	if options.OTLP == nil {
 		options.OTLP = http.NotFoundHandler()

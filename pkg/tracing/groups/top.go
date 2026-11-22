@@ -101,6 +101,8 @@ type TopOptions struct {
 	// Net reads each process's network bytes with nettop, every Interval.
 	Net      bool
 	Interval time.Duration
+	// OnDemand uses per-tick probes that suit CPU-budgeted live sampling.
+	OnDemand bool
 	// GavelCache is where gavel processes publish their status; defaults to
 	// gavel's user cache directory.
 	GavelCache string
@@ -145,7 +147,7 @@ func NewTop(ctx context.Context, sampler *process.Sampler, options TopOptions) (
 	}
 	top := &Top{sampler: sampler, options: options, rates: NewRates(), contexts: newContexts(), brew: BrewPrefixes(), self: os.Getpid(),
 		gavel: newGavelStatuses(options.GavelCache)}
-	if options.Net {
+	if options.Net && !options.OnDemand {
 		monitor, err := StartNetMonitor(ctx, options.Interval)
 		if err != nil {
 			return nil, err
@@ -308,7 +310,7 @@ func (t *Top) read(ctx context.Context, classified []Group, at time.Time) (map[s
 		t.io = nil
 		return readings, nil, nil
 	}
-	if err := readMemory(ctx, classified, readings); err != nil {
+	if err := readMemory(ctx, classified, readings, t.options.OnDemand); err != nil {
 		return nil, nil, err
 	}
 	pids := make([]int, 0, len(measured))
@@ -337,6 +339,11 @@ func (t *Top) read(ctx context.Context, classified []Group, at time.Time) (map[s
 		if network, err = t.net.Counters(); err != nil {
 			return nil, nil, err
 		}
+	} else if t.options.Net {
+		var err error
+		if network, err = sampleNettop(ctx); err != nil {
+			return nil, nil, err
+		}
 	}
 	for _, p := range snapshot.All() {
 		key := keyOf(process.Observed{Process: p})
@@ -345,9 +352,8 @@ func (t *Top) read(ctx context.Context, classified []Group, at time.Time) (map[s
 		if p.IO != nil {
 			counters.DiskRead, counters.DiskWrite = &p.IO.DiskReadBytes, &p.IO.DiskWriteBytes
 		}
-		if network != nil {
-			// nettop lists only the processes with flows: one it does not list sent nothing.
-			sent := network[p.PID]
+		sent, listed := network[p.PID]
+		if listed || (network != nil && t.net != nil) {
 			counters.NetRx, counters.NetTx = &sent.Rx, &sent.Tx
 		}
 		reading.PerSecond = t.rates.Observe(key, at, counters)

@@ -8,7 +8,7 @@ import { appendFrame, cpuTrend, viewGroups } from "./groups";
 import { HostStrip } from "./HostStrip";
 import { RecordedGroups } from "./RecordedGroups";
 import { useTopState, type TopState, type TopTab } from "./useTopState";
-import { RefreshControl, useRefreshInterval } from "../monitoring/RefreshControl";
+import { RefreshControl, refreshAt, useRefreshInterval } from "../monitoring/RefreshControl";
 import { RulesPanel } from "../rules/RulesPanel";
 import { EventsPanel } from "../rules/EventsPanel";
 
@@ -34,8 +34,10 @@ function useLiveFrame({ showOther, net }: TopState, enabled: boolean) {
     queryFn: ({ signal }) => fetchTopFrame({ all: showOther, net }, signal),
     enabled,
     retry: false,
+    refetchOnWindowFocus: interval !== false,
+    refetchOnReconnect: interval !== false,
     // A refused reading is not polled again until Retry: the server would refuse it every second.
-    refetchInterval: current => current.state.status === "error" ? false : interval,
+    refetchInterval: current => current.state.status === "error" ? false : refreshAt(interval, current.state.data?.polling?.minimumIntervalMs),
   });
 }
 
@@ -50,7 +52,7 @@ function LiveGroups({ state, setState, query }: TabProps & { query: ReturnType<t
       <GroupsFilterBar view={state} onChange={setState}>
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={state.net} onChange={event => setState({ net: event.target.checked })} />
-          Network bytes (nettop, costly)
+          Network bytes (active flows)
         </label>
       </GroupsFilterBar>
       {query.isError && (
@@ -116,7 +118,7 @@ export default function TopPage() {
       {live && query.data?.host && <HostStrip host={query.data.host} overhead={query.data.overhead} />}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Tabs tabs={TABS} value={state.tab} onChange={tab => setState({ tab: tab as TopTab })} />
-        <RefreshControl />
+        <RefreshControl minimumIntervalMs={live ? query.data?.polling?.minimumIntervalMs : undefined} />
       </div>
       {live && <LiveGroups state={state} setState={setState} query={query} />}
       {state.tab === "recorded" && <RecordedRuns state={state} setState={setState} />}

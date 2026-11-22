@@ -1,6 +1,7 @@
 package groups
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -10,6 +11,22 @@ import (
 
 	"github.com/creack/pty"
 )
+
+func sampleNettop(ctx context.Context) (map[int]NetBytes, error) {
+	cmd := exec.CommandContext(ctx, "nettop", "-P", "-n", "-L", "1", "-x", "-J", "bytes_in,bytes_out")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("sample nettop: %w", err)
+	}
+	var counters map[int]NetBytes
+	if err := ParseNettop(bytes.NewReader(output), func(block map[int]NetBytes) { counters = block }); err != nil {
+		return nil, err
+	}
+	if counters == nil {
+		return nil, fmt.Errorf("nettop returned no network sample")
+	}
+	return counters, nil
+}
 
 // startNettop logs each process's network byte deltas every interval until
 // ctx is done. nettop holds back its output on a pipe until it exits, so it

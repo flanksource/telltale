@@ -8,7 +8,21 @@ import (
 	"strings"
 )
 
-func readMemory(ctx context.Context, classified []Group, readings map[string]Reading) error {
+func readMemory(ctx context.Context, classified []Group, readings map[string]Reading, onDemand bool) error {
+	if onDemand {
+		for _, group := range classified {
+			for _, member := range group.Members {
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				key := keyOf(member)
+				reading := readings[key]
+				readCompressedMemory(member.PID, &reading)
+				readings[key] = reading
+			}
+		}
+		return nil
+	}
 	var stdout, stderr bytes.Buffer
 	// macOS accounts compressed and swapped-out pages together in CMPRS;
 	// it does not expose a separate per-process disk-swap total.

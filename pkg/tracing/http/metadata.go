@@ -3,51 +3,25 @@ package http
 import (
 	"encoding/json"
 	"fmt"
-	"path"
 	"time"
 
-	"github.com/flanksource/commons/properties"
 	"github.com/flanksource/telltale/pkg/agentclient"
 	"github.com/flanksource/telltale/pkg/tracing/seam"
+	"github.com/flanksource/telltale/sdk/protocol"
 )
 
-type Direction string
+type Direction = protocol.HTTPDirection
 
 const (
-	Incoming Direction = "incoming"
-	Outgoing Direction = "outgoing"
-	Both     Direction = "both"
+	Incoming = protocol.HTTPIncoming
+	Outgoing = protocol.HTTPOutgoing
+	Both     = protocol.HTTPBoth
 )
 
-func (Direction) JSONSchema() map[string]any {
-	return map[string]any{"type": "string", "enum": []string{string(Incoming), string(Outgoing), string(Both)}, "default": string(Both)}
-}
-
-type Selection struct {
-	Direction Direction `json:"direction,omitempty" clicky:"title=Direction,desc=Incoming requests outgoing clients or both"`
-	Hosts     []string  `json:"hosts,omitempty" clicky:"title=Hosts,desc=Host globs to record"`
-	Paths     []string  `json:"paths,omitempty" clicky:"title=Paths,desc=URL path globs to record"`
-}
-
-func (s Selection) Validate() error {
-	if s.Direction != "" && s.Direction != Incoming && s.Direction != Outgoing && s.Direction != Both {
-		return fmt.Errorf("direction %q must be incoming, outgoing or both", s.Direction)
-	}
-	for _, patterns := range []struct {
-		name   string
-		values []string
-	}{{"hosts", s.Hosts}, {"paths", s.Paths}} {
-		for _, pattern := range patterns.values {
-			if _, err := path.Match(pattern, ""); err != nil || pattern == "" {
-				return fmt.Errorf("%s contains an invalid glob %q", patterns.name, pattern)
-			}
-		}
-	}
-	return nil
-}
+type Selection = protocol.HTTPSelection
 
 type Metadata struct {
-	Direction Direction `json:"direction,omitempty" filter:"terms"`
+	Direction Direction `json:"direction,omitempty" pretty:"label=Direction" filter:"terms"`
 	RequestID string    `json:"requestId,omitempty"`
 	Route     string    `json:"route,omitempty" filter:"text"`
 	Handler   string    `json:"handler,omitempty" filter:"text"`
@@ -57,17 +31,6 @@ type Metadata struct {
 	TraceID   string    `json:"traceId,omitempty"`
 	SpanID    string    `json:"spanId,omitempty"`
 	Sampled   *bool     `json:"sampled,omitempty"`
-}
-
-func bodyLimit(value string) (int64, error) {
-	if value == "" {
-		return 256 << 10, nil
-	}
-	limit, err := properties.ParseBytes(value)
-	if err != nil || limit < 0 || limit > 4<<20 {
-		return 0, fmt.Errorf("bodies %q must be between zero and 4MiB", value)
-	}
-	return limit, nil
 }
 
 func DecodeRecord(raw json.RawMessage) (Exchange, error) {

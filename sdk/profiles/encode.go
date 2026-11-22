@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"time"
 
-	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/google/uuid"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/pprofile"
@@ -15,9 +15,12 @@ import (
 type dictionary struct {
 	value   pprofile.ProfilesDictionary
 	strings map[string]int32
+	mask    func(string, any) any
 }
 
-func newDictionary(value pprofile.ProfilesDictionary) *dictionary {
+func NewProfileData() pprofile.Profiles {
+	profile := pprofile.NewProfiles()
+	value := profile.Dictionary()
 	value.StringTable().Append("")
 	value.MappingTable().AppendEmpty()
 	value.LocationTable().AppendEmpty()
@@ -25,7 +28,7 @@ func newDictionary(value pprofile.ProfilesDictionary) *dictionary {
 	value.LinkTable().AppendEmpty()
 	value.AttributeTable().AppendEmpty()
 	value.StackTable().AppendEmpty()
-	return &dictionary{value: value, strings: map[string]int32{"": 0}}
+	return profile
 }
 
 func (d *dictionary) text(value string) int32 {
@@ -47,7 +50,7 @@ func (d *dictionary) attributes(values map[string]any, indices pcommon.Int32Slic
 	for _, key := range keys {
 		attribute := d.value.AttributeTable().AppendEmpty()
 		attribute.SetKeyStrindex(d.text(key))
-		if err := attribute.Value().FromRaw(tracing.MaskAttribute(key, values[key])); err != nil {
+		if err := attribute.Value().FromRaw(d.mask(key, values[key])); err != nil {
 			return fmt.Errorf("profile attribute %s: %w", key, err)
 		}
 		indices.Append(int32(d.value.AttributeTable().Len() - 1))
@@ -56,7 +59,7 @@ func (d *dictionary) attributes(values map[string]any, indices pcommon.Int32Slic
 }
 
 func metadata(s Snapshot) map[string]any {
-	attributes := map[string]any{"telltale.schema.version": conventionVersion, "telltale.kind": s.Kind, "telltale.capture.id": s.CaptureID,
+	attributes := map[string]any{"telltale.schema.version": ConventionVersion, "telltale.kind": s.Kind, "telltale.capture.id": s.CaptureID,
 		"telltale.source.instance": s.Source, "telltale.snapshot.sequence": s.Sequence, "telltale.snapshot.observed": int64(s.Observed),
 		"telltale.snapshot.limit": int64(s.Limit), "telltale.snapshot.dropped": int64(s.Dropped), "telltale.snapshot.complete": s.Complete,
 		"telltale.checkpoint.id": s.Checkpoint}
@@ -66,8 +69,8 @@ func metadata(s Snapshot) map[string]any {
 	return attributes
 }
 
-func validate(s Snapshot) error {
-	if _, ok := sampleTypes[s.Kind]; !ok {
+func Validate(s Snapshot) error {
+	if SampleType(s.Kind) == "" {
 		return fmt.Errorf("unsupported top profile kind %q", s.Kind)
 	}
 	if s.CaptureID == "" || s.Source == "" || s.Sequence <= 0 {
@@ -87,7 +90,7 @@ func validate(s Snapshot) error {
 	}
 	seen := map[string]bool{}
 	for _, row := range s.Rows {
-		if _, exists := row.Attributes[sampleKindAttribute]; exists {
+		if _, exists := row.Attributes[SampleKindAttribute]; exists {
 			return fmt.Errorf("sample kind is reserved for snapshot control")
 		}
 		if row.OperationID == "" || seen[row.OperationID] || row.ElapsedNS < 0 || row.SampledAt.Before(s.StartedAt) || row.SampledAt.After(s.CompletedAt) {
@@ -98,11 +101,11 @@ func validate(s Snapshot) error {
 	return nil
 }
 
-func Encode(snapshots []Snapshot) ([]byte, error) {
-	value := pprofile.NewProfiles()
-	dictionary := newDictionary(value.Dictionary())
+func Encode(snapshots []Snapshot, mask func(string, any) any) ([]byte, error) {
+	value := NewProfileData()
+	dictionary := &dictionary{value: value.Dictionary(), strings: map[string]int32{"": 0}, mask: mask}
 	for _, snapshot := range snapshots {
-		if err := validate(snapshot); err != nil {
+		if err := Validate(snapshot); err != nil {
 			return nil, err
 		}
 		if err := encodeSnapshot(value, dictionary, snapshot); err != nil {
@@ -116,20 +119,20 @@ func encodeSnapshot(value pprofile.Profiles, d *dictionary, s Snapshot) error {
 	resource := value.ResourceProfiles().AppendEmpty()
 	masked := map[string]any{}
 	for key, item := range s.Resource {
-		masked[key] = tracing.MaskAttribute(key, item)
+		masked[key] = d.mask(key, item)
 	}
 	if err := resource.Resource().Attributes().FromRaw(masked); err != nil {
 		return err
 	}
 	scope := resource.ScopeProfiles().AppendEmpty()
 	scope.Scope().SetName(Scope)
-	scope.Scope().SetVersion("1")
+	scope.Scope().SetVersion(DevelopmentVersion)
 	profile := scope.Profiles().AppendEmpty()
 	id, _ := uuid.Parse(s.ProfileID)
 	profile.SetProfileID(pprofile.ProfileID(id))
 	profile.SetTime(pcommon.NewTimestampFromTime(s.StartedAt))
 	profile.SetDurationNano(uint64(s.CompletedAt.Sub(s.StartedAt)))
-	profile.SampleType().SetTypeStrindex(d.text(sampleTypes[s.Kind]))
+	profile.SampleType().SetTypeStrindex(d.text(SampleType(s.Kind)))
 	profile.SampleType().SetUnitStrindex(d.text("ns"))
 	if err := d.attributes(metadata(s), profile.AttributeIndices()); err != nil {
 		return err
@@ -142,6 +145,18 @@ func encodeSnapshot(value pprofile.Profiles, d *dictionary, s Snapshot) error {
 			return err
 		}
 	}
+	return nil
+}
+
+// WORKAROUND(collector-empty-profiles): Carry zero-operation observations as explicit control samples because released Collectors discard zero-sample profiles.
+// Correct fix: Collector must preserve metadata-only profiles through receiving, item-sized queues, merging and splitting.
+// Ref: https://github.com/open-telemetry/opentelemetry-collector/blob/v0.165.0/receiver/otlpreceiver/internal/profiles/otlp.go#L36-L38; approved by user 2026-11-15.
+func encodeControl(d *dictionary, sample pprofile.Sample, observedAt time.Time) error {
+	if err := d.attributes(map[string]any{SampleKindAttribute: SnapshotControlKind}, sample.AttributeIndices()); err != nil {
+		return err
+	}
+	sample.Values().Append(0)
+	sample.TimestampsUnixNano().Append(uint64(observedAt.UnixNano()))
 	return nil
 }
 

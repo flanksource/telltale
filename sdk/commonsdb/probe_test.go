@@ -13,6 +13,8 @@ import (
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/observability"
 	"github.com/flanksource/commons/har"
+	telltale "github.com/flanksource/telltale/sdk"
+	"github.com/flanksource/telltale/sdk/protocol"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -47,8 +49,9 @@ var _ = Describe("commons-db probes", func() {
 		resp, err := client.Get(server.URL)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resp.Body.Close()).To(Succeed())
-		record := (<-out.records).(HTTPEntry)
+		record := (<-out.records).(telltale.HTTPExchange)
 		Expect(record.Feature).To(Equal("orders"))
+		Expect(record.Direction).To(Equal(protocol.HTTPOutgoing))
 		Expect(record.Entry).To(BeAssignableToTypeOf(har.Entry{}))
 		Expect(record.Request.URL).To(Equal(server.URL))
 		Expect(release()).To(Succeed())

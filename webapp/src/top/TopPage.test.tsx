@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunTraces } from "../traces/api";
 import type { Frame, HostUsage } from "./api";
@@ -8,7 +8,11 @@ import TopPage from "./TopPage";
 import groupingFixture from "../../../testdata/top-grouping.json";
 
 beforeEach(() => window.history.replaceState(null, "", "/"));
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.useRealTimers();
+  localStorage.removeItem("telltale.refreshIntervalMs");
+  vi.unstubAllGlobals();
+});
 
 describe("grouping controls", () => {
   it("switches grouping and restores the selected mode from the URL", async () => {
@@ -41,6 +45,24 @@ function renderPage() {
 const cpuOf = (name: RegExp) => within(screen.getByRole("row", { name })).getAllByRole("cell")[2]!.textContent;
 
 describe("live process groups", () => {
+  it("uses the slower of the CPU budget and the selected refresh period", async () => {
+    vi.useFakeTimers();
+    const read = vi.fn(() => Promise.resolve(json({ ...sampleFrame(), polling: { minimumIntervalMs: 8000 } })));
+    vi.stubGlobal("fetch", read);
+    renderPage();
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(screen.getByText("Polling every 8s to limit CPU overhead")).toBeInTheDocument();
+    expect(read).toHaveBeenCalledTimes(1);
+    await act(async () => vi.advanceTimersByTimeAsync(7100));
+    expect(read).toHaveBeenCalledTimes(2);
+    fireEvent.change(screen.getByRole("combobox", { name: "Refresh interval" }), { target: { value: "30000" } });
+    expect(screen.queryByText("Polling every 8s to limit CPU overhead")).not.toBeInTheDocument();
+    await act(async () => vi.advanceTimersByTimeAsync(9000));
+    expect(read).toHaveBeenCalledTimes(2);
+    await act(async () => vi.advanceTimersByTimeAsync(21100));
+    expect(read).toHaveBeenCalledTimes(3);
+  });
+
   it("shows the latest frame as a tree table", async () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(json(sampleFrame()))));
     renderPage();
@@ -89,7 +111,7 @@ describe("live process groups", () => {
     vi.stubGlobal("fetch", fetchMock);
     renderPage();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/top?all=false&net=false", expect.anything()));
-    fireEvent.click(screen.getByRole("checkbox", { name: "Network bytes (nettop, costly)" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Network bytes (active flows)" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/top?all=false&net=true", expect.anything()));
     fireEvent.click(screen.getByRole("checkbox", { name: "Show other processes" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/top?all=true&net=true", expect.anything()));
@@ -234,7 +256,7 @@ describe("host usage", () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(json({ ...sampleFrame(), host, overhead: { cpuPercent: 4.25, tickMillis: 212.4 } }))));
     renderPage();
     const strip = await screen.findByRole("region", { name: "Host" });
-    expect(stat(strip, "telltale overhead")).toHaveTextContent("telltale overhead4.3%CPU · 212 ms/tick");
+    expect(stat(strip, "telltale overhead")).toHaveTextContent("telltale overhead4.3%CPU over 60s · 212 ms/tick");
   });
 
   it("shows dashes, not zero, for the CPU shares of the first tick", async () => {
