@@ -51,6 +51,9 @@ type session struct {
 	probeName   string
 	probe       Probe
 	conn        *protocol.Conn
+	resource    map[string]string
+	ready       chan struct{}
+	httpTop     *httpTopCapture
 	cancel      context.CancelFunc
 	disarm      func() error
 	ring        chan json.RawMessage
@@ -113,6 +116,8 @@ func (a *Agent) arm(conn *protocol.Conn, sessions *sessionMap, raw json.RawMessa
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &session{id: request.Session, probeName: request.Probe, probe: probe, conn: conn, cancel: cancel, ring: make(chan json.RawMessage, 256), done: make(chan struct{}), closed: make(chan struct{}), stopRequest: make(chan string, 1), limits: request.Limits, limit: make(chan string, 1), warnings: make(chan string, 16)}
+	s.resource = a.endpoint.Resource
+	s.ready = make(chan struct{})
 	release, err := a.install(probe)
 	if err != nil {
 		cancel()
@@ -148,6 +153,7 @@ func (a *Agent) arm(conn *protocol.Conn, sessions *sessionMap, raw json.RawMessa
 		s.stop("")
 		return
 	}
+	close(s.ready)
 	go s.sendUntilEnded(request.StopAt)
 }
 

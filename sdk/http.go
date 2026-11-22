@@ -3,7 +3,9 @@ package telltale
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/url"
 	"sync"
 
 	"github.com/flanksource/commons/har"
@@ -11,6 +13,62 @@ import (
 )
 
 type httpProbe struct{}
+
+type HTTPExchange struct {
+	har.Entry
+	Direction protocol.HTTPDirection `json:"direction"`
+	Feature   string                 `json:"feature,omitempty"`
+}
+
+type httpSubscription struct {
+	Sink
+	selection protocol.HTTPSelection
+	bodies    int64
+}
+
+var httpSubscriptions = struct {
+	sync.RWMutex
+	active map[*httpSubscription]struct{}
+}{active: make(map[*httpSubscription]struct{})}
+
+func (s *httpSubscription) TryEmit(value any) bool {
+	exchange, ok := value.(HTTPExchange)
+	if !ok {
+		s.Warn(fmt.Sprintf("unexpected HTTP record %T", value))
+		return false
+	}
+	target, err := url.Parse(exchange.Request.URL)
+	if err != nil {
+		s.Warn("HTTP capture received an invalid URL")
+		return false
+	}
+	if !s.selection.Matches(exchange.Direction, target) {
+		return true
+	}
+	if s.bodies == 0 {
+		exchange.Request.PostData = nil
+		exchange.Response.Content.Text = ""
+	} else {
+		if post := exchange.Request.PostData; post != nil && int64(len(post.Text)) > s.bodies {
+			trimmed := *post
+			trimmed.Text = trimmed.Text[:s.bodies]
+			exchange.Request.PostData = &trimmed
+		}
+		if content := &exchange.Response.Content; int64(len(content.Text)) > s.bodies {
+			content.Text = content.Text[:s.bodies]
+			content.Truncated = true
+		}
+	}
+	return s.Sink.TryEmit(exchange)
+}
+
+func recordHTTP(entry har.Entry, direction protocol.HTTPDirection) {
+	httpSubscriptions.RLock()
+	defer httpSubscriptions.RUnlock()
+	for subscription := range httpSubscriptions.active {
+		subscription.TryEmit(HTTPExchange{Entry: entry, Direction: direction})
+	}
+}
 
 var httpObserver struct {
 	sync.RWMutex
@@ -37,13 +95,40 @@ func (httpProbe) Spec() protocol.ProbeSpec {
 }
 
 func (httpProbe) Arm(ctx context.Context, params json.RawMessage, sink Sink) (func() error, error) {
+	var options struct {
+		protocol.HTTPSelection
+		Bodies string `json:"bodies"`
+	}
+	if err := json.Unmarshal(params, &options); err != nil {
+		return nil, fmt.Errorf("HTTP capture options: %w", err)
+	}
+	if err := options.Validate(); err != nil {
+		return nil, err
+	}
+	bodies, err := protocol.HTTPBodyLimit(options.Bodies)
+	if err != nil {
+		return nil, err
+	}
+	subscription := &httpSubscription{Sink: sink, selection: options.HTTPSelection, bodies: bodies}
 	httpObserver.RLock()
 	arm := httpObserver.arm
 	httpObserver.RUnlock()
-	if arm != nil {
-		return arm(ctx, params, sink)
+	release := func() error { return nil }
+	if arm != nil && options.Direction != protocol.HTTPIncoming {
+		release, err = arm(ctx, params, subscription)
+		if err != nil {
+			return nil, err
+		}
 	}
-	return func() error { return nil }, nil
+	httpSubscriptions.Lock()
+	httpSubscriptions.active[subscription] = struct{}{}
+	httpSubscriptions.Unlock()
+	return func() error {
+		httpSubscriptions.Lock()
+		delete(httpSubscriptions.active, subscription)
+		httpSubscriptions.Unlock()
+		return release()
+	}, nil
 }
 
 type httpTransport struct {
@@ -53,10 +138,21 @@ type httpTransport struct {
 }
 
 func (t httpTransport) RoundTrip(request *http.Request) (*http.Response, error) {
-	if !Armed("http") {
-		return t.next.RoundTrip(request)
+	transport := t.next
+	if Armed("http") {
+		transport = t.capture
 	}
-	return t.capture.RoundTrip(request)
+	if !Armed(httpTopKind) {
+		return transport.RoundTrip(request)
+	}
+	finish := activeHTTPRequests.begin(request, protocol.HTTPOutgoing)
+	response, err := transport.RoundTrip(request)
+	if err != nil || response == nil || response.Body == nil || response.Body == http.NoBody || response.StatusCode == http.StatusSwitchingProtocols {
+		finish()
+	} else {
+		response.Body = activeHTTPBody{ReadCloser: response.Body, finish: finish}
+	}
+	return response, err
 }
 
 // Unwrap implements commons http.TransportWrapper so clients can reconfigure
@@ -80,7 +176,7 @@ func Transport(next http.RoundTripper) http.RoundTripper {
 	config := har.DefaultConfig()
 	config.CaptureSensitive = false
 	collector := har.NewCollectorWithLifecycle(config, nil, func(entry *har.Entry) error {
-		Record(context.Background(), "http", entry)
+		recordHTTP(*entry, protocol.HTTPOutgoing)
 		return nil
 	})
 	wrap := collector.Middleware()

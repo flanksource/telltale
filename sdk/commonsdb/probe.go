@@ -15,11 +15,6 @@ import (
 	"github.com/flanksource/telltale/sdk/protocol"
 )
 
-type HTTPEntry struct {
-	har.Entry
-	Feature string `json:"feature"`
-}
-
 type sqlProbe struct{}
 
 func init() {
@@ -44,7 +39,7 @@ func armHTTP(ctx context.Context, raw json.RawMessage, sink telltale.Sink) (func
 		config := dbcontext.NewContext(ctx).HARConfig(feature)
 		config.CaptureSensitive = false
 		collector := har.NewCollectorWithLifecycle(config, nil, func(entry *har.Entry) error {
-			sink.TryEmit(HTTPEntry{Entry: *entry, Feature: feature})
+			sink.TryEmit(telltale.HTTPExchange{Entry: *entry, Direction: protocol.HTTPOutgoing, Feature: feature})
 			return nil
 		})
 		releases = append(releases, observability.ObserveHTTP(feature, collector))
