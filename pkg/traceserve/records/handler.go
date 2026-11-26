@@ -26,13 +26,27 @@ func Handler(dataDir string) http.Handler {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		liveTop := false
+		if values.Get("view") == "top" && values.Has("follow") {
+			liveTop, err = strconv.ParseBool(values.Get("follow"))
+			if err != nil || len(values["follow"]) != 1 || liveTop && (values.Get("cursor") != "" || values.Get("frame") != "" || values.Get("format") != "") {
+				http.Error(w, "Top follow requires an unpinned view and no page cursor or format", http.StatusBadRequest)
+				return
+			}
+			values.Del("follow")
+		}
 		scope, q, aggregate, err := read.ParseRequest(dataDir, values)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		scope.Run = r.PathValue("run")
-		selected, err := selectRun(r.PathValue("kind"), scope)
+		var selected *read.Selection
+		if liveTop {
+			selected, err = read.Resolve(r.PathValue("kind"), scope)
+		} else {
+			selected, err = selectRun(r.PathValue("kind"), scope)
+		}
 		if err != nil {
 			status := http.StatusBadRequest
 			if errors.Is(err, os.ErrNotExist) {
@@ -56,6 +70,10 @@ func Handler(dataDir string) http.Handler {
 		}
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if liveTop {
+			streamTop(w, r, refs, q)
 			return
 		}
 		if aggregate.Follow {

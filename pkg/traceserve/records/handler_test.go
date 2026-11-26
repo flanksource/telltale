@@ -19,6 +19,7 @@ import (
 	"github.com/flanksource/commons-db/recordstore/recordresults"
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/pkg/traces"
+	"github.com/flanksource/telltale/pkg/traces/read"
 	"github.com/flanksource/telltale/pkg/traceserve/records"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/target"
@@ -29,6 +30,7 @@ import (
 func TestRecords(t *testing.T) { RegisterFailHandler(Fail); RunSpecs(t, "HTTP records") }
 
 const fixtureKind = "http_records_fixture"
+const topFixtureKind = "http_top_fixture"
 
 type reading struct {
 	At    time.Time `json:"at"`
@@ -62,6 +64,7 @@ func (f *feed) Handle(ctx dbcontext.Context, _ params, emit tracing.Emitter[read
 
 var feeding *feed
 var _ = BeforeSuite(func() {
+	Expect(registerTopFixture()).To(Succeed())
 	Expect(traces.Register(traces.Registration{Name: fixtureKind, Title: "HTTP fixture", Summary: "Controlled records", Seams: []target.Seam{target.Self}, DefaultSeam: target.Self, New: func(traces.KindDeps) tracing.TracePlugin {
 		return tracing.NewHandler[params, reading](feeding, tracing.Capabilities{Live: true}, "self")
 	}})).To(Succeed())
@@ -165,6 +168,32 @@ var _ = Describe("run records route", func() {
 		body, err := io.ReadAll(response.Body)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(string(body)).To(Equal("event: end\ndata: {}\n\n"))
+	})
+	It("seeds a bounded tail and follows records committed after its page", func() {
+		appendRows(1, 2, 3)
+		endpoint := server.URL + "/api/traces/run-http/records"
+		response, err := server.Client().Get(endpoint + "?tail=1&limit=2")
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(response.Body.Close)
+		Expect(response.StatusCode).To(Equal(http.StatusOK))
+		var page struct {
+			Rows   []read.Record `json:"rows"`
+			Resume string        `json:"resume"`
+		}
+		Expect(json.NewDecoder(response.Body).Decode(&page)).To(Succeed())
+		Expect(page.Rows).To(HaveLen(2))
+		Expect([]int64{page.Rows[0].Seq, page.Rows[1].Seq}).To(Equal([]int64{2, 3}))
+		Expect(page.Resume).NotTo(BeEmpty())
+		appendRows(4)
+		_, err = capture.Stop(context.Background())
+		Expect(err).NotTo(HaveOccurred())
+		stream, err := server.Client().Get(endpoint + "?follow=1&resume=" + url.QueryEscape(page.Resume))
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(stream.Body.Close)
+		body, err := io.ReadAll(stream.Body)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(body)).To(ContainSubstring(`"seq":4`))
+		Expect(string(body)).NotTo(ContainSubstring(`"seq":3`))
 	})
 
 	It("serves the unified feed with native payloads and resumable sequence pages", func() {

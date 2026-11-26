@@ -54,11 +54,8 @@ func (sqlXEventProvider) Execute(context.Context, query.ProviderRequest) ([]quer
 // with xetrace.
 type XEventCaptureOptions struct {
 	Session ExistingSession `json:"session,omitempty" clicky:"title=Existing session"`
-	// SessionName names the Extended Events session on the server. Required:
-	// the session is visible in sys.dm_xe_sessions to everyone on the instance,
-	// so what it is called is the profile author's to say, not this package's.
-	// A unique suffix is appended so concurrent captures of one profile do not
-	// collide on the server.
+	// SessionName is the optional base name of a managed session. A unique
+	// suffix keeps concurrent captures from colliding on the server.
 	SessionName string `json:"sessionName,omitempty"`
 
 	// Databases scopes the session by database name; empty uses the
@@ -132,9 +129,6 @@ func (o XEventCaptureOptions) CaptureOptions() (xetrace.CreateOptions, xetrace.D
 	if o.Session != "" && o.Session != xetrace.SystemHealthSession {
 		return create, drain, fmt.Errorf("unsupported existing session %q", o.Session)
 	}
-	if o.Session == "" && strings.TrimSpace(o.SessionName) == "" {
-		return create, drain, fmt.Errorf("sessionName is required: it names the Extended Events session on the server, where it is visible to everyone on the instance")
-	}
 	events, err := xetrace.NormalizeEvents(o.Events)
 	if err != nil {
 		return create, drain, err
@@ -165,7 +159,6 @@ func (o XEventCaptureOptions) CaptureOptions() (xetrace.CreateOptions, xetrace.D
 
 	create = xetrace.CreateOptions{
 		Session:           string(o.Session),
-		Name:              uniqueSessionName(o.SessionName),
 		Databases:         o.Databases,
 		Users:             o.Users,
 		Apps:              o.Apps,
@@ -176,15 +169,33 @@ func (o XEventCaptureOptions) CaptureOptions() (xetrace.CreateOptions, xetrace.D
 		MaxMemoryKB:       o.MaxMemoryKB,
 		Filter:            xetrace.EventFilter{Types: o.Types, Tables: o.Tables},
 	}
+	if base := strings.TrimSpace(o.SessionName); base != "" && create.Session == "" {
+		create.Name = uniqueSessionName(base)
+	}
 	drain = xetrace.DrainOptions{Interval: poll, Filter: create.Filter}
 	return create, drain, nil
 }
 
-// uniqueSessionName appends a short unique suffix to the caller's name, so two
-// captures started from one profile do not collide on a server-scoped object
-// while the name still says whose they are.
+const sessionNameSuffixLength = 12
+
 func uniqueSessionName(base string) string {
-	return strings.TrimSpace(base) + "_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
+	return base + "_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:sessionNameSuffixLength]
+}
+
+// DefaultSessionName names a managed session for the connection's database and
+// its UTC start time, within SQL Server's 128-character session name limit.
+func DefaultSessionName(database string, started time.Time) string {
+	const prefix = "telltale_"
+	const maxNameLength = 128
+	dated := "_" + started.UTC().Format("20060102T150405Z")
+	database = strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' {
+			return r
+		}
+		return '_'
+	}, database)
+	maxDatabaseLength := maxNameLength - len(prefix) - len(dated) - 1 - sessionNameSuffixLength
+	return uniqueSessionName(prefix + database[:min(len(database), maxDatabaseLength)] + dated)
 }
 
 // parsePositiveDuration reads an optional duration option. Empty returns zero,
@@ -213,6 +224,9 @@ func (sqlXEventProvider) Stream(ctx context.Context, req query.ProviderRequest, 
 	create, drain, err := options.CaptureOptions()
 	if err != nil {
 		return fmt.Errorf("provider %q: %w", SQLXEventProviderType, err)
+	}
+	if create.Session == "" && create.Name == "" {
+		return fmt.Errorf("provider %q: sessionName is required for a managed Extended Events session", SQLXEventProviderType)
 	}
 
 	client, release, err := OpenSQLServer(ctx, req.Connection)

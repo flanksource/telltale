@@ -8,6 +8,7 @@ import (
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/commons-db/recordstore"
+	"github.com/flanksource/commons-db/recordstore/sampleframe"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/tracingtest"
 	. "github.com/onsi/gomega"
@@ -43,6 +44,21 @@ func prepareLiveCapture(ctx dbcontext.Context, params Params, out *recorder) (db
 	stop, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if _, err := managed.Stop(stop); err != nil {
+		return ctx, nil, err
+	}
+	err = env.Results.Backend.Scan(ctx, info.Events.Stream+"-frames", 0, func(_ int64, row recordstore.Row) error {
+		data, err := json.Marshal(row)
+		if err != nil {
+			return err
+		}
+		var frame sampleframe.Frame
+		if err := json.Unmarshal(data, &frame); err != nil {
+			return err
+		}
+		out.frames = append(out.frames, frame)
+		return nil
+	})
+	if err != nil {
 		return ctx, nil, err
 	}
 	out.report = tracingtest.Summary(managed.Session().Snapshot()).Report

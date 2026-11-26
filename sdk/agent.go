@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/flanksource/telltale/sdk/protocol"
+	"github.com/google/uuid"
 )
 
 var ErrUnknownMessage = errors.New("unknown message")
@@ -183,6 +184,7 @@ func newAgent(options Options) *Agent {
 	for key, value := range options.Labels {
 		resource[key] = value
 	}
+	resource[httpTopSource] = uuid.NewString()
 	agent := &Agent{options: options, endpoint: protocol.Endpoint{PID: os.Getpid(), Token: options.Token, Service: options.Service, Runtime: protocol.Runtime{Lang: "go", Version: runtime.Version(), Vendor: "go"}, Resource: resource, Started: time.Now()}, connections: make(map[net.Conn]struct{}), readTimeout: 30 * time.Second, authTimeout: 5 * time.Second}
 	if warning != "" {
 		agent.warnings = append(agent.warnings, warning)

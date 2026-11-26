@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -24,6 +25,7 @@ import (
 	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/query"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 	"github.com/flanksource/telltale/pkg/tracing/tracingtest"
 )
 
@@ -35,6 +37,17 @@ func (s savedProfiles) Resolve(_ context.Context, name string) (dbquery.Profile,
 		return profile, nil
 	}
 	return dbquery.Profile{}, fmt.Errorf("profile %q not found", name)
+}
+
+type scopedReads struct {
+	query.Reads
+}
+
+func (r scopedReads) Prepare(ctx dbcontext.Context, p query.Params, out tracing.Emitter[query.Row]) (dbcontext.Context, func() error, error) {
+	params := map[string]any{"region": "west"}
+	maps.Copy(params, p.Params)
+	p.Params = params
+	return r.Reads.Prepare(ctx, p, out)
 }
 
 // gate records every read the kind prepares.
@@ -198,6 +211,40 @@ var _ = Describe("query trace kind", func() {
 		Expect(info.Error).To(BeEmpty())
 		Expect(ids(env.Rows(info))).To(Equal([]string{"during"}))
 	})
+
+	DescribeTable("runs a host's wrapped profile with its default and the declared time-range roles", func(untilStopped bool) {
+		now := time.Now().UTC()
+		saved := savedProfiles{
+			"scoped-history": {
+				Name:     "scoped-history",
+				Provider: dbquery.ProviderConfig{Type: "sqlite", Options: map[string]any{"url": ":memory:"}},
+				Params: []dbquery.ParamDef{
+					{Name: "begin", Type: dbquery.ParamTypeDateTime, Role: dbquery.ParamRoleTimeFrom, Field: "timestamp"},
+					{Name: "end", Type: dbquery.ParamTypeDateTime, Role: dbquery.ParamRoleTimeTo, Field: "timestamp"},
+					{Name: "region", Type: dbquery.ParamTypeString, Default: "east"},
+				},
+				Query: fmt.Sprintf(`SELECT column1 AS id, column3 AS timestamp FROM (VALUES
+					('outside','west', '%s'), ('wrong-region','east','%s'), ('in-scope','west','%s'))
+					WHERE column2 = {{.params.region}} AND julianday(column3) BETWEEN julianday({{.params.begin}}) AND julianday({{.params.end}})`,
+					stamp(now.Add(-time.Hour)), stamp(now.Add(-time.Second)), stamp(now.Add(-time.Second))),
+			},
+		}
+		gate := &gate{}
+		reads, err := query.NewReads(query.Options{Profiles: saved, BeforeExecute: gate.BeforeExecute})
+		Expect(err).NotTo(HaveOccurred())
+		env := tracingtest.NewEnv(map[string]tracing.TracePlugin{"query": tracing.NewHandler[query.Params, query.Row](scopedReads{reads}, query.Capabilities, target.Host)})
+		session := env.Start("query", fmt.Sprintf(`{"profile":"scoped-history","from":"now-10m","untilStopped":%t}`, untilStopped))
+		if untilStopped {
+			tracingtest.Running(session)
+			Expect(gate.Reads()).To(BeEmpty())
+			session.Stop("spec")
+		}
+		info := tracingtest.Ended(session)
+		Expect(info.Error).To(BeEmpty())
+		Expect(ids(env.Rows(info))).To(Equal([]string{"in-scope"}))
+		Expect(gate.Reads()).To(HaveExactElements(HaveField("Params", And(
+			HaveKeyWithValue("region", "west"), HaveKey("begin"), HaveKey("end")))))
+	}, Entry("once", false), Entry("untilStopped", true))
 
 	It("fails a capture read every interval whose rows carry no time column", func() {
 		session := env.Start("query", sqlEntry(`SELECT 'a' AS id WHERE {{.params.from}} IS NOT NULL AND {{.params.to}} IS NOT NULL`, `, "every": "50ms"`))

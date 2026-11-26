@@ -14,7 +14,7 @@ var _ = Describe("agent reports", func() {
 		agent := &agentclient.Agent{}
 		var latest any
 		write := func(value any) { latest = value }
-		Expect(state.mergeReport(json.RawMessage(`{"captured":12,"dropped":2}`), write)).To(Succeed())
+		Expect(state.mergeReport(nil, json.RawMessage(`{"captured":12,"dropped":2}`), write)).To(Succeed())
 		state.reportDropped(agent, 3, write)
 		Expect(latest).To(Equal(map[string]any{"captured": float64(12), "dropped": float64(5)}))
 	})

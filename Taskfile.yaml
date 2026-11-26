@@ -126,7 +126,7 @@ tasks:
   java:test:
     desc: Test Java agent recording lifecycle
     cmds:
-      - ./sdk/java/gradlew -p sdk/java test
+      - ./sdk/java/gradlew -p sdk/java test testModern
 
   jvm:verify:
     desc: Build and verify JVM diagnostics sequentially against disposable runtimes

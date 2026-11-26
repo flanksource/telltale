@@ -7,7 +7,7 @@ import (
 	"github.com/shirou/gopsutil/v4/process"
 )
 
-func readMemory(ctx context.Context, classified []Group, readings map[string]Reading) error {
+func readMemory(ctx context.Context, classified []Group, readings map[string]Reading, _ bool) error {
 	for _, group := range classified {
 		for _, member := range group.Members {
 			if err := ctx.Err(); err != nil {

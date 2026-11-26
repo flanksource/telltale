@@ -42,6 +42,9 @@ type Options struct {
 	OTLP         otelreceiver.Options
 	SelfTrace    bool
 	Prometheus   bool
+	// SessionStore is the configured connection:// reference for session state.
+	SessionStore  string
+	sessionStores traces.SessionStores
 }
 
 func Run(ctx context.Context, options Options) (err error) {
@@ -59,6 +62,16 @@ func Run(ctx context.Context, options Options) (err error) {
 	if options.EnforceRules && options.RulesFile == "" {
 		return fmt.Errorf("--enforce-rules requires --rules")
 	}
+	connections, err := telltale.OpenConnections()
+	if err != nil {
+		return err
+	}
+	sessionStores, closeSessions, err := traces.OpenSessionStores(ctx, options.DataDir, options.SessionStore, connections)
+	if err != nil {
+		return err
+	}
+	defer closeSessions()
+	options.sessionStores = sessionStores
 	var monitor *rules.Service
 	if options.RulesFile != "" {
 		monitor, err = rules.Open(options.DataDir, options.RulesFile, options.EnforceRules)
@@ -92,15 +105,11 @@ func Run(ctx context.Context, options Options) (err error) {
 			return fmt.Errorf("serve --prometheus: %w", err)
 		}
 	}
-	connections, err := telltale.OpenConnections()
-	if err != nil {
-		return err
-	}
 	definitions, err := definition.NewService(definition.NewStore(options.ConfigDirs), connections)
 	if err != nil {
 		return err
 	}
-	traceMount, err := telltale.NewHandler(telltale.HandlerOptions{DataDir: options.DataDir, Prefix: TracesMount, Connections: connections, Definitions: definitions})
+	traceMount, err := telltale.NewHandler(telltale.HandlerOptions{DataDir: options.DataDir, Prefix: TracesMount, Connections: connections, Definitions: definitions, SessionStores: sessionStores})
 	if err != nil {
 		return err
 	}
@@ -185,7 +194,9 @@ type httpOptions struct {
 
 func serve(ctx context.Context, options httpOptions) error {
 	task.SetNoRender(true)
-	httpServer := &http.Server{Handler: options.handler, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: time.Minute}
+	httpServer := &http.Server{Handler: options.handler, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: time.Minute,
+		BaseContext: func(net.Listener) context.Context { return ctx },
+	}
 	run := lifetime.Start("HTTP server", func() error {
 		err := httpServer.Serve(options.listener)
 		if errors.Is(err, http.ErrServerClosed) {

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ProcessTraceHeader, ProcessTraceTree, TraceFeed, type ProcessHeaderSnapshot } from "@flanksource/clicky-ui/data";
-import { Tabs } from "@flanksource/clicky-ui/components";
+import { Button, Tabs } from "@flanksource/clicky-ui/components";
+import { useEventSourceFactory } from "@flanksource/clicky-ui/hooks";
 import { DEFAULT_VIEW, type GroupsView } from "../top/groups";
 import { processGroupsCapture, RecordedGroups } from "../top/RecordedGroups";
 import { traceFeedSource } from "./feed";
@@ -11,6 +12,7 @@ import { RunTasks } from "./RunTasks";
 import { useProcessTrace } from "./useProcessTrace";
 import { RunShellSlot } from "../layout/RunShellSlot";
 import { RunTop } from "./RunTop";
+import { useSnapshotQuery } from "../monitoring/useSnapshotQuery";
 
 type RunView = "top" | "events" | "process" | "tasks";
 
@@ -21,7 +23,8 @@ function readView(): RunView {
 
 /** The captures one run armed, read from its store. */
 export function TracesPanel({ run, summary }: { run: RunTraces; summary?: ReactNode }) {
-  const source = useMemo(() => traceFeedSource(run.mount), [run.mount]);
+  const open = useEventSourceFactory();
+  const source = useMemo(() => traceFeedSource(run.mount, open), [run.mount, open]);
   const live = run.status === "running" || !!run.standing;
   const [showExited, setShowExited] = useState(() => new URLSearchParams(window.location.search).get("showExited") === "1");
   const [view, setView] = useState(readView);
@@ -35,27 +38,25 @@ export function TracesPanel({ run, summary }: { run: RunTraces; summary?: ReactN
     done: !live,
   });
   const hasDetails = !!run.process || !!processGroupsCapture(run);
+  const hasProcessCapture = run.captures?.some(capture => capture.kind === "process") === true;
   const taskCapture = run.captures?.find(capture => capture.kind === "task");
   const catalog = useQuery({ queryKey: ["sample-kinds", run.mount], queryFn: () => fetchTraceKinds(run.mount), retry: false });
   const kinds = [...new Set([...(run.captures ?? []).map(capture => capture.kind), ...(run.process ? ["stacks"] : [])])].filter(kind => kind !== "process" && !catalog.data?.some(info => info.name === kind && info.top));
   const hasTop = [...(run.captures ?? []), ...(run.process ? [{ kind: run.process.tree.kind }, { kind: run.process.stacks.kind }] : [])].some(capture => catalog.data?.some(info => info.name === capture.kind && info.top));
   const tabs = [...(hasTop ? [{ id: "top", label: "Top" }] : []), { id: "events", label: "History" }, ...(taskCapture ? [{ id: "tasks", label: "Tasks" }] : []), ...(hasDetails ? [{ id: "process", label: "Process details" }] : [])];
   const activeView: RunView = tabs.some(tab => tab.id === view) ? view : "events";
-  const processes = useQuery({
-    queryKey: ["trace-process-header", run.runId, run.mount],
-    queryFn: async ({ signal }) => {
+  const processes = useSnapshotQuery({
+    key: ["trace-process-header", run.runId, run.mount, live],
+    read: async ({ signal }) => {
       const response = await fetch(`${run.mount}/processes`, { signal });
       if (!response.ok) throw await failure(response, "Read process measurements");
       const snapshot = await response.json() as ProcessHeaderSnapshot;
       if (!snapshot || typeof snapshot.armed !== "boolean" || !Array.isArray(snapshot.rows)) throw new Error("Expected a process snapshot with armed and rows fields");
       return snapshot;
     },
-    refetchInterval: live ? 1000 : false,
-    enabled: !run.process,
-    retry: false,
+    stream: live ? `${run.mount}/processes?follow=1` : null,
+    enabled: !run.process && hasProcessCapture,
   });
-  const refreshProcesses = processes.refetch;
-  useEffect(() => { if (!live && !run.process) void refreshProcesses(); }, [live, run.process, refreshProcesses]);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (showExited) params.set("showExited", "1"); else params.delete("showExited");
@@ -78,7 +79,7 @@ export function TracesPanel({ run, summary }: { run: RunTraces; summary?: ReactN
         loading={trace.loading} {...(trace.error ? { error: trace.error } : {})}
         onSelect={key => { setSelectedKey(key); setView("process"); }} />
     </section>}
-    {!run.process && (processes.data?.armed || processes.error || (processes.isPending && run.captures?.some(capture => capture.kind === "process"))) && <ProcessTraceHeader
+    {!run.process && hasProcessCapture && (processes.data?.armed || processes.error || processes.isPending) && <ProcessTraceHeader
       rows={processes.data?.rows ?? []} showExited={showExited} onShowExitedChange={setShowExited} loading={processes.isPending}
       {...(processes.error ? { error: processes.error.message } : {})}
     />}
@@ -88,12 +89,17 @@ export function TracesPanel({ run, summary }: { run: RunTraces; summary?: ReactN
     {tabs.length > 1 && <Tabs className="shrink-0" tabs={tabs}
       value={activeView} onChange={id => setView(id === "process" || id === "tasks" || id === "top" ? id : "events")} />}
     </RunShellSlot>
+    {catalog.isPending && activeView === "events" && <p role="status" className="text-sm text-muted-foreground">Loading capture catalog…</p>}
+    {catalog.error && <div className="flex shrink-0 flex-wrap items-center gap-2">
+      <p role="alert" className="text-sm text-destructive">{catalog.error.message}</p>
+      <Button variant="outline" size="sm" loading={catalog.isFetching} onClick={() => void catalog.refetch()}>Retry capture catalog</Button>
+    </div>}
     {activeView === "top" && <RunTop run={run} />}
-    <div hidden={activeView !== "events"} className="min-h-0 flex-1 overflow-hidden">
+    {!catalog.isPending && <div hidden={activeView !== "events"} className="min-h-0 flex-1 overflow-hidden">
       <div role="tabpanel" aria-label="Events" className="flex h-full min-h-0 flex-col">
         <TraceFeed kinds={kinds} loadPage={source.loadPage} presentation="ansi" {...(live && source.follow ? { follow: source.follow } : {})} />
       </div>
-    </div>
+    </div>}
     {activeView === "tasks" && taskCapture && <div role="tabpanel" aria-label="Tasks" className="min-h-0 flex-1 overflow-auto">
       <RunTasks mount={run.mount} capture={taskCapture} live={live} />
     </div>}

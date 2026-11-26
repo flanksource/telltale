@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"slices"
 
 	"github.com/flanksource/telltale/pkg/tracing"
 
@@ -29,11 +30,19 @@ type Record struct {
 type FeedQuery struct {
 	Query
 	Sort string `json:"sort"`
+	Tail bool   `json:"tail,omitempty"`
 }
 
 type FeedResult struct {
-	Rows       []Record `json:"rows"`
-	NextCursor string   `json:"nextCursor"`
+	Rows       []Record                 `json:"rows"`
+	NextCursor string                   `json:"nextCursor"`
+	Resume     string                   `json:"resume,omitempty"`
+	Watermark  map[string]FeedWatermark `json:"-"`
+}
+
+type FeedWatermark struct {
+	Generation string
+	HighSeq    int64
 }
 
 type feedWindow struct {
@@ -59,7 +68,7 @@ func recordOf(ref Ref, row query.Row) (Record, error) {
 	if !ok {
 		return Record{}, fmt.Errorf("unknown kind %s", ref.Kind)
 	}
-	schema, err := plugin.Schema(ref.Kind)
+	schema, err := plugin.RecordSchema(ref.Kind)
 	if err != nil {
 		return Record{}, err
 	}
@@ -101,6 +110,10 @@ func FeedPage(ctx context.Context, refs []Ref, q FeedQuery) (FeedResult, error) 
 		return result, err
 	}
 	scope += ":" + q.Sort
+	if q.Tail {
+		scope += ":tail"
+		result.Watermark = make(map[string]FeedWatermark, len(refs))
+	}
 	// Scope binds the exact ordered refs, so windows need no repeated stream names.
 	saved := feedPosition{Scope: scope, Windows: make([]feedWindow, len(refs))}
 	if q.Cursor != "" {
@@ -115,9 +128,9 @@ func FeedPage(ctx context.Context, refs []Ref, q FeedQuery) (FeedResult, error) 
 			return result, fmt.Errorf("feed cursor no longer matches selection or sort")
 		}
 	}
-	order := query.Order{{Column: "seq", Unique: true}}
+	order := query.Order{{Column: "seq", Unique: true, Desc: q.Tail}}
 	if q.Sort == "timestamp" {
-		order = append(query.Order{{Column: "timestamp"}}, order...)
+		order = append(query.Order{{Column: "timestamp", Desc: q.Tail}}, order...)
 	}
 	members := []sqlpages.SQLMember{}
 	for index, ref := range refs {
@@ -130,6 +143,9 @@ func FeedPage(ctx context.Context, refs []Ref, q FeedQuery) (FeedResult, error) 
 			saved.Windows[index] = feedWindow{Generation: meta.Generation, High: meta.HighSeq, Low: meta.LowSeq, Compactions: meta.Compactions}
 		}
 		window := saved.Windows[index]
+		if q.Tail {
+			result.Watermark[ref.Stream] = FeedWatermark{Generation: window.Generation, HighSeq: window.High}
+		}
 		if window.Generation != meta.Generation {
 			return result, fmt.Errorf("feed stream %s changed generation", key)
 		}
@@ -181,6 +197,9 @@ func FeedPage(ctx context.Context, refs []Ref, q FeedQuery) (FeedResult, error) 
 		}
 		break
 	}
+	if q.Tail {
+		slices.Reverse(result.Rows)
+	}
 	return result, nil
 }
 
@@ -190,16 +209,16 @@ func feedMember(ctx context.Context, ref Ref, q FeedQuery, order query.Order) (s
 		return sqlpages.SQLMember{}, err
 	}
 	plugin, _ := ref.Runtime.Kinds.Get(ref.Kind)
-	schema, err := plugin.Schema(ref.Kind)
+	schema, err := plugin.RecordSchema(ref.Kind)
 	if err != nil {
 		return sqlpages.SQLMember{}, err
 	}
-	profile.Order = query.Order{{Column: "seq", Unique: true}}
+	profile.Order = query.Order{{Column: "seq", Unique: true, Desc: q.Tail}}
 	if q.Sort == "timestamp" {
 		if schema.Options.TimeColumn == "" {
 			return sqlpages.SQLMember{}, fmt.Errorf("kind %s has no timestamp column", ref.Kind)
 		}
-		profile.Order = append(query.Order{{Column: schema.Options.TimeColumn}}, profile.Order...)
+		profile.Order = append(query.Order{{Column: schema.Options.TimeColumn, Desc: q.Tail}}, profile.Order...)
 	}
 	params, err := q.params(ref, profile)
 	if err != nil {

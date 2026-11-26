@@ -52,6 +52,8 @@ The normal server uses the same paged viewer and `GET /api/traces/{run}/records`
 
 Flag types, descriptions, defaults, choices, and required inputs come from the kind's parameter schema and also describe the generated arguments in `/api/openapi.json`. Nested fields use kebab-case flags such as `--environment-keys`; string maps take comma-separated `key=value` pairs, such as `--levels worker=debug,api=info`, and maps with arbitrary values take a JSON object, such as `--options '{"limit":100}'`. The goprof checkpoint schema describes `--profile`, `--seconds`, and `--source`, with defaults from the registered checkpoint. Common run controls remain `--data-dir`, `--duration`, and `--every`.
 
+In a terminal, `telltale run <kind>` opens a form for missing required parameters. For example, `telltale run sql_top --duration 30s` lets you pick a configured Postgres or SQL Server connection. Use `-i` to open the full argument form, or supply required flags explicitly in scripts.
+
 ```sh
 telltale run http --seam proxy --mode mitm --hosts '*.example.com' -- curl -sS https://api.example.com
 telltale run sql --seam proxy --env ORDERS_DB_URL --params -- go test ./...
@@ -226,7 +228,9 @@ groups:
     disabled: true
 ```
 
-`telltale serve` serves the latest live frame, with the host's use, at `GET /api/top?all=true&net=true`, and keeps reading it every 2s while it is asked for. `GET /api/top/processes?name=<program>` returns the processes running a program, `?pid=<n>` a process and every process under it, and `?q=<text>` the processes whose name, command or pid holds the text. The web UI's Top page (`/top`) shows the groups live with gauges for the host, and recorded `process` runs over time. ⌘K (Ctrl+K) anywhere in the web UI searches processes by name, command or pid, and trace runs by id, command, pid, status or capture kind. `/top/<program>` and `/top/<pid>` show one program's or one process tree's processes, with gauges and their history. `GET /api/top/facets?pid=<n>` reads a process the latest frame listed, and answers 404 for one it did not. It returns the process's context, masked environment and current descriptors. `/top/<pid>` refreshes them every 5s; recorded process views reconstruct resources from their added/removed events.
+`telltale serve` serves live process groups and host usage at `GET /api/top?all=true&net=true`. On the web Top page (`/top`), use **Refresh interval** to select a period from 1s to 60s or pause polling. The server samples on demand and can lengthen the interval to keep collection below 1% of one CPU core over a rolling minute. The page shows the rolling overhead and surfaces any slowdown. The budget uses recent measurements and an unexpectedly expensive sample can exceed it. On macOS, compressed memory is available for processes the server has permission to inspect. Web network rates use counters for flows active at consecutive samples, so short-lived flows can be missed.
+
+`GET /api/top/processes?name=<program>` returns the processes running a program, `?pid=<n>` a process and every process under it, and `?q=<text>` the processes whose name, command or pid holds the text. Both live endpoints return `polling.minimumIntervalMs`. The Top page also shows recorded `process` runs over time. ⌘K (Ctrl+K) anywhere in the web UI searches processes by name, command or pid, and trace runs by id, command, pid, status or capture kind. `/top/<program>` and `/top/<pid>` show one program's or one process tree's processes, with gauges and their history. `GET /api/top/facets?pid=<n>` reads a process the latest frame listed, and answers 404 for one it did not. It returns the process's context, masked environment and current descriptors. `/top/<pid>` refreshes them at most every 5s. Recorded process views reconstruct resources from their added/removed events.
 
 ### Resource rules
 

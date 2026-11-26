@@ -21,7 +21,7 @@ var _ = Describe("unified SQL kind", func() {
 		seams, defaultSeam := preset.TargetSeams()
 		Expect(seams).To(Equal([]target.Seam{target.Proxy}))
 		Expect(defaultSeam).To(Equal(target.Proxy))
-		schema, err := preset.Params()
+		schema, err := preset.Schema()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(schema.Properties["connection"].Default).To(Equal(defaultConnection))
 		Expect(schema.Properties["connections"].Default).To(BeNil())

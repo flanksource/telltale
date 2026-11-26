@@ -11,6 +11,7 @@ func addRecordsPath(spec *rpc.OpenAPISpec) {
 		"200": {Description: "Native history page, completed sample metadata, or Top response according to view", Content: map[string]rpc.OpenAPIMediaType{
 			"application/json":        {Schema: &rpc.OpenAPISchema{OneOf: []*rpc.OpenAPISchema{rpc.SchemaForStruct(read.TopResult{}), {Type: "array", Items: rpc.SchemaForStruct(sampleframe.Frame{})}, {Type: "object", Properties: map[string]*rpc.OpenAPISchema{"rows": {Type: "array", Items: &rpc.OpenAPISchema{Type: "object"}}, "nextCursor": {Type: "string"}}}}}},
 			"application/schema+json": {Schema: &rpc.OpenAPISchema{Type: "object", Description: "Options schema and native columns resolved for the selected view"}},
+			"text/event-stream":       eventStream("follow=1 streams records. With view=top it streams TopUpdate snapshots and frame metadata."),
 		}}, "400": {Description: "Invalid selection, filter, sort or cursor"}, "409": {Description: "Recording has no provable complete sample boundaries"},
 	}}
 	for _, name := range []string{"run", "kind"} {

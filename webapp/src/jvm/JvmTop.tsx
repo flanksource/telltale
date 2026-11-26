@@ -1,11 +1,12 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button, Panel, InputField, Select } from "@flanksource/clicky-ui/components";
 import { DataTable, type DataTableColumn } from "@flanksource/clicky-ui/data";
 import { persistFilter } from "./api";
 import { ThreadDetail } from "./JvmInspectors";
 import type { Threads, ThreadRow } from "./diagnostics";
 import type { Metrics } from "./metrics";
+import { useSnapshotQuery } from "../monitoring/useSnapshotQuery";
 
 interface Frame { agentId: string; sampledAt: string; metrics: Metrics; threads: Threads }
 
@@ -37,7 +38,7 @@ export function JvmTop({ agent }: { agent: string }) {
   const hasSnapshot = client.getQueryData(["jvm-top", agent]) !== undefined;
   const key = params.get("topSort") ?? "cpuPercent";
   const dir = params.get("topDir") === "asc" ? "asc" : "desc";
-  const query = useQuery({ queryKey: ["jvm-top", agent], queryFn: ({ signal }) => snapshot(agent, signal), enabled: visible && (!paused || !hasSnapshot), refetchInterval: visible && !paused ? 2000 : false, refetchOnWindowFocus: false, retry: false });
+  const query = useSnapshotQuery({ key: ["jvm-top", agent], read: ({ signal }) => snapshot(agent, signal), enabled: visible && (!paused || !hasSnapshot), stream: visible && !paused ? `/api/v1/jvm/top?${new URLSearchParams({ agent, follow: "1" })}` : null });
   useEffect(() => { if (!visible || (paused && hasSnapshot)) void client.cancelQueries({ queryKey: ["jvm-top", agent] }); }, [visible, paused, hasSnapshot, client, agent]);
   const frame = query.data;
   const select = (id: number) => { setPaused(true); persistFilter("thread", String(id)); };
@@ -59,7 +60,7 @@ export function JvmTop({ agent }: { agent: string }) {
     <div className="flex flex-wrap items-end gap-3">
       <label className="text-sm">Filter threads<InputField value={filter} onChange={value => persistFilter("threadFilter", value)} /></label>
       <label className="text-sm">Thread state<Select value={state} onChange={event => persistFilter("threadState", event.target.value)}><option value="">All states</option>{["NEW", "RUNNABLE", "BLOCKED", "WAITING", "TIMED_WAITING", "TERMINATED"].map(value => <option key={value}>{value}</option>)}</Select></label>
-      <Button variant="outline" onClick={() => { if (paused) persistFilter("thread", ""); setPaused(!paused); }}>{paused ? "Resume polling" : "Pause polling"}</Button>
+      <Button variant="outline" onClick={() => { if (paused) persistFilter("thread", ""); setPaused(!paused); }}>{paused ? "Resume live" : "Pause"}</Button>
     </div>
     {query.isPending && <p role="status">Reading JVM Top…</p>}
     {query.error && <p role="alert">{frame && "Stale snapshot · "}{query.error.message}</p>}

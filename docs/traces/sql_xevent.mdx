@@ -5,8 +5,8 @@ import { KindReference } from '../_components/KindReference';
 Captures SQL Server Extended Events through a configured connection, either by creating an owned session or reading the existing `system_health` session.
 
 ```sh
-telltale run sql_xevent --connection connection://orders --session-name diagnostic --duration 30s
+telltale run sql_xevent --connection connection://orders --duration 30s
 ```
 
-An owned session requires permission to create and alter server event sessions; Telltale drains and drops only its own session. Use `--session system_health` to read the existing session without changing it. Filters include `--events`, `--databases`, `--users`, `--apps`, `--hosts`, `--types`, and `--tables`. See [SQL Server captures](/sqlserver-jvm#sql-server) for permissions and behavior.
+In an interactive terminal, Telltale prompts for the connection when it is missing. A managed session uses `telltale_<db>_<date>` as its base name, with a unique suffix. Use `--session-name` to set a custom base name. An owned session requires permission to create and alter server event sessions. Telltale drains and drops only the session it creates. Use `--session system_health` to read the existing session. Filters include `--events`, `--databases`, `--users`, `--apps`, `--hosts`, `--types`, and `--tables`. See [SQL Server captures](/sqlserver-jvm#sql-server) for permissions and behavior.
 <KindReference kind="sql_xevent" />

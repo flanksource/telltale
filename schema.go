@@ -39,7 +39,7 @@ func StartSchema() (*rpc.OpenAPISchema, map[string]any, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		params, err := plugin.Params()
+		params, err := plugin.Schema()
 		if err != nil {
 			return nil, nil, fmt.Errorf("trace kind %q: %w", kind, err)
 		}
@@ -67,9 +67,10 @@ func StartSchema() (*rpc.OpenAPISchema, map[string]any, error) {
 	schema := &rpc.OpenAPISchema{
 		Type: "object",
 		Properties: map[string]*rpc.OpenAPISchema{
-			"pid":      {Type: "integer", Title: "PID", Description: "Attach to a local running process instead of a command"},
-			"duration": {Type: "string", Title: "Duration", Description: "Stop after this duration, e.g. 30s"},
-			"every":    {Type: "string", Title: "Checkpoint interval", Description: "Read checkpoints at this interval, e.g. 10s"},
+			"definition": {Type: "string", Title: "Definition", Description: "Start a saved definition"},
+			"pid":        {Type: "integer", Title: "PID", Description: "Attach to a local running process instead of a command"},
+			"duration":   {Type: "string", Title: "Duration", Description: "Stop after this duration, e.g. 30s"},
+			"every":      {Type: "string", Title: "Checkpoint interval", Description: "Read checkpoints at this interval, e.g. 10s"},
 			"command": {
 				Type: "string", Title: "Command", Format: "textarea",
 				Description: "Run with sh -c in the server's working directory",
@@ -94,23 +95,26 @@ func treeSchema() *rpc.OpenAPISchema {
 // captureSchema is one armable kind's object: its summary, seams, enabled
 // switch and, while it is on, the kind's params.
 func captureSchema(registration traces.Registration, order int, params *rpc.OpenAPISchema) *rpc.OpenAPISchema {
-	then := map[string]any{"properties": params.Properties}
-	if len(params.Required) > 0 {
-		then["required"] = params.Required
-	}
-	return &rpc.OpenAPISchema{
-		Type: "object", Title: registration.Title, Description: registration.Summary,
+	item := &rpc.OpenAPISchema{
+		Type: "object", Title: "Capture",
 		Properties: map[string]*rpc.OpenAPISchema{
 			enabledKey: {Type: "boolean", Title: "Enabled", Extensions: map[string]any{"x-clicky-order": -1}},
+		},
+		Extensions: map[string]any{"allOf": []any{map[string]any{
+			"if":   map[string]any{"required": []string{enabledKey}, "properties": map[string]any{enabledKey: map[string]any{"const": true}}},
+			"then": params,
+		}}},
+	}
+	return &rpc.OpenAPISchema{
+		Title: registration.Title, Description: registration.Summary,
+		OneOf: []*rpc.OpenAPISchema{
+			item,
+			{Type: "array", Title: "Multiple captures", Items: item, Extensions: map[string]any{"minItems": 1}},
 		},
 		Extensions: map[string]any{
 			"x-clicky-order":          order,
 			"x-telltale-seams":        slices.Clone(registration.Seams),
 			"x-telltale-default-seam": registration.DefaultSeam,
-			"allOf": []any{map[string]any{
-				"if":   map[string]any{"properties": map[string]any{enabledKey: map[string]any{"const": true}}},
-				"then": then,
-			}},
 		},
 	}
 }

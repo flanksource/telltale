@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "@flanksource/clicky-ui/components";
 import { ClickyNodeView, type ClickyDocument } from "@flanksource/clicky-ui/clicky";
+import { CodeBlock } from "@flanksource/clicky-ui/data";
 import { failure, traceRecordsUrl, type CaptureResult, type TraceKindInfo } from "./api";
 
 export function TopRowDetail({raw,table,mount,capture,selection,relation}:{raw:Record<string,unknown>;table:ClickyDocument;mount:string;capture:CaptureResult;selection:string;relation:NonNullable<TraceKindInfo["top"]>["relation"]}) {
@@ -8,6 +9,11 @@ export function TopRowDetail({raw,table,mount,capture,selection,relation}:{raw:R
   const [message,setMessage]=useState("");
   const [loading,setLoading]=useState(false);
   const node=(linked ?? table).node.rows?.find(row=>linked || row.cells.seq?.filterValue===raw.seq)?.detail;
+  const [first, ...remaining] = node?.children ?? [];
+  const candidate = node?.kind === "code" ? node : first;
+  const sql = raw.engine === "sqlserver" && candidate?.kind === "code" && candidate.language === "sql" ? candidate.source : undefined;
+  const detail = sql ? (node && remaining.length ? { ...node, children: remaining } : null)
+    : node ?? linked?.node ?? { kind: "code" as const, language: "json", source: JSON.stringify(raw, null, 2) };
   const id=relation ? raw[relation.column] : undefined;
   async function openRelated() {
     if (!relation || !id) return;
@@ -22,9 +28,10 @@ export function TopRowDetail({raw,table,mount,capture,selection,relation}:{raw:R
     finally {setLoading(false);}
   }
   return <div className="flex min-h-0 flex-col gap-3">
-    {!!id && !linked && <Button variant="outline" size="sm" loading={loading} onClick={()=>void openRelated()}>Open {relation?.label.toLowerCase()} {String(id)}</Button>}
-    {linked && <Button variant="ghost" size="sm" onClick={()=>setLinked(null)}>Back to selected row</Button>}
+    {sql && <CodeBlock language="sql" source={sql} copyable />}
+    {!!id && !linked && <Button className={sql ? "self-start" : undefined} variant="outline" size="sm" loading={loading} onClick={()=>void openRelated()}>Open {relation?.label.toLowerCase()} {String(id)}</Button>}
+    {linked && <Button className={sql ? "self-start" : undefined} variant="ghost" size="sm" onClick={()=>setLinked(null)}>Back to selected row</Button>}
     {message && <p role="status">{message}</p>}
-    <ClickyNodeView node={node ?? linked?.node ?? {kind:"code",language:"json",source:JSON.stringify(raw,null,2)}} />
+    {detail && <ClickyNodeView node={detail} />}
   </div>;
 }

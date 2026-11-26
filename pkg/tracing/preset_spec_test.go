@@ -54,7 +54,7 @@ var _ = Describe("Seam defaults", func() {
 		seams, defaultSeam := plugin.TargetSeams()
 		Expect(seams).To(Equal([]target.Seam{target.Self, target.Proxy}))
 		Expect(defaultSeam).To(Equal(target.Proxy))
-		schema, err := plugin.Params()
+		schema, err := plugin.Schema()
 		Expect(err).NotTo(HaveOccurred())
 		Expect(schema.Properties["target"].Properties["seam"].Default).To(Equal("proxy"))
 

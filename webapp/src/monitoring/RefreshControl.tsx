@@ -22,7 +22,11 @@ export function useRefreshInterval(): number | false {
   const interval = useSyncExternalStore(subscribe, readInterval);
   return interval === 0 ? false : interval;
 }
-export function RefreshControl() {
+export function refreshAt(interval: number | false, minimumIntervalMs = 0): number | false {
+  return interval === false ? false : Math.max(interval, minimumIntervalMs);
+}
+
+export function RefreshControl({ minimumIntervalMs = 0 }: { minimumIntervalMs?: number }) {
   const interval = useRefreshInterval();
   const client = useQueryClient();
   const fetching = useIsFetching({ predicate: monitoringQuery });
@@ -38,6 +42,9 @@ export function RefreshControl() {
         </select>
       </label>
       <Button variant="outline" size="sm" disabled={fetching > 0} onClick={() => void client.refetchQueries({ type: "active", predicate: monitoringQuery })}>Refresh now</Button>
+      {interval !== false && minimumIntervalMs > interval && (
+        <span className="text-muted-foreground">Updates every {Math.ceil(minimumIntervalMs / 100) / 10}s to limit CPU overhead</span>
+      )}
     </div>
   );
 }

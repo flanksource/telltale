@@ -50,7 +50,7 @@ public class TransformOwnerTest {
       assertEquals("untouched", client.untouched()); assertEquals(1, capture.drain().size());
       instrumentation.retransformClasses(Client.class);
       assertEquals("original:after-refresh", client.request("after-refresh"));
-    } finally { if (SourceTransformations.contains(Client.class)) SourceTransformations.restore(Collections.singletonList(Client.class)); }
+    } finally { if (SourceTransformations.contains(Client.class)) SourceTransformations.restore(Collections.singletonList(Client.class), null); }
     }
   }
 

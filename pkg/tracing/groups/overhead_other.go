@@ -7,6 +7,6 @@ import (
 	"time"
 )
 
-func cpuTime() (time.Duration, error) {
+func CPUTime() (time.Duration, error) {
 	return 0, errors.New("read telltale's CPU time: getrusage is unix only")
 }

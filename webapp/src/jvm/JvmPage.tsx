@@ -90,7 +90,7 @@ export default function JvmPage({ agent, operation = "top" }: { agent: string; o
     const value = await call(agent, "jvm.status", {});
     if (!value || typeof value !== "object" || !("allowMutation" in value) || typeof value.allowMutation !== "boolean") throw new Error("Invalid JVM status response");
     return { allowMutation: value.allowMutation, patches: "patches" in value && Array.isArray(value.patches) ? value.patches : undefined };
-  }, retry: false, refetchInterval: 10000 });
+  }, retry: false, refetchInterval: operation === "top" ? false : 10000 });
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get("opFilter") ?? "");
   const selected = operations.data?.find(item => item.name === operation);
   const dedicated = operation === "top" ? <JvmTop key={agent} agent={agent} /> : operation === "snapshot" ? <JvmSnapshot key={agent} agent={agent} /> : operation === "instrument" ? <JvmInstrument agent={agent} /> : operation === "traces" ? <JvmTraces agent={agent} /> : operation === "notifications" ? <JvmNotifications agent={agent} /> : undefined;

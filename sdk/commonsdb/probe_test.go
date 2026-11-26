@@ -9,10 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flanksource/commons-db/connection"
+	"github.com/flanksource/commons-db/connection/sqlobserve"
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/observability"
 	"github.com/flanksource/commons/har"
+	telltale "github.com/flanksource/telltale/sdk"
+	"github.com/flanksource/telltale/sdk/protocol"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -31,10 +33,10 @@ var _ = Describe("commons-db probes", func() {
 		out := sink{records: make(chan any, 2)}
 		release, err := (sqlProbe{}).Arm(context.Background(), json.RawMessage(`{"connections":["orders"],"minDuration":"10ms"}`), out)
 		Expect(err).NotTo(HaveOccurred())
-		connection.PublishSQL(connection.Statement{Connection: "orders", SQL: "SELECT 1", Duration: 20 * time.Millisecond})
-		Expect((<-out.records).(connection.Statement).SQL).To(Equal("SELECT 1"))
+		sqlobserve.PublishSQL(sqlobserve.Statement{Connection: "orders", SQL: "SELECT 1", Duration: 20 * time.Millisecond})
+		Expect((<-out.records).(sqlobserve.Statement).SQL).To(Equal("SELECT 1"))
 		Expect(release()).To(Succeed())
-		connection.PublishSQL(connection.Statement{Connection: "orders", SQL: "SELECT 2", Duration: time.Second})
+		sqlobserve.PublishSQL(sqlobserve.Statement{Connection: "orders", SQL: "SELECT 2", Duration: time.Second})
 		Expect(out.records).To(BeEmpty())
 	})
 	It("observes selected HTTP features and stops on release", func() {
@@ -47,8 +49,9 @@ var _ = Describe("commons-db probes", func() {
 		resp, err := client.Get(server.URL)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(resp.Body.Close()).To(Succeed())
-		record := (<-out.records).(HTTPEntry)
+		record := (<-out.records).(telltale.HTTPExchange)
 		Expect(record.Feature).To(Equal("orders"))
+		Expect(record.Direction).To(Equal(protocol.HTTPOutgoing))
 		Expect(record.Entry).To(BeAssignableToTypeOf(har.Entry{}))
 		Expect(record.Request.URL).To(Equal(server.URL))
 		Expect(release()).To(Succeed())

@@ -1,4 +1,5 @@
 import type { ProcessNodeRow, ProcessSampleRow, TopMetric } from "@flanksource/clicky-ui/data";
+import { subscribeJSON, type EventSourceFactory } from "@flanksource/clicky-ui/hooks";
 import { BASE_PATH, withBase } from "../base";
 
 // The server lists, starts and stops runs at /api/traces (telltale.Handler),
@@ -228,6 +229,7 @@ export function traceRecordsUrl(mount: string, ref: TraceRef, params: Record<str
 interface FollowOptions {
   mount: string;
   ref: TraceRef;
+  open?: EventSourceFactory;
   onRow: (row: TraceRecord) => void;
   onError: (error: Error) => void;
   onOpen: () => void;
@@ -235,51 +237,22 @@ interface FollowOptions {
 }
 
 /** Native EventSource reconnects with Last-Event-ID; end closes a sealed capture. */
-export function followTraceRecords({ mount, ref, onRow, onError, onOpen, onEnd }: FollowOptions): () => void {
-  const source = new EventSource(traceRecordsUrl(mount, ref, { follow: "1" }));
+export function followTraceRecords({ mount, ref, open = url => new EventSource(url), onRow, onError, onOpen, onEnd }: FollowOptions): () => void {
   let last = ref.afterSeq ?? 0;
-  let closed = false;
-  const close = () => {
-    if (closed) return;
-    closed = true;
-    source.close();
-  };
-  source.addEventListener("open", () => { if (!closed) onOpen(); });
-  source.addEventListener("message", event => {
-    if (closed) return;
-    try {
-      const row: unknown = JSON.parse(event.data);
+  return subscribeJSON<unknown>(open, traceRecordsUrl(mount, ref, { follow: "1" }), {
+    onData: (row, id) => {
       if (!row || typeof row !== "object" || !("seq" in row) || typeof row.seq !== "number" || !Number.isSafeInteger(row.seq) || row.seq <= 0) {
         throw new Error(`follow ${ref.kind}: row has no valid seq`);
       }
-      if (event.lastEventId !== String(row.seq)) throw new Error(`follow ${ref.kind}: event id does not match row seq`);
+      if (id !== String(row.seq)) throw new Error(`follow ${ref.kind}: event id does not match row seq`);
       if (row.seq <= last) return;
       onRow(row as TraceRecord);
       last = row.seq;
-    } catch (error) {
-      close();
-      onError(error instanceof Error ? error : new Error(String(error)));
-    }
+    },
+    onOpen,
+    onEnd,
+    onError: error => onError(new Error(`follow ${ref.kind}: ${error.message}`)),
   });
-  source.addEventListener("error", event => {
-    if (closed) return;
-    if (event instanceof MessageEvent) {
-      close();
-      try {
-        const payload: unknown = JSON.parse(event.data);
-        if (!payload || typeof payload !== "object" || !("error" in payload) || typeof payload.error !== "string") throw new Error("invalid stream error");
-        onError(new Error(payload.error));
-      } catch (error) { onError(error instanceof Error ? error : new Error(String(error))); }
-    } else {
-      onError(new Error(`follow ${ref.kind} stream failed`));
-    }
-  });
-  source.addEventListener("end", () => {
-    if (closed) return;
-    close();
-    onEnd();
-  });
-  return close;
 }
 
 /** Parses an NDJSON body: one record per non-empty line. */

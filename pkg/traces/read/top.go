@@ -40,8 +40,19 @@ type TopResult struct {
 }
 
 func Frames(ctx context.Context, ref Ref) ([]sampleframe.Frame, error) {
+	frames, err := scanFrames(ctx, ref, 0, 0)
+	if errors.Is(err, recordstore.ErrNotFound) || (err == nil && len(frames) == 0) {
+		return nil, ErrNoCompleteSamples
+	}
+	return frames, err
+}
+
+func scanFrames(ctx context.Context, ref Ref, after, through int64) ([]sampleframe.Frame, error) {
 	frames := []sampleframe.Frame{}
-	err := ref.Runtime.Results.Backend.Scan(ctx, ref.Stream+"-frames", 0, func(_ int64, row recordstore.Row) error {
+	err := ref.Runtime.Results.Backend.Scan(ctx, ref.Stream+"-frames", after, func(seq int64, row recordstore.Row) error {
+		if through > 0 && seq > through {
+			return errFrameWindow
+		}
 		data, err := json.Marshal(row)
 		if err != nil {
 			return err
@@ -55,13 +66,23 @@ func Frames(ctx context.Context, ref Ref) ([]sampleframe.Frame, error) {
 		}
 		return nil
 	})
-	if errors.Is(err, recordstore.ErrNotFound) || (err == nil && len(frames) == 0) {
-		return nil, ErrNoCompleteSamples
+	if errors.Is(err, errFrameWindow) {
+		err = nil
 	}
 	return frames, err
 }
 
 func Top(ctx context.Context, ref Ref, q TopQuery) (TopResult, error) {
+	frames, err := Frames(ctx, ref)
+	if err != nil {
+		return TopResult{}, err
+	}
+	return topAtFrames(ctx, ref, q, frames)
+}
+
+var errFrameWindow = errors.New("end of Top frame window")
+
+func topAtFrames(ctx context.Context, ref Ref, q TopQuery, frames []sampleframe.Frame) (TopResult, error) {
 	if err := q.Validate(); err != nil {
 		return TopResult{}, err
 	}
@@ -70,12 +91,8 @@ func Top(ctx context.Context, ref Ref, q TopQuery) (TopResult, error) {
 		return TopResult{}, fmt.Errorf("kind %s does not support Top", ref.Kind)
 	}
 	spec := tracing.TopOf(plugin)
-	frames, err := Frames(ctx, ref)
-	if err != nil {
-		return TopResult{}, err
-	}
 	if spec.Result == "" {
-		frames = slices.DeleteFunc(frames, func(frame sampleframe.Frame) bool {
+		frames = slices.DeleteFunc(slices.Clone(frames), func(frame sampleframe.Frame) bool {
 			return frame.AfterSeq < ref.AfterSeq || ref.ToSeq > 0 && frame.ToSeq > ref.ToSeq
 		})
 	}
@@ -90,6 +107,9 @@ func Top(ctx context.Context, ref Ref, q TopQuery) (TopResult, error) {
 		index = latestFrameIndex(frames, q.Source)
 	}
 	if index < 0 {
+		if q.Frame == "" {
+			return TopResult{}, ErrNoCompleteSamples
+		}
 		return TopResult{}, fmt.Errorf("sample %q for source %q not found", q.Frame, q.Source)
 	}
 	frame := frames[index]

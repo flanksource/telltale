@@ -46,7 +46,7 @@ type XEvent struct {
 
 func (x *XEvent) options(Located) (any, any, error) {
 	if x.Session != "" {
-		return nil, nil, errors.New("session attaches to an existing session: that is collect.sqlserver.systemHealth; xevent creates its own, named by sessionName")
+		return nil, nil, errors.New("session attaches to an existing session: use collect.sqlserver.systemHealth to attach, or omit session to create a managed session")
 	}
 	return x.Options, nil, nil
 }

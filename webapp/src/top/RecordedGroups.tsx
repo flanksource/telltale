@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@flanksource/clicky-ui/components";
+import { subscribeJSON, useEventSourceFactory } from "@flanksource/clicky-ui/hooks";
 import { failure, type CaptureResult, type RunTraces } from "../traces/api";
 import { PROCESS_GROUPS_KIND, type Frame } from "./api";
 import { CpuChart } from "./charts";
@@ -16,37 +17,54 @@ interface Loaded {
   frames: Frame[];
 }
 
+interface ProcessFrames { highSeq: number; frames: Frame[] }
+
 /** Replay and follow the capture, retaining received rows across retries. */
 function useRecordedFrames(run: RunTraces, capture: CaptureResult) {
   const { ref } = capture;
   const loaded = useRef<Loaded>({ seq: 0, frames: [] });
   const [state, setState] = useState<{ data: Frame[]; pending: boolean; ended: boolean; error?: Error }>({ data: [], pending: true, ended: false });
   const [attempt, setAttempt] = useState(0);
+  const open = useEventSourceFactory();
   const { stream } = ref;
   useEffect(() => {
     setState(previous => ({ ...previous, pending: true, error: undefined }));
     const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
+    let close: (() => void) | undefined;
+    const append = (page: ProcessFrames) => {
+      if (!Number.isSafeInteger(page.highSeq) || !Array.isArray(page.frames) || page.frames.some(frame => !Number.isSafeInteger(frame.tick) || frame.tick <= 0 || !Array.isArray(frame.groups))) throw new Error("Invalid process group frames or sequence");
+      if (controller.signal.aborted || page.highSeq < loaded.current.seq) return;
+      const frames = [...loaded.current.frames, ...page.frames.filter(frame => frame.tick > (loaded.current.frames.at(-1)?.tick ?? 0))];
+      loaded.current = { seq: page.highSeq, frames };
+      setState({ data: frames, pending: false, ended: run.status !== "running" });
+    };
     const load = async () => {
       try {
         const params = new URLSearchParams({ stream, afterSeq: String(loaded.current.seq) });
         const response = await fetch(`${run.mount}/process/groups?${params}`, { signal: controller.signal });
         if (!response.ok) throw await failure(response, "Read recorded process groups");
-        const page = await response.json() as { highSeq: number; frames: Frame[] };
-		if (!Number.isSafeInteger(page.highSeq) || page.highSeq < loaded.current.seq || !Array.isArray(page.frames) || page.frames.some(frame => !Number.isSafeInteger(frame.tick) || frame.tick <= 0 || !Array.isArray(frame.groups))) throw new Error("Invalid process group frames or sequence");
-        if (controller.signal.aborted) return;
-        const frames = [...loaded.current.frames, ...page.frames];
-        loaded.current = { seq: page.highSeq, frames };
-        setState({ data: frames, pending: false, ended: run.status !== "running" });
-        if (run.status === "running") timer = setTimeout(() => void load(), 1000);
+        append(await response.json() as ProcessFrames);
+        if (!controller.signal.aborted && run.status === "running") {
+          params.set("afterSeq", String(loaded.current.seq));
+          params.set("follow", "1");
+          close = subscribeJSON<ProcessFrames>(open, `${run.mount}/process/groups?${params}`, {
+            onData: append,
+            onError: error => setState(previous => ({ ...previous, pending: false, error })),
+            onOpen: () => setState(previous => ({ data: previous.data, pending: false, ended: false })),
+            onEnd: () => setState(previous => ({ ...previous, ended: true })),
+          });
+        }
       } catch (error) {
         if (!controller.signal.aborted) setState(previous => ({ ...previous, pending: false, error: error instanceof Error ? error : new Error(String(error)) }));
       }
     };
     void load();
-    return () => { controller.abort(); if (timer) clearTimeout(timer); };
-  }, [run.mount, run.status, stream, attempt]);
-  return { ...state, refetch: () => setAttempt(previous => previous + 1) };
+    return () => { controller.abort(); close?.(); };
+  }, [open, run.mount, run.status, stream, attempt]);
+  return { ...state, refetch: () => {
+    if (state.error?.message.includes("cursor expired")) loaded.current = { seq: 0, frames: [] };
+    setAttempt(previous => previous + 1);
+  } };
 }
 
 const time = (frame: Frame) => new Date(frame.sampledAt).toLocaleTimeString();

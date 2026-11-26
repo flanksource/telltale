@@ -1,12 +1,13 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchTraceRuns, startRun, stopRun, type RunTraces, type StartRequest } from "../traces/api";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { startRun, stopRun, type RunTraces, type StartRequest } from "../traces/api";
+import { useRunList } from "../traces/useRunList";
 import { agentRecordings } from "./captures";
 import { persistFilter } from "./api";
 
 export function useRecordings(agent: string, kind: string) {
   const client = useQueryClient();
   const queryKey = ["trace-runs", "jvm", agent, kind];
-  const query = useQuery({ queryKey, queryFn: () => fetchTraceRuns({ kind, limit: 0 }), refetchInterval: 2000, retry: false });
+  const query = useRunList(queryKey, { kind, limit: 0 });
   const recordings = agentRecordings(query.data?.runs ?? [], agent, kind);
   const refresh = () => {
     void client.invalidateQueries({ queryKey: ["trace-runs"] });

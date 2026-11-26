@@ -97,9 +97,9 @@ describe("trace runs", () => {
     const fetchMock = serve({ runs: [finished, other] });
     renderPage();
     expect(await screen.findByRole("combobox", { name: "Run" })).toHaveValue(other.runId);
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`${other.mount}/records?sort=timestamp&excludeKind=process&presentation=ansi&limit=100`, expect.anything()));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`${other.mount}/records?sort=timestamp&excludeKind=process&presentation=ansi&limit=100&tail=1`, expect.anything()));
     fireEvent.change(screen.getByRole("combobox", { name: "Run" }), { target: { value: runId } });
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`${mount}/records?sort=timestamp&excludeKind=process&presentation=ansi&limit=100`, expect.anything()));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`${mount}/records?sort=timestamp&excludeKind=process&presentation=ansi&limit=100&tail=1`, expect.anything()));
     expect(new URLSearchParams(window.location.search).get("run")).toBe(runId);
     expect(screen.queryByText("New run")).not.toBeInTheDocument();
   });
@@ -107,7 +107,7 @@ describe("trace runs", () => {
     const fetchMock = serve({ runs: [{ ...finished, command: undefined, process: undefined, captures: [{ kind, ref: { kind, stream: "connection-or-agent", toSeq: 2 }, summary: { count: 2 } }] }] });
     renderPage();
     expect(await screen.findByText("host run")).toBeInTheDocument();
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`${mount}/records?sort=timestamp&excludeKind=process&presentation=ansi&limit=100`, expect.anything()));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(`${mount}/records?sort=timestamp&excludeKind=process&presentation=ansi&limit=100&tail=1`, expect.anything()));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
@@ -223,11 +223,15 @@ describe("host runs recording process groups", () => {
     const rows = sampleFrame().groups.map(row => JSON.stringify(row)).join("\n");
     vi.stubGlobal("EventSource", class extends EventTarget {
       closed = false;
-      constructor() {
+      constructor(url: string) {
         super();
         queueMicrotask(() => {
           if (this.closed) return;
-          sampleFrame().groups.forEach((row, index) => this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ ...row, seq: index + 1 }), lastEventId: String(index + 1) })));
+          if (url.startsWith("/api/traces?")) {
+            this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ runs }) }));
+            return;
+          }
+          if (url.includes("/processes?")) this.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ armed: true, rows: [] }) }));
           this.dispatchEvent(new Event("end"));
         });
       }

@@ -42,7 +42,9 @@ var _ = Describe("SQL top JVM profile projection", func() {
 	})
 
 	It("keeps producer times, identity, correlation and measured API lifetime", func() {
-		snapshot := profiles.Snapshot{Kind: "sql_top", CaptureID: "capture", Source: "java-instance", Rows: []profiles.Row{{OperationID: "execution", ElapsedNS: int64(2 * time.Millisecond), SampledAt: serverTime, TraceID: "trace", SpanID: "span", Attributes: map[string]any{"startedAt": serverTime.Add(-2 * time.Millisecond).Format(time.RFC3339Nano), "api": "r2dbc", "sql": "SELECT id FROM orders"}}}}
+		snapshot := profiles.Snapshot{Kind: "sql_top", CaptureID: "capture", Source: "java-instance", Rows: []profiles.Row{{OperationID: "execution", ElapsedNS: int64(2 * time.Millisecond), SampledAt: serverTime, TraceID: "trace", SpanID: "span", Attributes: map[string]any{
+			"startedAt": serverTime.Add(-2 * time.Millisecond).Format(time.RFC3339Nano), "api": "r2dbc", "sql": "SELECT id FROM orders", "percentComplete": 42, "command": "ROLLBACK",
+		}}}}
 		rows, err := FromSnapshot(snapshot)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(rows).To(Equal([]ActiveSample{{Source: "java-instance/capture", OperationID: "execution", StartedAt: serverTime.Add(-2 * time.Millisecond), SampledAt: serverTime, ElapsedMs: 2, API: "r2dbc", SQL: "SELECT id FROM orders", TraceID: "trace", SpanID: "span"}}))

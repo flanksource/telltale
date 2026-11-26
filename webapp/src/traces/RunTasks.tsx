@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { TaskProgress } from "@flanksource/clicky-ui/data";
+import { useEventSourceFactory } from "@flanksource/clicky-ui/hooks";
 import { fetchTraceRecords, followTraceRecords, TraceStreamNotFound, type CaptureResult, type TraceRecord } from "./api";
 import { taskSnapshots } from "./taskSnapshots";
 
@@ -8,6 +9,7 @@ export function RunTasks({ mount, capture, live }: { mount: string; capture: Cap
   const [records, setRecords] = useState<TraceRecord[]>([]);
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(true);
+  const open = useEventSourceFactory();
   useEffect(() => {
     const controller = new AbortController();
     let stop: (() => void) | undefined;
@@ -26,7 +28,7 @@ export function RunTasks({ mount, capture, live }: { mount: string; capture: Cap
         if (!live) return;
         const afterSeq = initial.reduce((max, row) => Math.max(max, Number(row.seq) || 0), capture.ref.afterSeq ?? 0);
         stop = followTraceRecords({
-          mount, ref: { ...capture.ref, afterSeq },
+          mount, open, ref: { ...capture.ref, afterSeq },
           onRow: row => setRecords(previous => [...previous, row]),
           onError: reason => setError(reason.message),
           onOpen: () => setError(undefined),
@@ -39,7 +41,7 @@ export function RunTasks({ mount, capture, live }: { mount: string; capture: Cap
         setError(reason instanceof Error ? reason.message : String(reason));
       });
     return () => { controller.abort(); stop?.(); };
-  }, [mount, capture.ref, live]);
+  }, [mount, capture.ref, live, open]);
   const projected = useMemo(() => {
     try { return { snapshots: taskSnapshots(records) }; }
     catch (reason) { return { error: reason instanceof Error ? reason.message : String(reason) }; }

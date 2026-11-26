@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/flanksource/clicky/sse"
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/pkg/traceserve/records"
 	"github.com/flanksource/telltale/webapp"
@@ -23,6 +24,7 @@ type Viewer struct {
 	URL       string
 	listener  net.Listener
 	server    *http.Server
+	cancel    context.CancelFunc
 	done      chan error
 }
 
@@ -71,6 +73,7 @@ func StartViewer(options ViewerOptions) (*Viewer, error) {
 		feed.ServeHTTP(w, r)
 	})
 	processes := records.ProcessesHandler(options.DataDir)
+	groups := records.ProcessGroupsHandler(options.DataDir)
 	mux.HandleFunc("GET /api/traces/{run}/processes", func(w http.ResponseWriter, r *http.Request) {
 		if !allowed[r.PathValue("run")] {
 			http.NotFound(w, r)
@@ -78,8 +81,17 @@ func StartViewer(options ViewerOptions) (*Viewer, error) {
 		}
 		processes.ServeHTTP(w, r)
 	})
+	mux.HandleFunc("GET /api/traces/{run}/process/groups", func(w http.ResponseWriter, r *http.Request) {
+		if !allowed[r.PathValue("run")] {
+			http.NotFound(w, r)
+			return
+		}
+		groups.ServeHTTP(w, r)
+	})
 	native := records.Handler(options.DataDir)
-	mux.Handle("GET /api/traces/{run}/api/v1/traces/{kind}/{operation}", viewerNative(options.DataDir, allowed))
+	nativeHandler := viewerNative(options.DataDir, allowed)
+	mux.Handle("GET /api/traces/{run}/api/v1/traces/kinds", nativeHandler)
+	mux.Handle("GET /api/traces/{run}/api/v1/traces/{kind}/{operation}", nativeHandler)
 	mux.HandleFunc("GET /api/traces/{run}/traces/{kind}/records", func(w http.ResponseWriter, r *http.Request) {
 		if !allowed[r.PathValue("run")] {
 			http.NotFound(w, r)
@@ -88,24 +100,42 @@ func StartViewer(options ViewerOptions) (*Viewer, error) {
 		native.ServeHTTP(w, r)
 	})
 	mux.HandleFunc("GET /api/traces", func(w http.ResponseWriter, r *http.Request) {
-		runs := []telltale.MountedRun{}
-		for _, id := range options.RunIDs {
-			info, err := telltale.Get(telltale.GetOptions{DataDir: options.DataDir, RunID: id})
-			if err != nil {
-				http.Error(w, err.Error(), 500)
-				return
+		read := func() (telltale.RunsList, error) {
+			runs := make([]telltale.MountedRun, 0, len(options.RunIDs))
+			for _, id := range options.RunIDs {
+				info, err := telltale.Get(telltale.GetOptions{DataDir: options.DataDir, RunID: id})
+				if err != nil {
+					return telltale.RunsList{}, err
+				}
+				runs = append(runs, telltale.MountedRun{RunInfo: info, Mount: TracesMount + "/" + id})
 			}
-			runs = append(runs, telltale.MountedRun{RunInfo: info, Mount: TracesMount + "/" + id})
+			return telltale.RunsList{Runs: runs}, nil
+		}
+		if r.URL.Query().Get("follow") == "1" {
+			telltale.ServeRunUpdates(w, r, options.DataDir, options.RunIDs, read)
+			return
+		}
+		runs, err := read()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(telltale.RunsList{Runs: runs}); err != nil {
+		if err := json.NewEncoder(w).Encode(runs); err != nil {
 			panic(http.ErrAbortHandler)
 		}
 	})
 	mux.HandleFunc("/api/", http.NotFound)
 	mux.Handle("/", assetHandler(assets))
+	events := sse.NewHub(sse.HubOptions{Build: "telltale-viewer"})
+	handler := events.Guard(mux)
+	events.Register(mux, handler)
 	params := url.Values{"viewer": {"1"}, "run": {options.RunIDs[0]}}
-	viewer := &Viewer{URL: "http://" + listener.Addr().String() + "/?" + params.Encode(), listener: listener, server: &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: time.Minute}, done: make(chan error, 1)}
+	ctx, cancel := context.WithCancel(context.Background())
+	viewer := &Viewer{URL: "http://" + listener.Addr().String() + "/?" + params.Encode(), listener: listener, cancel: cancel,
+		server: &http.Server{Handler: handler, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, IdleTimeout: time.Minute,
+			BaseContext: func(net.Listener) context.Context { return ctx }}, done: make(chan error, 1),
+	}
 	go func() {
 		err := viewer.server.Serve(listener)
 		if errors.Is(err, http.ErrServerClosed) {
@@ -118,6 +148,7 @@ func StartViewer(options ViewerOptions) (*Viewer, error) {
 
 func (v *Viewer) Close(ctx context.Context) error {
 	v.closeOnce.Do(func() {
+		v.cancel()
 		v.closeErr = v.server.Shutdown(ctx)
 		if v.closeErr != nil {
 			v.closeErr = errors.Join(v.closeErr, v.server.Close())

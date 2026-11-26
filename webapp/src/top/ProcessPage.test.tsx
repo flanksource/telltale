@@ -125,7 +125,7 @@ describe("process totals", () => {
 });
 
 describe("ProcessPage", () => {
-  it("polls the processes of a program by name with all=true, and shows its totals as gauges with trends", async () => {
+  it("reads processes by program name with all=true and shows totals with trends", async () => {
     const fetchMock = vi.fn(() => Promise.resolve(json(reading())));
     vi.stubGlobal("fetch", fetchMock);
     renderPage("launchd");
@@ -235,7 +235,7 @@ describe("ProcessPage", () => {
   it("says no process matches, keeping the header and the filter", async () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(json({ ...reading(), processes: [] }))));
     renderPage("nothing-runs-this");
-    expect(await screen.findByText("No process runs nothing-runs-this right now. This page keeps polling.")).toBeInTheDocument();
+    expect(await screen.findByText("No process runs nothing-runs-this right now.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "nothing-runs-this" })).toBeInTheDocument();
     expect(screen.getByRole("searchbox", { name: "Filter" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Process groups/ })).toBeInTheDocument();
@@ -246,7 +246,7 @@ describe("ProcessPage", () => {
   it("says no process is running for a pid that is gone", async () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(json({ ...reading(), processes: [] }))));
     renderPage("424242");
-    expect(await screen.findByText("No process 424242 is running right now. This page keeps polling.")).toBeInTheDocument();
+    expect(await screen.findByText("No process 424242 is running right now.")).toBeInTheDocument();
   });
 
   it("reports a refusal with a Retry, keeping the header and filter, and recovers on Retry", async () => {

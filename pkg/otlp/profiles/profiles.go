@@ -7,16 +7,16 @@ import (
 	"time"
 
 	"github.com/flanksource/commons-db/recordstore/sampleframe"
+	"github.com/flanksource/telltale/pkg/tracing"
+	sdkprofiles "github.com/flanksource/telltale/sdk/profiles"
 )
 
-const ContentType = "application/x-protobuf;message=opentelemetry.proto.profiles.v1development.ProfilesData"
-const DevelopmentVersion = "1"
-const Scope = "com.flanksource.telltale.top"
-const conventionVersion int64 = 2
-const sampleKindAttribute = "telltale.sample.kind"
-const snapshotControlKind = "snapshot_control"
-
-var sampleTypes = map[string]string{"http_top": "telltale.http.active.elapsed", "sql_top": "telltale.sql.active.elapsed", "jms_top": "telltale.jms.active.elapsed"}
+const ContentType = sdkprofiles.ContentType
+const DevelopmentVersion = sdkprofiles.DevelopmentVersion
+const Scope = sdkprofiles.Scope
+const conventionVersion = sdkprofiles.ConventionVersion
+const sampleKindAttribute = sdkprofiles.SampleKindAttribute
+const snapshotControlKind = sdkprofiles.SnapshotControlKind
 
 var ErrLimit = errors.New("OTLP Profiles limit exceeded")
 
@@ -25,28 +25,16 @@ type Options struct {
 	ExpectedKind, ExpectedCaptureID, ExpectedSource string
 }
 
-type Row struct {
-	OperationID string         `json:"operationId"`
-	ElapsedNS   int64          `json:"elapsedNs"`
-	SampledAt   time.Time      `json:"sampledAt"`
-	Attributes  map[string]any `json:"attributes"`
-	TraceID     string         `json:"traceId,omitempty"`
-	SpanID      string         `json:"spanId,omitempty"`
-	Stack       []string       `json:"stack,omitempty"`
-}
+type Row = sdkprofiles.Row
 
-type Snapshot struct {
-	Kind, CaptureID, Source, ProfileID, Checkpoint string
-	Sequence                                       int64
-	PollIntervalMS                                 int64
-	StartedAt, CompletedAt                         time.Time
-	Observed, Limit                                int
-	Dropped                                        uint64
-	Complete                                       bool
-	Rows                                           []Row
-	Resource                                       map[string]any
-	Native                                         []byte
-	Digest                                         string
+type Snapshot sdkprofiles.Snapshot
+
+func Encode(snapshots []Snapshot) ([]byte, error) {
+	wire := make([]sdkprofiles.Snapshot, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		wire = append(wire, sdkprofiles.Snapshot(snapshot))
+	}
+	return sdkprofiles.Encode(wire, tracing.MaskAttribute)
 }
 
 func (s Snapshot) Frame() sampleframe.Frame {

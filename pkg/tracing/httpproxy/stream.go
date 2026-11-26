@@ -6,6 +6,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"github.com/flanksource/telltale/internal/protocol/httpdecode"
 	tracehttp "github.com/flanksource/telltale/pkg/tracing/http"
 )
 
@@ -17,10 +18,11 @@ const streamOpenComment = "event stream still open when recorded"
 // or with whatever has passed when the capture ends first. Every byte counts
 // toward the content's size, past the bodies cap that bounds its text.
 type streamCapture struct {
-	mu    sync.Mutex
-	limit int
-	kept  []byte
-	total int64
+	mu     sync.Mutex
+	limit  int
+	kept   []byte
+	total  int64
+	decode httpdecode.Options
 	// closed is set once the server's side ended; a body closed before that
 	// was cut, by its client going away or the capture ending.
 	closed bool
@@ -60,6 +62,8 @@ func (c *streamCapture) apply(exchange *tracehttp.Exchange) {
 	if !c.closed {
 		exchange.Comment = joinComments(exchange.Comment, streamOpenComment)
 	}
+	c.decode.StreamOpen = !c.closed
+	exchange.DecodeProtocol(c.decode)
 }
 
 // trimPartialRune drops a UTF-8 rune split by the cap or a chunk boundary, so

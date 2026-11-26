@@ -17,6 +17,8 @@ final class MethodCapture implements Capture {
   private final boolean filtered;
   private long filteredCalls;
   private long omittedEvents;
+  private long probeDropped;
+  private boolean instrumented;
 
   @SuppressWarnings("unchecked")
   MethodCapture(ClassOperations classes, String kind, Map<String, Object> params, String key)
@@ -37,7 +39,9 @@ final class MethodCapture implements Capture {
             throw new IllegalArgumentException("each target must be an object");
           Map<String, Object> target = new LinkedHashMap<>((Map<String, Object>) raw);
           target.put("leaseSeconds", 120);
+          target.put("managedCapture", true);
           if (redefine) {
+            target.put("leaseId", UUID.randomUUID().toString());
             target.put("source", Diagnostics.required(params, "source"));
             Map<String, Object> patched = classes.patch(new JsonBody(target));
             if (!Boolean.TRUE.equals(patched.get("applied")))
@@ -56,6 +60,7 @@ final class MethodCapture implements Capture {
             target.put("probe", options);
             Map<String, Object> armed = classes.instrument(new JsonBody(target));
             target.put("loader", armed.get("loader"));
+            instrumented |= Boolean.TRUE.equals(armed.get("instrumented"));
           }
           targets.add(target);
         }
@@ -81,6 +86,7 @@ final class MethodCapture implements Capture {
     List<?> lines = (List<?>) batch.get("events");
     List<Object> events = new ArrayList<>();
     long lost = ((Number) batch.get("dropped")).longValue();
+    probeDropped += lost;
     if (lost > 0) {
       Map<String, Object> loss = new LinkedHashMap<>();
       loss.put("kind", "dropped");
@@ -138,12 +144,17 @@ final class MethodCapture implements Capture {
     if (failure != null) throw failure;
   }
 
-  /** What the root-call filter withheld, as of the last read; null for an unfiltered capture. */
+  /** Instrumentation, release, and the loss counters of the method probe. */
   public synchronized Map<String, Object> report() {
-    if (!filtered) return null;
+    if (redefine) return null;
     Map<String, Object> report = new LinkedHashMap<>();
-    report.put("filtered", filteredCalls);
-    report.put("omitted", omittedEvents);
+    report.put("instrumented", instrumented);
+    report.put("restored", instrumented && closed);
+    report.put("probeDropped", probeDropped);
+    if (filtered) {
+      report.put("filtered", filteredCalls);
+      report.put("omitted", omittedEvents);
+    }
     return report;
   }
 
@@ -151,7 +162,7 @@ final class MethodCapture implements Capture {
     return "application/json";
   }
 
-  public byte[] finish() throws Exception {
+  public synchronized byte[] finish() throws Exception {
     if (!redefine) {
       freeze();
       com.google.gson.JsonArray events = new com.google.gson.JsonArray();

@@ -10,6 +10,18 @@ it("projects profile filter keys and match controls into the shared query browse
   expect(() => serverFiltersToFilterBar(columns, {}, vi.fn())).not.toThrow();
 });
 
+it("converts native protocol options into selectable values and allows typed operations", () => {
+  const columns = recordQueryColumns([
+    { name: "protocol", filter: { key: "filter.protocol", kind: "terms", options: ["git", "openai"], lookup: false } },
+    { name: "operation", filter: { key: "filter.operation", kind: "terms", lookup: false } },
+  ]);
+  const { filters } = serverFiltersToFilterBar(columns, {}, vi.fn());
+  expect(filters).toMatchObject([
+    { key: "filter.protocol", kind: "multi", options: [{ value: "git", label: "git" }, { value: "openai", label: "openai" }] },
+    { key: "filter.operation", kind: "text" },
+  ]);
+});
+
 it("queries the profile within its trace window with filters and a continuation cursor", async () => {
   const fetchMock = vi.fn((_url: string, _options?: RequestInit) => Promise.resolve(new Response(JSON.stringify({ rows: [{ value: 7 }], nextCursor: "next-page" }))));
   vi.stubGlobal("fetch", fetchMock);

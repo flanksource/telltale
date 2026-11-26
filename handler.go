@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/flanksource/commons-db/connection/store"
+	"github.com/flanksource/telltale/pkg/traces"
 	"github.com/flanksource/telltale/pkg/traceserve"
 )
 
@@ -34,7 +35,8 @@ type HandlerOptions struct {
 	Prefix string
 	// Connections answer the connection references of the runs it starts,
 	// and are what it lists at <prefix>/connections.
-	Connections *store.Store
+	Connections   *store.Store
+	SessionStores traces.SessionStores
 	// Definitions are the trace definitions it serves at
 	// <prefix>/definitions and arms each run it starts with.
 	Definitions Definitions
@@ -160,16 +162,29 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	runs, err := List(options)
+	read := func() (RunsList, error) { return h.listRuns(options) }
+	if r.URL.Query().Get("follow") == "1" {
+		ServeRunUpdates(w, r, options.DataDir, nil, read)
+		return
+	}
+	list, err := read()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	writeJSON(w, http.StatusOK, list)
+}
+
+func (h *Handler) listRuns(options ListOptions) (RunsList, error) {
+	runs, err := List(options)
+	if err != nil {
+		return RunsList{}, err
 	}
 	list := RunsList{Runs: make([]MountedRun, 0, len(runs))}
 	for _, run := range runs {
 		list.Runs = append(list.Runs, h.mounted(run))
 	}
-	writeJSON(w, http.StatusOK, list)
+	return list, nil
 }
 
 // listOptions reads a list's filters: q, status (repeated or comma
@@ -250,7 +265,7 @@ func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, rootError("decode start request: "+err.Error()))
 		return
 	}
-	options, err := request.Options(StartOptions{DataDir: h.options.DataDir, Connections: h.options.Connections}, h.options.Definitions)
+	options, err := request.Options(StartOptions{DataDir: h.options.DataDir, Connections: h.options.Connections, SessionStores: h.options.SessionStores}, h.options.Definitions)
 	var invalid *ValidationError
 	if errors.As(err, &invalid) {
 		writeJSON(w, http.StatusBadRequest, invalid)
@@ -353,7 +368,7 @@ func (h *Handler) store(runID string) (http.Handler, error) {
 	if store, ok := h.opened[runID]; ok {
 		return store.handler, nil
 	}
-	runtime, closeStore, err := Reopen(h.options.DataDir, runID)
+	runtime, closeStore, err := Reopen(h.options.DataDir, runID, h.options.SessionStores)
 	if err != nil {
 		return nil, err
 	}

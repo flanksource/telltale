@@ -2,11 +2,20 @@
 
 import { KindReference } from '../_components/KindReference';
 
-Reads a saved commons-db query profile or a provider configured in place over a run's window. The host seam does not require a command or PID.
+`query` reads data that a provider has already recorded and stores the returned rows in a Telltale run. It runs on the host seam and can run on its own, alongside other captures, or around a command.
 
 ```sh
 telltale run query --profile pod-cpu-by-pod --every 30s --duration 10m
+telltale run query --profile pod-cpu-by-pod --until-stopped --duration 10m
+telltale records query --view top
 ```
 
-`--profile` selects a saved profile; `--provider` accepts typed provider configuration as JSON. `--from` and `--to` set the window, `--every` polls for newer rows, and `--until-stopped` reads once at the end. Supported providers include SQL, Prometheus, OpenSearch, HTTP, PostgREST, BigQuery, Jaeger, and OpenTelemetry. Run `telltale run query --help` for all options.
+Use `--profile` for a saved profile under the config directory's `profiles/`, or `--provider` for inline JSON. Supported providers include SQL, Prometheus, OpenSearch, HTTP, PostgREST, BigQuery, Jaeger, OpenTelemetry, and CloudWatch metrics. Provider entries in a TraceDefinition's `collect.query` compile to this same kind.
+
+The default is a single read. Set `--from` and `--to` to select a window, `--until-stopped` to read once at stop, or `--every` to read periodically and append rows timed after the last row kept. A window binds to the provider's range, `params.from` and `params.to`, or the parameters declared with the `time-from` and `time-to` roles. A profile that cannot take a requested window is rejected at start.
+
+Each stored record has `time`, `profile`, `provider`, and the provider's original `row`. Each read publishes a complete sample frame for Top. The run retains sequence ranges, summaries, and checkpoint windows.
+
+A query profile defines what to read. A profile session serves live trace or Top views of that profile. Use the `query` kind to record the read in a run. Choose a typed kind such as [spans](./spans), [SQL Top](./sql_top), [SQL plan cache](./sql_plancache), or [Prometheus](./prometheus) when its specialized row schema covers the data.
+
 <KindReference kind="query" />

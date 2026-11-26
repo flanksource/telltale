@@ -12,6 +12,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/flanksource/commons/har"
+	"github.com/flanksource/telltale/internal/protocol/awswire"
+	"github.com/flanksource/telltale/internal/protocol/httpdecode"
 	tracehttp "github.com/flanksource/telltale/pkg/tracing/http"
 )
 
@@ -33,6 +35,7 @@ type exchangeState struct {
 	started time.Time
 	post    *har.PostData
 	comment string
+	decode  httpdecode.Options
 }
 
 // connectExchange is one CONNECT tunnel. Its payload stayed encrypted, so it
@@ -73,6 +76,9 @@ func exchangeOf(rules policy, req *http.Request, resp *http.Response, state exch
 		Request: request,
 	}
 	exchange := tracehttp.FromEntry(Kind, entry)
+	var scopeErr error
+	state.decode.Scope, scopeErr = awswire.SigningScope(req)
+	state.decode.InvalidScope = scopeErr != nil
 	comments := []string{state.comment}
 	if err != nil {
 		exchange.Error, exchange.Entry.Error = err.Error(), err.Error()
@@ -80,14 +86,26 @@ func exchangeOf(rules policy, req *http.Request, resp *http.Response, state exch
 	if resp == nil {
 		exchange.Response = har.Response{Cookies: []har.Cookie{}, Headers: []har.Header{}, HeadersSize: -1, BodySize: -1}
 		exchange.Comment = joinComments(comments...)
+		exchange.DecodeProtocol(state.decode)
 		return exchange, nil
 	}
-	content, encoding, comment, stream := rules.captureResponseBody(resp)
+	watch := httpdecode.KubernetesWatch(req, resp)
+	content, encoding, comment, stream := rules.captureResponseBody(resp, watch)
 	exchange.Status, exchange.Encoding, exchange.Comment = resp.StatusCode, encoding, joinComments(append(comments, comment)...)
 	exchange.Response = har.Response{
 		Status: resp.StatusCode, StatusText: http.StatusText(resp.StatusCode), HTTPVersion: resp.Proto,
 		Cookies: []har.Cookie{}, Headers: rules.headers(resp.Header), Content: content,
 		RedirectURL: resp.Header.Get("Location"), HeadersSize: -1, BodySize: resp.ContentLength,
+	}
+	if watch && resp.ContentLength < 0 {
+		// The transport decodes upstream chunks. Select chunked framing on the
+		// downstream leg so goproxy flushes each write to the watch client.
+		resp.Header.Set("Transfer-Encoding", "chunked")
+	}
+	if stream == nil {
+		exchange.DecodeProtocol(state.decode)
+	} else {
+		stream.decode = state.decode
 	}
 	return exchange, stream
 }
@@ -96,12 +114,12 @@ func exchangeOf(rules policy, req *http.Request, resp *http.Response, state exch
 // client still receives the whole response. An event stream never ends while
 // its page is open, so it cannot be read ahead: it is teed as it passes
 // instead, into the streamCapture returned.
-func (rules policy) captureResponseBody(resp *http.Response) (content har.Content, encoding, comment string, stream *streamCapture) {
+func (rules policy) captureResponseBody(resp *http.Response, watch bool) (content har.Content, encoding, comment string, stream *streamCapture) {
 	content = har.Content{Size: resp.ContentLength, MimeType: resp.Header.Get("Content-Type")}
 	if rules.bodies <= 0 || resp.Body == nil {
 		return content, "", "", nil
 	}
-	if mediaType, _, _ := mime.ParseMediaType(content.MimeType); mediaType == "text/event-stream" {
+	if mediaType, _, _ := mime.ParseMediaType(content.MimeType); mediaType == "text/event-stream" || watch {
 		stream = &streamCapture{limit: int(rules.bodies)}
 		resp.Body = teeStream{ReadCloser: resp.Body, capture: stream}
 		return content, "", "", stream
@@ -122,24 +140,29 @@ func (rules policy) captureResponseBody(resp *http.Response) (content har.Conten
 // capturePostData reads the request body before the transport does and puts
 // it back. An empty body has no postData; a binary one is described rather
 // than passed off as text, HAR's postData having no encoding.
-func (rules policy) capturePostData(req *http.Request) (*har.PostData, string) {
+func (rules policy) capturePostData(req *http.Request, state *exchangeState) {
 	consumed, keep, truncated, err := readCapped(req.Body, rules.bodies)
 	req.Body = replayBody{Reader: io.MultiReader(bytes.NewReader(consumed), req.Body), Closer: req.Body}
 	switch {
 	case err != nil:
-		return nil, "request body capture failed: " + err.Error()
+		state.comment = "request body capture failed: " + err.Error()
+		return
 	case len(consumed) == 0:
-		return nil, ""
+		return
 	}
-	text, encoding := encodeBody(keep)
-	if encoding != "" {
-		return &har.PostData{MimeType: req.Header.Get("Content-Type")}, "binary request body omitted"
+	state.decode.RequestTruncated = truncated
+	state.post = &har.PostData{MimeType: req.Header.Get("Content-Type")}
+	if !utf8.Valid(keep) {
+		if httpdecode.GitRequest(req) {
+			state.decode.GitRequest = keep
+		}
+		state.comment = "binary request body omitted"
+		return
 	}
-	post := &har.PostData{MimeType: req.Header.Get("Content-Type"), Text: text}
+	state.post.Text = string(keep)
 	if truncated {
-		return post, "request body truncated at bodies"
+		state.comment = "request body truncated at bodies"
 	}
-	return post, ""
 }
 
 // readCapped reads one byte past limit, to tell a body that exactly fills the

@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Panel } from "@flanksource/clicky-ui/components";
-import { fetchTraceRuns, RUN_STATUSES, stopRun, type RunFilter, type RunStatus, type RunTraces } from "./api";
+import { RUN_STATUSES, stopRun, type RunFilter, type RunStatus, type RunTraces } from "./api";
 import { StartRunForm } from "./StartRunForm";
 import { TracesPanel } from "./TracesPanel";
 import { RunShellSlot } from "../layout/RunShellSlot";
 
-const LIVE_POLL_MS = 1000;
+import { useRunList } from "./useRunList";
 
 // The page's state lives in the URL: the filter (q, status, kind) and the
 // selected run.
@@ -110,22 +110,17 @@ export function RunDetail({ run, readOnly = false }: { run: RunTraces; readOnly?
 
 function RunList({ state, setState }: { state: PageState; setState: (next: Partial<PageState>) => void }) {
   const filter: RunFilter = { q: state.q ?? "", status: state.status ?? "", kind: state.kind ?? "" };
-  const query = useQuery({
-    queryKey: ["trace-runs", filter],
-    queryFn: () => fetchTraceRuns(filter),
-    retry: false,
-    refetchInterval: current => current.state.data?.runs.some(run => run.live || run.status === "running") ? LIVE_POLL_MS : false,
-  });
+  const query = useRunList(["trace-runs", filter], filter);
   const filters = <RunFilters filter={filter} onChange={setState} />;
   if (query.isPending) return <div className="space-y-4">{filters}<p role="status">Loading trace runs…</p></div>;
-  if (query.isError) return (
+  if (query.error && !query.data) return (
     <div className="space-y-4">
       {filters}
-      <p role="alert">{query.error.message}</p>
+      <p role="alert">{query.error?.message}</p>
       <Button onClick={() => void query.refetch()}>Retry</Button>
     </div>
   );
-  const runs = query.data.runs;
+  const runs = query.data?.runs ?? [];
   const filtered = !!(filter.q || filter.status || filter.kind);
   if (runs.length === 0) return (
     <div className="space-y-4">
@@ -139,6 +134,7 @@ function RunList({ state, setState }: { state: PageState; setState: (next: Parti
   return (
     <div className="space-y-6">
       {filters}
+      {query.error && <p role="alert">{query.error.message}</p>}
       <label className="flex items-center gap-2 text-sm">
         Run
         <select className="rounded border border-border bg-background px-2 py-1" value={run.runId} onChange={event => setState({ run: event.target.value })}>
@@ -152,13 +148,14 @@ function RunList({ state, setState }: { state: PageState; setState: (next: Parti
 
 /** Starts runs, and shows the runs the server holds, newest first: the selected one's captures and processes, live while it runs. */
 function RunViewer({ selected, onSelect }: { selected?: string; onSelect: (id: string) => void }) {
-  const result = useQuery({ queryKey: ["viewer-run"], queryFn: () => fetchTraceRuns(), refetchInterval: 1000 });
+  const result = useRunList(["viewer-run"]);
   if (result.isPending) return <p role="status">Loading trace run…</p>;
-  if (result.isError) return <p role="alert">{result.error.message}</p>;
-  const runs = result.data.runs;
+  if (result.error && !result.data) return <p role="alert">{result.error.message}</p>;
+  const runs = result.data?.runs ?? [];
   const run = runs.find(candidate => candidate.runId === selected) ?? runs[0];
   if (!run) return <p role="alert">The viewer has no trace run.</p>;
   return <div className="flex h-full min-h-0 flex-col gap-3">
+    {result.error && <p role="alert">{result.error.message}</p>}
     <RunShellSlot name="nav">{runs.length > 1 && <label className="flex flex-wrap items-center gap-2 text-sm">
       Run
       <select className="min-w-0 max-w-full rounded border border-border bg-background px-2 py-1" value={run.runId} onChange={event => onSelect(event.target.value)}>

@@ -61,6 +61,27 @@ func TopOf(plugin TracePlugin) *TopSpec {
 	return nil
 }
 
+func openFrames(ctx context.Context, writer *sampleframe.Writer) error {
+	schema, err := sampleframe.Schema(writer.Schema.Kind + "_frames")
+	if err != nil {
+		return err
+	}
+	id := writer.Stream + "-open-frames"
+	result, err := writer.Backend.AppendBatch(ctx, recordstore.Batch{ID: id, Producer: recordstore.Producer{Instance: id, Seq: 1}, Atomic: true, Schemas: []recordstore.KindSchema{schema}, Entries: []recordstore.BatchEntry{
+		{Op: recordstore.BatchAppend, Stream: writer.Stream + "-frames", Kind: schema.Kind},
+	}})
+	if err != nil {
+		return err
+	}
+	if len(result.Entries) != 1 {
+		return fmt.Errorf("opening frames returned %d results", len(result.Entries))
+	}
+	if result.Entries[0].Error != nil {
+		return result.Entries[0].Error
+	}
+	return nil
+}
+
 type frameEmitter[R any] interface {
 	EmitFrame(context.Context, sampleframe.Frame, []R) error
 }

@@ -125,6 +125,28 @@ func (p hostParams) Validate() error {
 const params = `{"connection": "warehouse", "sessionName": "spec", "poll": "1h"}`
 
 var _ = Describe("sql_xevent trace kind", func() {
+	DescribeTable("generates an owned session name from the connected database",
+		func(raw string, databases []string) {
+			xe := &fakeXE{}
+			kind, _ := capture(xe, nil)
+			var created xetrace.CreateOptions
+			kind.NewSession = func(_ context.Context, _ *sql.DB, options xetrace.CreateOptions) (xesession.XESession, xesession.Opened, error) {
+				created = options
+				return xe, xesession.Opened{Name: options.Name}, nil
+			}
+			env := tracingtest.NewEnv(map[string]tracing.TracePlugin{"sql_xevent": xevent.NewKind(kind)})
+			session := env.Start("sql_xevent", raw)
+			tracingtest.Running(session)
+			Expect(created.Name).To(MatchRegexp(`^telltale_warehouse_\d{8}T\d{6}Z_[0-9a-f]{12}$`))
+			Expect(created.Databases).To(Equal(databases))
+			Expect(session.Snapshot().Handle).To(Equal(created.Name))
+			session.Stop("spec")
+			Expect(tracingtest.Ended(session).Error).To(BeEmpty())
+		},
+		Entry("with the connection's database filter", `{"connection":"warehouse-connection"}`, []string{"warehouse"}),
+		Entry("with an explicit instance-wide filter", `{"connection":"warehouse-connection","databases":["*"]}`, []string{xetrace.AllDatabases}),
+	)
+
 	It("stores the events its final drain reads as event rows, then drops the XE session", func() {
 		xe := &fakeXE{events: []xetrace.Event{
 			statement(51, "SELECT * FROM orders", 0),
@@ -205,7 +227,7 @@ var _ = Describe("sql_xevent trace kind", func() {
 			return open(ctx, connection)
 		}
 		host := xevent.NewKindFor[hostParams](kind).WithDefaults(hostParams{Database: "tenant_a"})
-		schema, err := host.Params()
+		schema, err := host.Schema()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(schema.Properties["database"].Default).To(Equal("tenant_a"))
 		Expect(host.ValidateParams(json.RawMessage(`{"database": ""}`))).To(MatchError(ContainSubstring("database is required")))
@@ -252,7 +274,6 @@ var _ = Describe("sql_xevent trace kind", func() {
 			Expect(xevent.NewKind(kind).ValidateParams(json.RawMessage(raw))).To(MatchError(ContainSubstring(message)))
 		},
 		Entry("no connection", `{"sessionName": "spec"}`, "connection"),
-		Entry("no session name", `{"connection": "warehouse"}`, "sessionName"),
 		Entry("a negative minimum duration", `{"connection": "warehouse", "sessionName": "spec", "minDuration": "-1s"}`, "minDuration"),
 		Entry("an option it does not define", `{"connection": "warehouse", "sessionName": "spec", "minDurationMs": 5}`, "minDurationMs"),
 	)
@@ -275,7 +296,7 @@ var _ = Describe("sql_xevent result profile", func() {
 
 var _ = Describe("sql_xevent params form", func() {
 	It("lists the connection and every capture option as fields of their own", func() {
-		schema, err := xevent.Kind().Params()
+		schema, err := xevent.Kind().Schema()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(schema.Properties).To(HaveKey("connection"))
 		Expect(schema.Properties).To(HaveKey("sessionName"))

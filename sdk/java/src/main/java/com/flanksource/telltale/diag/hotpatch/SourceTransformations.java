@@ -31,9 +31,9 @@ public final class SourceTransformations implements ClassFileTransformer {
     instrumentation = null;
   }
 
-  static synchronized void apply(Instrumentation installed, List<ClassDefinition> definitions) {
+  static synchronized void apply(Instrumentation installed, List<ClassDefinition> definitions, String leaseId) {
     if (!TransformOwner.owns(SourceTransformations.class)) {
-      TransformOwner.invoke(SourceTransformations.class, "apply", new Object[] {installed, definitions}); return;
+      TransformOwner.invoke(SourceTransformations.class, "apply", new Object[] {installed, definitions, leaseId}); return;
     }
     install(installed);
     Map<Class<?>, Patch> previous = new LinkedHashMap<>();
@@ -64,7 +64,7 @@ public final class SourceTransformations implements ClassFileTransformer {
           }
           methods.put(key, method);
         }
-        prepared.put(type, new Patch(methods));
+        prepared.put(type, new Patch(methods, leaseId));
       }
       for (Map.Entry<Class<?>, Patch> entry : prepared.entrySet()) PATCHES.put(entry.getKey(), entry.getValue());
       published = true;
@@ -81,12 +81,15 @@ public final class SourceTransformations implements ClassFileTransformer {
     }
   }
 
-  static synchronized void restore(Collection<Class<?>> types) {
+  static synchronized void restore(Collection<Class<?>> types, String leaseId) {
     if (!TransformOwner.owns(SourceTransformations.class)) {
-      TransformOwner.invoke(SourceTransformations.class, "restore", new Object[] {types}); return;
+      TransformOwner.invoke(SourceTransformations.class, "restore", new Object[] {types, leaseId}); return;
     }
-    for (Class<?> type : types)
+    for (Class<?> type : types) {
       if (!PATCHES.containsKey(type)) throw new NoSuchElementException("no authored source edit for " + type.getName());
+      if (leaseId != null && !ownsLease(type, leaseId))
+        throw new IllegalStateException("source patch lease changed for " + type.getName());
+    }
     for (Class<?> type : types) com.flanksource.telltale.observer.ObserverRuntime.assertTargetActive(type);
     Map<Class<?>, Patch> previous = new LinkedHashMap<>();
     for (Class<?> type : types) previous.put(type, PATCHES.remove(type));
@@ -105,13 +108,21 @@ public final class SourceTransformations implements ClassFileTransformer {
     return PATCHES.containsKey(type);
   }
 
+  static boolean ownsLease(Class<?> type, String leaseId) {
+    if (!TransformOwner.owns(SourceTransformations.class))
+      return Boolean.TRUE.equals(TransformOwner.invoke(SourceTransformations.class, "ownsLease", new Object[] {type, leaseId}));
+    Patch patch = PATCHES.get(type);
+    return patch != null && (leaseId == null || leaseId.equals(patch.leaseId));
+  }
+
   @SuppressWarnings("unchecked")
   public static Object dispatch(String operation, Object[] args) {
     switch (operation) {
       case "install": install((Instrumentation) args[0]); return null;
-      case "apply": apply((Instrumentation) args[0], (List<ClassDefinition>) args[1]); return null;
-      case "restore": restore((Collection<Class<?>>) args[0]); return null;
+      case "apply": apply((Instrumentation) args[0], (List<ClassDefinition>) args[1], (String) args[2]); return null;
+      case "restore": restore((Collection<Class<?>>) args[0], (String) args[1]); return null;
       case "contains": return contains((Class<?>) args[0]);
+      case "ownsLease": return ownsLease((Class<?>) args[0], (String) args[1]);
       case "source": return PatchService.sourceBytes((Instrumentation) args[0], (Class<?>) args[1]);
       default: throw new IllegalArgumentException("unknown source transformation operation " + operation);
     }
@@ -179,9 +190,11 @@ public final class SourceTransformations implements ClassFileTransformer {
 
   private static final class Patch {
     final Map<String, MethodNode> methods;
+    final String leaseId;
     volatile Throwable failure;
-    Patch(Map<String, MethodNode> methods) {
+    Patch(Map<String, MethodNode> methods, String leaseId) {
       this.methods = Collections.unmodifiableMap(methods);
+      this.leaseId = leaseId;
     }
   }
 }

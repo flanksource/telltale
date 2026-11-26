@@ -2,14 +2,18 @@ import type { DataTableColumnFilter, DataTableServerColumn, QueryBrowserRequest,
 import { failure, traceRecordsUrl, type TraceRef } from "./api";
 
 export type RecordProfileColumn = Omit<DataTableServerColumn, "filter"> & {
-  filter?: Omit<DataTableColumnFilter, "kind"> & { key: string; kind: DataTableColumnFilter["kind"] | "match" };
+  filter?: Omit<DataTableColumnFilter, "kind" | "options"> & { key: string; kind: DataTableColumnFilter["kind"] | "match"; options?: string[] };
 };
 
 export function recordQueryColumns(columns: RecordProfileColumn[]): DataTableServerColumn[] {
   return columns.map(({ filter, ...column }) => {
     if (!filter) return column;
     if (!filter.key) throw new Error(`Profile column ${column.name} is missing its filter key`);
-    return { ...column, filterKey: filter.key, filter: { ...filter, kind: filter.kind === "match" ? "terms" : filter.kind } };
+    const { key, kind, options, ...config } = filter;
+    return { ...column, filterKey: key, filter: {
+      ...config, kind: kind === "match" ? "terms" : kind,
+      ...(options ? { options: options.map(value => ({ value })) } : {}),
+    } };
   });
 }
 

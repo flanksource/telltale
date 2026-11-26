@@ -6,6 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 
+	dbcontext "github.com/flanksource/commons-db/context"
+	"github.com/flanksource/commons-db/models"
+	"github.com/flanksource/telltale/pkg/tracing/target"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -16,6 +19,18 @@ import (
 )
 
 var _ = Describe("Kubernetes log source", func() {
+	It("resolves the selected connection before listing pods", func() {
+		const reference = "connection://orders-cluster"
+		ctx := dbcontext.New().WithConnectionResolver(func(_ dbcontext.Context, name string) (*models.Connection, error) {
+			Expect(name).To(Equal(reference))
+			return nil, fmt.Errorf("test connection unavailable")
+		})
+		params := Params{Target: target.Target{Seam: target.Host}, Options: Options{
+			Source: "kubernetes", Connection: reference, Namespace: "orders", PodSelector: "app=api",
+		}}
+		Expect((capture{}).Handle(ctx, params, nil, nil)).To(MatchError(ContainSubstring("test connection unavailable")))
+	})
+
 	It("follows the requested container of matching pods", func() {
 		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "api-1", Namespace: "orders", Labels: map[string]string{"app": "api"}}, Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "app"}}}}
 		client := fake.NewSimpleClientset(pod)

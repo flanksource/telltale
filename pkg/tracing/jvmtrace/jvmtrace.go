@@ -226,6 +226,29 @@ func NewKind(registry *agentclient.Registry) *tracing.Handler[Params, Event] {
 	agent := seam.AgentSeam[Params, Event]{Probe: Kind, Registry: registry, Target: func(p Params) target.Target { return p.Target }, Mutates: func(Params) bool { return true }, ArmParams: func(p Params) (json.RawMessage, error) { return json.Marshal(p.Options) }, Compatible: func(p Params, spec protocol.ProbeSpec) error { return p.CompatibleWith(spec) }, DecodeBlob: func(blob agentclient.Blob, resource map[string]string) (seam.DecodedBlob[Event], error) {
 		rows, err := Decode(blob, resource)
 		return seam.DecodedBlob[Event]{Rows: rows}, err
-	}}
+	}, SummarizeReports: summarizeMethodReports}
 	return tracing.NewHandler[Params, Event](handler{agent: agent}, tracing.Capabilities{Live: true}, target.Agent)
+}
+
+func summarizeMethodReports(reports []map[string]any) map[string]any {
+	summary := make(map[string]any)
+	var known, instrumented bool
+	restored := len(reports) > 0
+	for _, report := range reports {
+		armed, ok := report["instrumented"].(bool)
+		known = known || ok
+		instrumented = instrumented || armed
+		restored = restored && report["restored"] == true
+		for _, key := range []string{"probeDropped", "filtered", "omitted"} {
+			if count, ok := report[key].(float64); ok {
+				previous, _ := summary[key].(float64)
+				summary[key] = previous + count
+			}
+		}
+	}
+	if known {
+		summary["instrumented"] = instrumented
+		summary["restored"] = restored
+	}
+	return summary
 }

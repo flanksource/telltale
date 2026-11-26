@@ -81,6 +81,7 @@ public final class RuntimeService implements DynamicMBean {
       // time by ClassOperations' requireProbeApiFor.
       if (name.equals("jvm_trace"))
         probe.put("version", com.flanksource.telltale.diag.agent.DiagAgent.PROBE_API_VERSION);
+      if (name.equals("jvm_ognl")) probe.put("version", 1);
       probes.add(probe);
     }
     for (String name : OBSERVATIONS) {
@@ -294,12 +295,15 @@ public final class RuntimeService implements DynamicMBean {
           return null;
         case "captureClose":
           capture.close();
-          synchronized (captures) {
-            captures.remove(key);
-            owners.remove(key);
-            captureScopes.remove(key);
+          try {
+            return capture.report();
+          } finally {
+            synchronized (captures) {
+              captures.remove(key);
+              owners.remove(key);
+              captureScopes.remove(key);
+            }
           }
-          return null;
         default:
           throw new IllegalArgumentException("unknown runtime action " + action);
       }

@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import javax.management.openmbean.CompositeData;
 import javax.management.openmbean.TabularData;
@@ -57,7 +58,36 @@ final class GcNotifications {
         pools(
             (TabularData) gcInfo.get("memoryUsageBeforeGc"),
             (TabularData) gcInfo.get("memoryUsageAfterGc")));
+    project(gc);
     return gc;
+  }
+
+  @SuppressWarnings("unchecked")
+  static void project(Map<String, Object> gc) {
+    String action = ((String) gc.get("action")).toLowerCase(Locale.ROOT);
+    gc.put("actionKind", action.contains("minor") ? "minor" : action.contains("major") ? "major" : "other");
+    long before = 0, after = 0;
+    for (Map<String, Object> pool : (List<Map<String, Object>>) gc.get("pools")) {
+      String name = (String) pool.get("name");
+      if (!pool.containsKey("heap"))
+        throw new IllegalArgumentException("cannot classify GC memory pool " + name);
+      if (!Boolean.TRUE.equals(pool.get("heap"))) continue;
+      long usedBefore = ((Number) pool.get("usedBefore")).longValue();
+      long usedAfter = ((Number) pool.get("usedAfter")).longValue();
+      before += usedBefore;
+      after += usedAfter;
+      String lower = name.toLowerCase(Locale.ROOT);
+      if (lower.contains("old gen") || lower.contains("tenured gen")) {
+        if (gc.containsKey("oldGenPool"))
+          throw new IllegalArgumentException("multiple old-generation GC pools: " + gc.get("oldGenPool") + " and " + name);
+        gc.put("oldGenPool", name);
+        gc.put("oldGenBeforeBytes", usedBefore);
+        gc.put("oldGenAfterBytes", usedAfter);
+      }
+    }
+    gc.put("heapBeforeBytes", before);
+    gc.put("heapAfterBytes", after);
+    gc.put("reclaimedBytes", before - after);
   }
 
   private static List<Map<String, Object>> pools(TabularData before, TabularData after) {

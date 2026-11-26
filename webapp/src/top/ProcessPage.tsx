@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Button } from "@flanksource/clicky-ui/components";
 import { LabeledSparkline, RadialGauge } from "@flanksource/clicky-ui/data";
 import { useRouter } from "@flanksource/clicky-ui/rpc";
-import { fetchTopProcesses, type HostUsage, type ProcessSample, type TopProcesses, type Usage } from "./api";
+import { fetchTopProcesses, topFollow, topProcessesUrl, type HostUsage, type ProcessSample, type TopProcesses, type Usage } from "./api";
 import { appendFrame, formatBytes, formatCount, formatPercent, formatRate, originText } from "./groups";
 import { FacetsPanel } from "./FacetsPanel";
 import { toneOf } from "./HostStrip";
@@ -11,6 +10,7 @@ import { isCPUHog } from "./cpu";
 import { hogLabel } from "./hogs";
 import { ProcessActions } from "./ProcessActions";
 import { RefreshControl, useRefreshInterval } from "../monitoring/RefreshControl";
+import { useSnapshotQuery } from "../monitoring/useSnapshotQuery";
 import {
   filterProcesses, metricSeries, metricValue, parseTarget, sortProcesses, sumProcesses, type Metric, type ProcessSortKey,
 } from "./processes";
@@ -150,12 +150,10 @@ function ProcessView({ target }: { target: string }) {
   const interval = useRefreshInterval();
   const { renderLink } = useRouter();
   const parsed = useMemo(() => parseTarget(target), [target]);
-  const query = useQuery({
-    queryKey: ["top-processes", parsed],
-    queryFn: ({ signal }) => fetchTopProcesses(parsed, signal),
-    retry: false,
-    // A refused reading is not polled again until Retry: the server would refuse it every second.
-    refetchInterval: current => current.state.status === "error" ? false : interval,
+  const query = useSnapshotQuery({
+    key: ["top-processes", parsed],
+    read: ({ signal }) => fetchTopProcesses(parsed, signal),
+    stream: topFollow(topProcessesUrl(parsed), interval),
   });
   const [history, setHistory] = useState<TopProcesses[]>([]);
   useEffect(() => {
@@ -175,7 +173,7 @@ function ProcessView({ target }: { target: string }) {
         {renderLink({ to: "/top", className: "text-sm underline underline-offset-4", children: "← Process groups" })}
         <h2 className="text-xl font-semibold tracking-tight">{heading}</h2>
         {latest && <span className="text-sm text-muted-foreground">tick {latest.tick} · {new Date(latest.sampledAt).toLocaleTimeString()} · {latest.processes.length} {latest.processes.length === 1 ? "process" : "processes"}</span>}
-        <RefreshControl />
+        <RefreshControl minimumIntervalMs={latest?.polling?.minimumIntervalMs} />
       </div>
       <label className="flex items-center gap-2 text-sm">
         Filter
@@ -183,13 +181,13 @@ function ProcessView({ target }: { target: string }) {
       </label>
       {query.isError && (
         <div className="space-y-2">
-          <p role="alert">{query.error.message}</p>
+          <p role="alert">{query.error?.message}</p>
           <Button onClick={() => void query.refetch()}>Retry</Button>
         </div>
       )}
       {query.isPending && <p role="status">Reading processes…</p>}
       {latest && total && latest.processes.length === 0 && (
-        <p className="text-sm text-muted-foreground">No process {"pid" in parsed ? `${parsed.pid} is running` : `runs ${parsed.name}`} right now. This page keeps polling.</p>
+        <p className="text-sm text-muted-foreground">No process {"pid" in parsed ? `${parsed.pid} is running` : `runs ${parsed.name}`} right now.</p>
       )}
       {latest && total && latest.processes.length > 0 && (
         <>
@@ -207,7 +205,7 @@ function ProcessView({ target }: { target: string }) {
   );
 }
 
-/** The processes of a program (a name) or of a process and those under it (a numeric pid), polled every second, with their total use and its trend. */
+/** The processes of a program or process tree, with their live usage trend. */
 export default function ProcessPage({ target }: { target: string }) {
   // A new target starts a new history.
   return <ProcessView key={target} target={target} />;

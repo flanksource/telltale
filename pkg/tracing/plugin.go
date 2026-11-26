@@ -119,12 +119,11 @@ type TracePlugin interface {
 	setKind(string)
 	// Title is the kind's human name.
 	Title() string
-	// Params is the JSON schema of the kind's params, with their defaults: the
-	// form a client renders to start a capture.
-	Params() (*rpc.OpenAPISchema, error)
-	// Schema is the record-store schema the kind's records are stored under
+	// Schema describes the kind's capture arguments and their defaults.
+	Schema() (*rpc.OpenAPISchema, error)
+	// RecordSchema is the record-store schema the kind's records are stored under
 	// when it is registered as kind.
-	Schema(kind string) (recordstore.KindSchema, error)
+	RecordSchema(kind string) (recordstore.KindSchema, error)
 	Capabilities() Capabilities
 	// ValidateParams decodes params as a session start would, refusing what
 	// the session would refuse.
@@ -328,7 +327,7 @@ func (h *Handler[P, R]) Title() string { return h.resultType(h.kind).Title }
 
 func (h *Handler[P, R]) Capabilities() Capabilities { return h.capabilities }
 
-func (h *Handler[P, R]) Params() (*rpc.OpenAPISchema, error) {
+func (h *Handler[P, R]) Schema() (*rpc.OpenAPISchema, error) {
 	defaults, err := h.params()
 	if err != nil {
 		return nil, err
@@ -360,19 +359,22 @@ func (h *Handler[P, R]) Params() (*rpc.OpenAPISchema, error) {
 		}
 	}
 	if connection := schema.Properties["connection"]; connection != nil {
-		endpoint := "/api/v1/connection"
+		var types []string
 		if provider, ok := h.handler.(interface{ ConnectionTypes() []string }); ok {
-			endpoint += "?types=" + strings.Join(provider.ConnectionTypes(), ",")
+			types = provider.ConnectionTypes()
 		}
-		if connection.Extensions == nil {
-			connection.Extensions = map[string]any{}
+		DescribeConnection(connection, types...)
+	}
+	if provider, ok := h.handler.(interface{ DescribeSchema(*rpc.OpenAPISchema) }); ok {
+		if schema.Extensions == nil {
+			schema.Extensions = map[string]any{}
 		}
-		connection.Extensions["x-clicky-lookup"] = map[string]any{"url": endpoint, "filter": "connection", "searchParam": "__lookup_q"}
+		provider.DescribeSchema(schema)
 	}
 	return schema, nil
 }
 
-func (h *Handler[P, R]) Schema(kind string) (recordstore.KindSchema, error) {
+func (h *Handler[P, R]) RecordSchema(kind string) (recordstore.KindSchema, error) {
 	schema, err := h.resultType(kind).KindSchema()
 	if err != nil {
 		return schema, err
@@ -472,7 +474,7 @@ func (h *Handler[P, R]) open(ctx dbcontext.Context, options openOptions) (*sourc
 	if err != nil {
 		return nil, err
 	}
-	schema, err := h.Schema(options.kind)
+	schema, err := h.RecordSchema(options.kind)
 	if err != nil {
 		return nil, err
 	}
@@ -505,6 +507,11 @@ func (h *Handler[P, R]) open(ctx dbcontext.Context, options openOptions) (*sourc
 	}
 	if err := src.closeExports(); err != nil {
 		return nil, errors.Join(fmt.Errorf("prepare: %w", err), release())
+	}
+	if emitter.frames != nil {
+		if err := openFrames(ctx, emitter.frames); err != nil {
+			return nil, errors.Join(fmt.Errorf("open Top frame stream: %w", err), release())
+		}
 	}
 	var read func(context.Context) error
 	if checkpointer, ok := h.handler.(Checkpointer[P, R]); ok {

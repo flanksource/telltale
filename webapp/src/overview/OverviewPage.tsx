@@ -5,7 +5,7 @@ import { Badge, DataTable, type DataTableColumn } from "@flanksource/clicky-ui/d
 import { formatDuration } from "@flanksource/clicky-ui/utils";
 import { useRouter } from "@flanksource/clicky-ui/rpc";
 import { fetchForm, fetchSources, fetchTraces, searchParams } from "../otel/api";
-import { fetchTraceRuns } from "../traces/api";
+import { useRunList } from "../traces/useRunList";
 import { RunDetail } from "../traces/TracesPage";
 import { StartRunForm } from "../traces/StartRunForm";
 import { activityRows, type ActivityRow } from "./activity";
@@ -39,8 +39,7 @@ export default function OverviewPage() {
   const [state, setState, activitySearch] = useOverviewState();
   const [recording, setRecording] = useState(false);
   const wantsTraces = !state.run && state.activity !== "run";
-  const runs = useQuery({ queryKey: ["trace-runs", {}], queryFn: () => fetchTraceRuns(), retry: false,
-    refetchInterval: query => query.state.status === "error" ? false : query.state.data?.runs.some(run => run.status === "running" && !run.standing) ? 1000 : 5000 });
+  const runs = useRunList(["trace-runs", {}]);
   const form = useQuery({ queryKey: ["otel-form"], queryFn: fetchForm, retry: false, staleTime: Infinity, enabled: wantsTraces });
   const sources = useQuery({ queryKey: ["otel-sources"], queryFn: fetchSources, retry: false, enabled: wantsTraces });
   const values = useMemo(() => ({ ...form.data?.defaults, ...(state.otelSource ? { source: state.otelSource } : {}), ...(state.otelWindow ? { lookback: state.otelWindow } : {}) }), [form.data, state.otelSource, state.otelWindow]);

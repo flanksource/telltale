@@ -7,6 +7,8 @@
  * and cost notes are presentation only.
  */
 import type { StartForm, StartRequest } from "../traces/api";
+import { SERVER_KUBECONFIG, backendForm, backendParams, captureBackend } from "./backends";
+import { argumentErrors, connectionTypes } from "./schemaValidation";
 
 export type Seam = "agent" | "process" | "proxy" | "host" | "connection";
 
@@ -17,7 +19,11 @@ export type JsonSchema = {
   default?: unknown;
   properties?: Record<string, JsonSchema>;
   required?: string[];
-  allOf?: { if?: JsonSchema; then?: JsonSchema }[];
+  allOf?: JsonSchema[];
+  if?: JsonSchema;
+  then?: JsonSchema;
+  else?: JsonSchema;
+  oneOf?: JsonSchema[];
   [key: string]: unknown;
 };
 
@@ -36,20 +42,24 @@ export const GROUPS: { id: GroupId; label: string; description: string }[] = [
 
 const PRESENTATION: Record<string, { group: GroupId; cost?: string }> = {
   http: { group: "traffic", cost: "bodies to 256KiB" },
+  http_proxy: { group: "traffic" },
   http_top: { group: "traffic" },
   sql: { group: "sql" },
+  pg_proxy: { group: "sql" },
   sql_top: { group: "sql" },
   sql_deadlock: { group: "sql_server" },
   sql_plancache: { group: "sql_server" },
   sql_xevent: { group: "sql_server", cost: "creates an XE session" },
   logs: { group: "query" },
   spans: { group: "query" },
+  query: { group: "query" },
   jvm_jfr: { group: "jvm", cost: "attaches to the JVM" },
   jvm_trace: { group: "jvm", cost: "instruments methods" },
   jvm_notifications: { group: "jvm" },
   jvm_ognl: { group: "jvm" },
   jvm_redefine: { group: "jvm", cost: "changes classes" },
   jms: { group: "jvm" },
+  jms_top: { group: "jvm" },
   exec: { group: "clicky" },
   entity: { group: "clicky" },
   task: { group: "clicky" },
@@ -82,16 +92,10 @@ export interface Kind {
 const isSeam = (seam: string): seam is Seam => seam in SEAMS;
 
 function enabledParams(name: string, schema: JsonSchema): JsonSchema {
-  const branch = schema.allOf?.find(entry => entry.if?.properties?.enabled)?.then;
+  const item = schema.oneOf?.find(candidate => candidate.type === "object");
+  const branch = item?.allOf?.find(entry => entry.if?.properties?.enabled)?.then;
   if (!branch) throw new Error(`trace kind ${name} has no if-enabled params branch`);
   return { type: "object", ...branch };
-}
-
-/** The types a kind's connection lookup asks for (`/api/v1/connection?types=a,b`). */
-function lookupTypes(params: JsonSchema): string[] {
-  const lookup = params.properties?.connection?.["x-clicky-lookup"] as { url?: string } | undefined;
-  if (!lookup?.url) return [];
-  return new URL(lookup.url, "http://lookup").searchParams.get("types")?.split(",").filter(Boolean) ?? [];
 }
 
 /** The armable kinds of a start form. Telltale's own process (seam self) is not offered here. */
@@ -118,7 +122,7 @@ export function readKinds(form: StartForm): Kind[] {
       ...(presentation.cost ? { cost: presentation.cost } : {}),
       seams,
       defaultSeam,
-      connectionTypes: seams.includes("connection") ? lookupTypes(params) : [],
+      connectionTypes: seams.includes("connection") ? connectionTypes(params.properties?.connection) : [],
       params,
       defaults,
     }];
@@ -151,9 +155,10 @@ export type StopMode = "exit" | "duration" | "manual";
 export interface Capture {
   id: string;
   kind: string;
+  backend?: string;
   seam: Seam;
   agent: AgentChoice;
-  /** A connection:// reference, for the connection seam. */
+  /** A connection:// reference for a connection seam or a host backend. */
   connection: string;
   /** Lets an agent capture change the runtime, such as instrumenting methods; the agent must allow mutations too. */
   allowMutation: boolean;
@@ -186,7 +191,6 @@ function nextCaptureId(draft: ArmDraft, kind: string): string {
 
 /** A new capture of kind on its default seam with the server's defaults, appended to the draft. */
 export function addCapture(draft: ArmDraft, kind: Kind, patch: CapturePatch = {}): ArmDraft {
-  const hidden = hiddenParamKeys(kind);
   const capture: Capture = {
     id: nextCaptureId(draft, kind.name),
     kind: kind.name,
@@ -195,7 +199,15 @@ export function addCapture(draft: ArmDraft, kind: Kind, patch: CapturePatch = {}
     connection: "",
     allowMutation: false,
     ...patch,
-    params: { ...Object.fromEntries(Object.entries(kind.defaults).filter(([key]) => !hidden.includes(key))), ...patch.params },
+    params: {},
+  };
+  const backend = captureBackend(capture);
+  const fields = backend && backendForm(kind, backend)?.properties;
+  const hidden = hiddenParamKeys(kind);
+  const defaults = backend?.kind === "spans" ? (kind.defaults.opensearch as Record<string, unknown> | undefined) ?? {} : kind.defaults;
+  capture.params = {
+    ...Object.fromEntries(Object.entries(defaults).filter(([key]) => backend ? Object.hasOwn(fields ?? {}, key) : !hidden.includes(key))),
+    ...patch.params,
   };
   return { ...draft, captures: [...draft.captures, capture] };
 }
@@ -227,7 +239,8 @@ export function agentProbeDraft(kinds: Kind[], agent: string, probe: string, par
 
 /** Where a capture runs, in a few words: the connection, the agents, or the seam. */
 export function captureTargetText(capture: Capture): string {
-  if (capture.seam === "connection") return capture.connection.replace("connection://", "");
+  const backend = captureBackend(capture);
+  if (capture.seam === "connection" || backend) return capture.connection.replace("connection://", "") || (backend?.provider === "k8s" ? SERVER_KUBECONFIG : "");
   if (capture.seam === "agent") return agentText(capture.agent);
   return SEAMS[capture.seam].label.toLowerCase();
 }
@@ -254,7 +267,8 @@ function agentTargets(choice: AgentChoice, allowMutation: boolean): Record<strin
 }
 
 function captureEntries(capture: Capture, kind: Kind): Record<string, unknown>[] {
-  const base: Record<string, unknown> = { enabled: true, ...capture.params };
+  const backend = captureBackend(capture);
+  const base: Record<string, unknown> = { enabled: true, ...(backend ? backendParams(capture, backend) : capture.params) };
   if (capture.seam === "agent") return agentTargets(capture.agent, capture.allowMutation).map(target => ({ ...base, target }));
   if (capture.seam === "connection") return [{ ...base, connection: capture.connection }];
   return [kind.params.properties?.target ? { ...base, target: { seam: capture.seam } } : base];
@@ -323,7 +337,10 @@ function captureErrors(capture: Capture, kind: Kind, pointer: string): DraftErro
   if (capture.seam === "connection" && !capture.connection) return [at("/connection", `${kind.title} needs a ${kind.connectionTypes.join(" or ") || "saved"} connection.`)];
   if (capture.seam === "agent" && capture.agent.mode === "id" && chosenAgents(capture.agent).length === 0) return [at("/target/agent", `${kind.title} needs an agent.`)];
   if (capture.seam === "agent" && capture.agent.mode === "selector" && Object.keys(selectorMap(capture.agent.selector)).length === 0) return [at("/target/selector", "An agent selector needs at least one key=value.")];
-  return [];
+  const backend = captureBackend(capture);
+  return argumentErrors(kind.params, captureEntries(capture, kind)[0]!).map(({ instancePath, message }) =>
+    at(instancePath, backend && !capture.connection && instancePath.endsWith("/connection") ? `${backend.title} needs a saved connection.` : message),
+  );
 }
 
 export function validate(draft: ArmDraft, kinds: Kind[]): DraftError[] {

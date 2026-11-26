@@ -16,11 +16,11 @@ import (
 // properties each kind gained since, which may differ from the golden.
 var schemaGoldens = map[string][]string{
 	"exec": nil, "goprof": nil, "jvm_jfr": nil, "llm": nil,
-	"prometheus": nil, "spans": nil, "sql_deadlock": nil, "sql_plancache": nil,
+	"prometheus": nil, "spans": {"opensearch"}, "sql_deadlock": nil, "sql_plancache": nil,
 	"sql_xevent": nil, "sql_top": nil, "stacks": nil, "terminal": nil,
 	"http": {"listen", "export", "direction"},
 	"sql":  {"listen", "export"},
-	"logs": {"target"},
+	"logs": {"backend", "namespace", "options", "podSelector", "source", "target"},
 	// query's golden is commons-db's own query kind's schema: telltale's
 	// takes the same params, plus the host target every telltale kind has,
 	// and its provider, the same type, is marked one JSON value for the CLI.
@@ -47,7 +47,7 @@ var _ = Describe("a kind's params schema", func() {
 			Expect(readErr).NotTo(HaveOccurred())
 			plugin, lookupErr := traces.Lookup(kinds, kind)
 			Expect(lookupErr).NotTo(HaveOccurred())
-			schema, schemaErr := plugin.Params()
+			schema, schemaErr := plugin.Schema()
 			Expect(schemaErr).NotTo(HaveOccurred())
 			reflected, marshalErr := json.Marshal(schema)
 			Expect(marshalErr).NotTo(HaveOccurred())

@@ -303,7 +303,7 @@ var _ = Describe("jfr result profile", func() {
 
 	It("prefills a host's form from its defaults", func() {
 		kind := jfr.NewKindFor[hostParams](&fakeRecorder{}).WithDefaults(hostParams{Engine: "jfr"})
-		schema, err := kind.Params()
+		schema, err := kind.Schema()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(schema.Properties["engine"].Default).To(Equal("jfr"))
 	})

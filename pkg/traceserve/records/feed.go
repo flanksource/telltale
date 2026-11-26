@@ -33,7 +33,7 @@ func FeedHandler(dataDir string) http.Handler {
 		values := r.URL.Query()
 		for key := range values {
 			switch key {
-			case "kind", "excludeKind", "presentation", "stream", "limit", "sort", "cursor", "follow", "format", "resume", "from", "until":
+			case "kind", "excludeKind", "presentation", "stream", "limit", "sort", "cursor", "follow", "format", "resume", "from", "until", "tail":
 			default:
 				http.Error(w, "unknown feed parameter: "+key, http.StatusBadRequest)
 				return
@@ -44,6 +44,13 @@ func FeedHandler(dataDir string) http.Handler {
 			return
 		}
 		q := read.FeedQuery{Sort: values.Get("sort"), Query: read.Query{Cursor: values.Get("cursor")}}
+		if raw := values.Get("tail"); raw != "" {
+			q.Tail, err = strconv.ParseBool(raw)
+			if err != nil {
+				http.Error(w, "invalid feed tail flag", http.StatusBadRequest)
+				return
+			}
+		}
 		if q.Sort != "" && q.Sort != "seq" && q.Sort != "timestamp" {
 			http.Error(w, "invalid record sort", http.StatusBadRequest)
 			return
@@ -68,7 +75,7 @@ func FeedHandler(dataDir string) http.Handler {
 				return
 			}
 			if follow {
-				if q.Cursor != "" || (values.Get("format") != "" && values.Get("format") != "ndjson") {
+				if q.Cursor != "" || q.Tail || (values.Get("format") != "" && values.Get("format") != "ndjson") {
 					http.Error(w, "invalid follow cursor or format", 400)
 					return
 				}
@@ -87,6 +94,18 @@ func FeedHandler(dataDir string) http.Handler {
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
+		}
+		if q.Tail && q.Cursor == "" {
+			resume := newFeedResume(r, q.Query)
+			for stream, watermark := range page.Watermark {
+				resume.Positions[stream] = watermark.HighSeq
+				resume.Generations[stream] = watermark.Generation
+			}
+			page.Resume, err = resume.encode()
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		if err := json.NewEncoder(w).Encode(presentFeedPage(page, values.Get("presentation"))); err != nil {
@@ -136,11 +155,20 @@ type feedResume struct {
 	Generations map[string]string `json:"generations"`
 }
 
+func newFeedResume(r *http.Request, q read.Query) feedResume {
+	return feedResume{From: q.From, Until: q.Until, Run: r.PathValue("run"), Positions: map[string]int64{}, Generations: map[string]string{}}
+}
+
+func (r feedResume) encode() (string, error) {
+	token, err := json.Marshal(r)
+	return base64.RawURLEncoding.EncodeToString(token), err
+}
+
 func streamFeed(w http.ResponseWriter, r *http.Request, refs []read.Ref, q read.Query) {
 	if r.Header.Get("Last-Event-ID") == "" && r.URL.Query().Get("resume") != "" {
 		r.Header.Set("Last-Event-ID", r.URL.Query().Get("resume"))
 	}
-	resume := feedResume{From: q.From, Until: q.Until, Run: r.PathValue("run"), Positions: map[string]int64{}, Generations: map[string]string{}}
+	resume := newFeedResume(r, q)
 	if last := r.Header.Get("Last-Event-ID"); last != "" {
 		data, err := base64.RawURLEncoding.DecodeString(last)
 		if err != nil || json.Unmarshal(data, &resume) != nil || resume.Run != r.PathValue("run") || len(resume.Positions) != len(refs) || !resume.From.Equal(q.From) || !resume.Until.Equal(q.Until) {
@@ -156,8 +184,8 @@ func streamFeed(w http.ResponseWriter, r *http.Request, refs []read.Ref, q read.
 			return
 		}
 		_, hasPosition := resume.Positions[key]
-		if last := r.Header.Get("Last-Event-ID"); last != "" && (!hasPosition || resume.Generations[key] != meta.Generation || resume.Positions[key] < 0 || resume.Positions[key] > meta.HighSeq) {
-			http.Error(w, "feed resume stream changed", http.StatusBadRequest)
+		if last := r.Header.Get("Last-Event-ID"); last != "" && (!hasPosition || resume.Generations[key] != meta.Generation || resume.Positions[key] < 0 || resume.Positions[key] > meta.HighSeq || resume.Positions[key] < meta.LowSeq-1) {
+			http.Error(w, "feed cursor expired; reload the event history", http.StatusConflict)
 			return
 		}
 		refs[i].AfterSeq = max(ref.AfterSeq, resume.Positions[key])
@@ -184,11 +212,11 @@ func streamFeed(w http.ResponseWriter, r *http.Request, refs []read.Ref, q read.
 		if ndjson {
 			_, err = fmt.Fprintf(w, "%s\n", data)
 		} else {
-			token, marshalErr := json.Marshal(resume)
+			token, marshalErr := resume.encode()
 			if marshalErr != nil {
 				return marshalErr
 			}
-			_, err = fmt.Fprintf(w, "id: %s\ndata: %s\n\n", base64.RawURLEncoding.EncodeToString(token), data)
+			_, err = fmt.Fprintf(w, "id: %s\ndata: %s\n\n", token, data)
 		}
 		if err != nil {
 			return err

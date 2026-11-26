@@ -258,9 +258,13 @@ final class Session implements AutoCloseable {
   }
 
   private void finishCapture(String id) throws Exception {
-    try (Capture capture = recordings.remove(id)) {
+    Capture capture = recordings.remove(id);
+    try {
       if (capture == null) throw new IllegalArgumentException("Unknown session " + id);
-      sendBlob(id, "", capture, capture.finish());
+      try (Capture recording = capture) {
+        sendBlob(id, "", recording, recording.finish());
+      }
+      sendReport(id, capture);
     } finally {
       cancelJobs(id);
       sequences.remove(id);

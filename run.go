@@ -71,6 +71,7 @@ func Start(ctx context.Context, options StartOptions) (*Run, error) {
 	startedAt := time.Now()
 	host, err := traces.Open(traces.OpenOptions{
 		DataDir: options.DataDir, RunID: traces.RunID(startedAt), Connections: options.Connections, RunConnections: options.RunConnections,
+		SessionStore: options.SessionStore, SessionStores: options.SessionStores,
 		// Reserve the tree, samples and stacks captures alongside the requested ones.
 		MaxCaptures: len(specs) + 3,
 	})
@@ -96,6 +97,7 @@ func Start(ctx context.Context, options StartOptions) (*Run, error) {
 		return nil, errors.Join(err, run.close(context.WithoutCancel(ctx)))
 	}
 	live.add(run)
+	runChanged.Notify()
 	go run.wait()
 	go run.checkpointEvery()
 	go func() {
@@ -385,6 +387,7 @@ func (r *Run) wait() {
 	r.err = err
 	live.remove(r)
 	close(r.done)
+	runChanged.Notify()
 }
 
 // attachedPoll is how often an attached run checks its process is running.

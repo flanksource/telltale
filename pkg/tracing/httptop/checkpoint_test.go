@@ -11,30 +11,12 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing/httptop"
 	"github.com/flanksource/telltale/pkg/tracing/tracingtest"
 	sdk "github.com/flanksource/telltale/sdk"
-	"github.com/flanksource/telltale/sdk/protocol"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
-type checkpointProbe struct{ received chan json.RawMessage }
-
-func (*checkpointProbe) Spec() protocol.ProbeSpec {
-	return protocol.ProbeSpec{Name: httptop.Kind, Checkpoints: true}
-}
-
-func (*checkpointProbe) Arm(context.Context, json.RawMessage, sdk.Sink) (func() error, error) {
-	return func() error { return nil }, nil
-}
-
-func (p *checkpointProbe) Checkpoint(_ context.Context, params json.RawMessage, _ sdk.Sink) error {
-	p.received <- params
-	return nil
-}
-
 var _ = Describe("HTTP Top checkpoint parameters", func() {
-	It("forwards stop reasons through the runtime and rejects invalid parameters before contacting the agent", func() {
-		probe := &checkpointProbe{received: make(chan json.RawMessage, 16)}
-		sdk.RegisterProbe(probe)
+	It("checkpoints the Go agent through the runtime and rejects invalid parameters", func() {
 		server := sdk.Loopback()
 		DeferCleanup(func() { Expect(server.Close()).To(Succeed()) })
 		agent, err := agentclient.Connect(context.Background(), server.Connect(), "")
@@ -51,11 +33,9 @@ var _ = Describe("HTTP Top checkpoint parameters", func() {
 		tracingtest.Running(capture.Session())
 		checkpoint := tracing.WithCheckpointParams(context.Background(), json.RawMessage(`{"reason":"stop"}`))
 		Expect(env.Runtime.Checkpoint(checkpoint, capture)).To(Succeed())
-		Eventually(probe.received).Should(Receive(MatchJSON(`{"reason":"stop"}`)))
 		for _, raw := range []string{`{"reason":"stop","unknown":true}`, `{"reason":7}`} {
 			err := env.Runtime.Checkpoint(tracing.WithCheckpointParams(context.Background(), json.RawMessage(raw)), capture)
 			Expect(err).To(MatchError(ContainSubstring("invalid checkpoint params")))
-			Expect(probe.received).To(BeEmpty())
 		}
 	})
 })

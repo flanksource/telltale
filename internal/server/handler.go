@@ -9,6 +9,7 @@ import (
 
 	"github.com/flanksource/clicky/route"
 	"github.com/flanksource/clicky/rpc"
+	"github.com/flanksource/clicky/sse"
 	"github.com/flanksource/commons-db/cmd/query/connections"
 	"github.com/flanksource/commons-db/connection/store"
 	"github.com/flanksource/telltale"
@@ -63,7 +64,7 @@ func routes(options HandlerOptions, ui http.Handler) (http.Handler, error) {
 	}
 	api := http.NewServeMux()
 	rpc.NewSwaggerServer(&rpc.ServeConfig{Version: options.Version}, options.Root,
-		&rpc.OpenAPIConfig{Title: "Telltale", Version: options.Version, Extensions: []func(*rpc.OpenAPISpec){addRulesPaths, connections.AddConnectionsOpenAPI, addConnectionPaths, addOtelPaths, addReceiverPath, addFeedPaths, addJVMSnapshotPath, addJVMTopPath}}).RegisterRoutes(route.NewRouter(api))
+		&rpc.OpenAPIConfig{Title: "Telltale", Version: options.Version, Extensions: []func(*rpc.OpenAPISpec){addRulesPaths, connections.AddConnectionsOpenAPI, addConnectionPaths, addOtelPaths, addReceiverPath, addFeedPaths, addJVMSnapshotPath, addJVMTopPath, addTopPaths}}).RegisterRoutes(route.NewRouter(api))
 	root := http.NewServeMux()
 	if options.OTLP == nil {
 		options.OTLP = http.NotFoundHandler()
@@ -75,6 +76,7 @@ func routes(options HandlerOptions, ui http.Handler) (http.Handler, error) {
 		RegisterExecutionRoutes(route.NewRouter(installer))
 	root.Handle("/api/v1/agents/install/java", http.NewCrossOriginProtection().Handler(installer))
 	root.Handle("/api/v1/jvm/", http.NewCrossOriginProtection().Handler(installer))
+	root.Handle("GET /api/v1/jvm/top", jvmTopUpdates())
 	root.Handle("POST /api/v1/jvm/snapshot", http.NewCrossOriginProtection().Handler(http.HandlerFunc(jvmSnapshotHandler)))
 	hub := agentclient.NewHub(agentclient.Default, agentclient.NewTokenStore(options.ConfigDirs))
 	root.HandleFunc("/api/agents", hub.List)
@@ -117,6 +119,13 @@ func routes(options HandlerOptions, ui http.Handler) (http.Handler, error) {
 	if options.SelfTrace != nil {
 		handler = options.SelfTrace.Handler(handler)
 	}
+	build := options.Version
+	if build == "" {
+		build = "dev"
+	}
+	events := sse.NewHub(sse.HubOptions{Build: build})
+	handler = events.Guard(handler)
+	events.Register(root, handler)
 	return handler, nil
 }
 

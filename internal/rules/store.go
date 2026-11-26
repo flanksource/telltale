@@ -18,7 +18,7 @@ type Journal interface {
 	Events(context.Context) ([]Event, error)
 	Close() error
 }
-type journal struct{ backend recordstore.Backend }
+type journal struct{ backend *recordstore.Notifier }
 
 // JournalPath is the rule event journal of dataDir.
 func JournalPath(dataDir string) string {
@@ -37,7 +37,14 @@ func OpenJournal(dataDir string) (Journal, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &journal{backend: backend}, nil
+	watch, err := recordstore.NewNotifier(backend, recordstore.NotifierOptions{RecheckInterval: time.Second})
+	if err != nil {
+		return nil, errors.Join(err, backend.Close())
+	}
+	if _, err := watch.Append(context.Background(), "monitor", "rule_event", nil); err != nil {
+		return nil, errors.Join(err, watch.Close())
+	}
+	return &journal{backend: watch}, nil
 }
 func (j *journal) Append(ctx context.Context, event Event) error {
 	data, err := json.Marshal(event)
@@ -50,12 +57,8 @@ func (j *journal) Append(ctx context.Context, event Event) error {
 func (j *journal) Events(ctx context.Context) ([]Event, error) {
 	events := []Event{}
 	err := j.backend.Scan(ctx, "monitor", 0, func(_ int64, row recordstore.Row) error {
-		data, ok := row["event"].(string)
-		if !ok {
-			return fmt.Errorf("rule event must be a JSON string")
-		}
-		var event Event
-		if err := json.Unmarshal([]byte(data), &event); err != nil {
+		event, err := readEvent(row)
+		if err != nil {
 			return err
 		}
 		events = append(events, event)
@@ -65,5 +68,15 @@ func (j *journal) Events(ctx context.Context) ([]Event, error) {
 		return events, nil
 	}
 	return events, err
+}
+
+func readEvent(row recordstore.Row) (Event, error) {
+	var event Event
+	data, ok := row["event"].(string)
+	if !ok {
+		return event, fmt.Errorf("rule event must be a JSON string")
+	}
+	err := json.Unmarshal([]byte(data), &event)
+	return event, err
 }
 func (j *journal) Close() error { return j.backend.Close() }

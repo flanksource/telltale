@@ -9,7 +9,6 @@ import (
 	"github.com/flanksource/clicky"
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/models"
-	"github.com/flanksource/commons-db/query/sqlactivity"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/sqlconn"
 	"github.com/flanksource/telltale/pkg/tracing/target"
@@ -144,9 +143,12 @@ func (handler) Prepare(ctx dbcontext.Context, p Params, out tracing.Emitter[Samp
 		return ctx, nil, err
 	}
 	engine := engines[connType]
-	c, err := newCapture(p.Options, engine, func(ctx context.Context, idle bool) (snapshot, error) {
-		return sqlactivity.Read(ctx, pool, engine, sqlactivity.Filter{Idle: idle})
-	})
+	read, err := databaseReader(ctx, pool, engine)
+	if err != nil {
+		release()
+		return ctx, nil, err
+	}
+	c, err := newCapture(p.Options, engine, read)
 	if err != nil {
 		release()
 		return ctx, nil, err

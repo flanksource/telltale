@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Button, Tabs } from "@flanksource/clicky-ui/components";
 import { TraceFeed } from "@flanksource/clicky-ui/data";
+import { useEventSourceFactory } from "@flanksource/clicky-ui/hooks";
 import { useRouter } from "@flanksource/clicky-ui/rpc";
 import { traceFeedSource } from "../traces/feed";
 import type { RunTraces } from "../traces/api";
@@ -9,14 +10,15 @@ import type { Recording } from "./captures";
 
 export function JvmCaptureResults({ recording, stop, stopping, error }: { recording?: Recording; stop: (run: RunTraces) => void; stopping: boolean; error: Error | null }) {
   const { renderLink } = useRouter();
+  const open = useEventSourceFactory();
   const [view, setView] = useState("live");
   const mount = recording?.run.mount;
   const kind = recording?.capture.kind;
   const source = useMemo(() => {
     if (!mount || !kind) return undefined;
-    const feed = traceFeedSource(mount);
+    const feed = traceFeedSource(mount, open);
     return { loadPage: ((request, signal) => feed.loadPage({ ...request, kind }, signal)) as typeof feed.loadPage, follow: ((request) => feed.follow!({ ...request, kind })) as NonNullable<typeof feed.follow> };
-  }, [mount, kind]);
+  }, [mount, kind, open]);
   if (!recording || !source) return <div className="grid h-full min-h-48 place-content-center gap-2 p-4 text-center text-sm text-muted-foreground"><p>Select a recording or start a capture.</p><p>Events stay available after the capture stops.</p></div>;
   const { run, capture } = recording;
   const live = run.status === "running";

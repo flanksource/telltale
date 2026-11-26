@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"sync"
 	"time"
 
+	"github.com/flanksource/telltale/internal/livestream"
 	"github.com/flanksource/telltale/pkg/tracing/groups"
 	"github.com/flanksource/telltale/pkg/tracing/process"
 )
@@ -36,20 +36,24 @@ type TopProcesses struct {
 	Tick      int64                  `json:"tick"`
 	Host      *groups.HostUsage      `json:"host,omitempty"`
 	Processes []groups.ProcessSample `json:"processes"`
+	Polling   TopPolling             `json:"polling"`
 }
 
-// topIdle is how long a live Top keeps reading after it was last asked for a
-// frame.
-const topIdle = 30 * time.Second
+// TopFrame is the latest live frame with the server's recommended polling interval.
+type TopFrame struct {
+	groups.Frame
+	Polling TopPolling `json:"polling"`
+}
 
-// TopHandler serves TopMount, one Top per choice of all and net, each read
-// every groups.DefaultInterval while asked for.
+// TopHandler samples on demand. All views share one rolling CPU budget.
 type TopHandler struct {
-	sampler *process.Sampler
-	every   time.Duration
-	mu      sync.Mutex
-	tops    map[topChoice]*liveTop
-	closed  bool
+	sampler  *process.Sampler
+	updates  livestream.Sampler[topChoice, TopFrame]
+	gate     chan struct{}
+	done     chan struct{}
+	tops     map[topChoice]*liveTop
+	budget   topBudget
+	lastCost time.Duration
 }
 
 type topChoice struct {
@@ -59,7 +63,7 @@ type topChoice struct {
 // NewTopHandler serves the groups of the host, with the rules of the
 // groups.yaml its config dirs keep applied over the built-in ones.
 func NewTopHandler() *TopHandler {
-	return &TopHandler{sampler: process.NewSampler(), every: groups.DefaultInterval, tops: map[topChoice]*liveTop{}}
+	return &TopHandler{sampler: process.NewSampler(), gate: make(chan struct{}, 1), done: make(chan struct{}), tops: map[topChoice]*liveTop{}}
 }
 
 func (h *TopHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -81,35 +85,48 @@ func (h *TopHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	live, err := h.live(choice)
-	if errors.Is(err, groups.ErrNetUnsupported) {
-		http.Error(w, err.Error(), http.StatusNotImplemented)
-		return
-	}
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	var body any
+	var read topRead
 	switch r.URL.Path {
 	case TopMount:
-		body, err = live.latest(r.Context())
+		read = func(live *liveTop, polling TopPolling) (any, error) {
+			frame := live.frame
+			overhead := *frame.Overhead
+			percent := h.budget.cpuPercent()
+			overhead.CPUPercent = &percent
+			frame.Overhead = &overhead
+			return TopFrame{Frame: frame, Polling: polling}, nil
+		}
 	case TopProcessesPath:
 		var filter groups.ProcessFilter
 		if filter, err = processFilter(r); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		body, err = live.processes(r.Context(), filter)
+		read = func(live *liveTop, polling TopPolling) (any, error) {
+			picked := live.top.Processes(filter)
+			if picked == nil {
+				picked = []groups.ProcessSample{}
+			}
+			return TopProcesses{SampledAt: live.frame.SampledAt, Tick: live.frame.Tick, Host: live.frame.Host, Processes: picked, Polling: polling}, nil
+		}
 	case TopFacetsPath:
 		var pid int
 		if pid, err = queryPID(r); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		body, err = live.facets(r.Context(), pid)
+		read = func(live *liveTop, _ TopPolling) (any, error) { return live.top.Facets(r.Context(), pid) }
 	default:
 		http.NotFound(w, r)
+		return
+	}
+	if r.URL.Query().Get("follow") == "1" {
+		h.follow(w, r, choice, read)
+		return
+	}
+	body, err := h.latest(r.Context(), choice, read)
+	if errors.Is(err, groups.ErrNetUnsupported) {
+		http.Error(w, err.Error(), http.StatusNotImplemented)
 		return
 	}
 	if errors.Is(err, groups.ErrNotListed) {
@@ -170,132 +187,141 @@ func queryBool(r *http.Request, name string) (bool, error) {
 	return parsed, nil
 }
 
-// live is the Top of choice, started on first ask.
-func (h *TopHandler) live(choice topChoice) (*liveTop, error) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.closed {
-		return nil, errors.New("the server is stopping")
-	}
-	if live, ok := h.tops[choice]; ok {
-		return live, nil
-	}
+func (h *TopHandler) open(ctx context.Context, choice topChoice) (*liveTop, error) {
 	catalog, err := groups.CatalogFile()
 	if err != nil {
 		return nil, err
 	}
-	options, err := groups.Options{All: choice.all, Net: choice.net, Catalog: catalog, Interval: h.every.String()}.TopOptions()
+	options, err := groups.Options{All: choice.all, Net: choice.net, Catalog: catalog}.TopOptions()
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	options.OnDemand = true
 	top, err := groups.NewTop(ctx, h.sampler, options)
 	if err != nil {
-		cancel()
 		return nil, err
 	}
-	live := &liveTop{top: top, cancel: cancel, asked: time.Now(), first: make(chan struct{}), done: make(chan struct{})}
+	live := &liveTop{top: top}
 	h.tops[choice] = live
-	go live.run(ctx, h.every, func() {
-		h.mu.Lock()
-		defer h.mu.Unlock()
-		if h.tops[choice] == live {
-			delete(h.tops, choice)
-		}
-	})
 	return live, nil
 }
 
 // Close stops every live Top.
 func (h *TopHandler) Close() error {
-	h.mu.Lock()
-	h.closed = true
-	tops := make([]*liveTop, 0, len(h.tops))
-	for _, live := range h.tops {
-		tops = append(tops, live)
+	h.updates.Close()
+	h.gate <- struct{}{}
+	defer func() { <-h.gate }()
+	select {
+	case <-h.done:
+		return nil
+	default:
+		close(h.done)
 	}
-	h.mu.Unlock()
-	for _, live := range tops {
-		live.cancel()
-		<-live.done
+	for _, live := range h.tops {
+		live.top.Close()
 	}
 	return nil
 }
 
-// liveTop reads a Top every interval until it has not been asked for in
-// topIdle, keeping its latest frame or why it failed.
 type liveTop struct {
-	top    *groups.Top
-	cancel context.CancelFunc
-	mu     sync.Mutex
-	frame  groups.Frame
-	err    error
-	asked  time.Time
-	first  chan struct{}
-	done   chan struct{}
+	top     *groups.Top
+	frame   groups.Frame
+	err     error
+	started time.Time
+	cost    time.Duration
 }
 
-func (l *liveTop) run(ctx context.Context, every time.Duration, forget func()) {
-	defer close(l.done)
-	defer l.top.Close()
-	defer forget()
-	ticker := time.NewTicker(every)
-	defer ticker.Stop()
-	for read := 0; ; read++ {
-		frame, err := l.top.Tick(ctx)
-		l.mu.Lock()
-		if err == nil {
-			l.frame = frame
+type topRead func(*liveTop, TopPolling) (any, error)
+
+var errTopClosed = errors.New("the server is stopping")
+
+func (h *TopHandler) latest(ctx context.Context, choice topChoice, read topRead) (any, error) {
+	for {
+		body, wait, err := h.read(ctx, choice, read)
+		if wait == 0 || err != nil {
+			return body, err
 		}
-		l.err = err
-		idle := time.Since(l.asked) > topIdle
-		l.mu.Unlock()
-		if read == 0 {
-			close(l.first)
-		}
-		if idle {
-			return
-		}
+		timer := time.NewTimer(wait)
 		select {
 		case <-ctx.Done():
-			return
-		case <-ticker.C:
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-h.done:
+			timer.Stop()
+			return nil, errTopClosed
+		case <-timer.C:
 		}
 	}
 }
 
-// latest is the latest frame, once one was read.
-func (l *liveTop) latest(ctx context.Context) (groups.Frame, error) {
-	l.mu.Lock()
-	l.asked = time.Now()
-	l.mu.Unlock()
+func (h *TopHandler) read(ctx context.Context, choice topChoice, read topRead) (any, time.Duration, error) {
 	select {
 	case <-ctx.Done():
-		return groups.Frame{}, ctx.Err()
-	case <-l.first:
+		return nil, 0, ctx.Err()
+	case h.gate <- struct{}{}:
 	}
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.frame, l.err
+	defer func() { <-h.gate }()
+	select {
+	case <-h.done:
+		return nil, 0, errTopClosed
+	default:
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, 0, err
+	}
+	now := time.Now()
+	live := h.tops[choice]
+	estimate := h.lastCost
+	if live != nil {
+		estimate = live.cost
+	}
+	wait := h.budget.wait(now, estimate)
+	if live != nil {
+		wait = max(wait, live.started.Add(topPollInterval(live.cost)).Sub(now))
+	}
+	if wait == 0 {
+		var err error
+		if live, err = h.collect(ctx, choice); err != nil {
+			return nil, 0, err
+		}
+	} else if live == nil || (live.frame.Tick == 0 && live.err == nil) {
+		return nil, wait, nil
+	}
+	if live.err != nil {
+		return nil, 0, live.err
+	}
+	floor := max(topPollInterval(live.cost), h.budget.wait(time.Now(), live.cost))
+	body, err := read(live, TopPolling{MinimumIntervalMS: (floor + time.Millisecond - 1).Milliseconds()})
+	return body, 0, err
 }
 
-// processes are the processes of the latest frame filter picks.
-func (l *liveTop) processes(ctx context.Context, filter groups.ProcessFilter) (TopProcesses, error) {
-	frame, err := l.latest(ctx)
+func (h *TopHandler) collect(ctx context.Context, choice topChoice) (*liveTop, error) {
+	started := time.Now()
+	before, err := groups.CPUTime()
 	if err != nil {
-		return TopProcesses{}, err
+		return nil, err
 	}
-	picked := l.top.Processes(filter)
-	if picked == nil {
-		picked = []groups.ProcessSample{}
+	live := h.tops[choice]
+	if live == nil {
+		if live, err = h.open(ctx, choice); err != nil {
+			return nil, err
+		}
 	}
-	return TopProcesses{SampledAt: frame.SampledAt, Tick: frame.Tick, Host: frame.Host, Processes: picked}, nil
-}
-
-// facets are the facets of a process the latest frame listed.
-func (l *liveTop) facets(ctx context.Context, pid int) (groups.Facets, error) {
-	if _, err := l.latest(ctx); err != nil {
-		return groups.Facets{}, err
+	frame, tickErr := live.top.Tick(ctx)
+	after, err := groups.CPUTime()
+	if err != nil {
+		return nil, errors.Join(tickErr, err)
 	}
-	return l.top.Facets(ctx, pid)
+	cost := after - before
+	h.budget.record(time.Now(), cost)
+	h.lastCost = cost
+	live.started, live.cost = started, cost
+	if err := ctx.Err(); err != nil && tickErr != nil {
+		return nil, err
+	}
+	live.err = tickErr
+	if tickErr == nil {
+		live.frame = frame
+	}
+	return live, nil
 }

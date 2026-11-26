@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useHistoryRoute } from "@flanksource/clicky-ui/hooks";
 import { useRefreshInterval } from "../monitoring/RefreshControl";
+import { useSnapshotQuery } from "../monitoring/useSnapshotQuery";
 import { fetchRules, type EventFilters, type RuleConfig, type RuleStatus } from "./api";
 
 export function useRulesStatus() {
   const interval = useRefreshInterval();
-  return useQuery({ queryKey: ["rules-status"], queryFn: ({ signal }) => fetchRules<RuleStatus>("/status", signal), retry: false, refetchInterval: interval });
+  return useSnapshotQuery({ key: ["rules-status"], read: ({ signal }) => fetchRules<RuleStatus>("/status", signal), stream: interval === false ? null : "/api/rules/status?follow=1" });
 }
 export function useRuleConfig(status: RuleStatus | undefined) {
   return useQuery({ queryKey: ["rules-config", status?.revision], queryFn: ({ signal }) => fetchRules<RuleConfig>("", signal), enabled: status?.enabled === true, retry: false, staleTime: Infinity });

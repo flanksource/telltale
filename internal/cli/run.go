@@ -115,7 +115,7 @@ func newRunKindCommand(registration traces.Registration, plugin tracing.TracePlu
 	}
 	cmd.Flags().SetInterspersed(false)
 	flags.bind(cmd, registration.Checkpoint != nil)
-	schema, err := plugin.Params()
+	schema, err := plugin.Schema()
 	if err != nil {
 		panic(fmt.Sprintf("trace kind %s params: %v", registration.Name, err))
 	}
@@ -137,6 +137,9 @@ func newRunKindCommand(registration traces.Registration, plugin tracing.TracePlu
 	var checkpoint *profileCheckpointFlags
 	if defaults, ok := registration.Checkpoint.(goprof.CheckpointParams); ok {
 		checkpoint = bindProfileCheckpoint(cmd.Flags(), defaults)
+	}
+	cmd.PreRunE = func(cmd *cobra.Command, _ []string) error {
+		return params.promptRequired(cmd, registration.DefaultSeam)
 	}
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		raw, err := params.params()
@@ -234,7 +237,7 @@ func mergeParams(base, over map[string]any) map[string]any {
 
 // runTraced starts a run with start, waits for it and prints what it
 // recorded; a command that failed or a checkpoint that did is an error.
-func runTraced(cmd *cobra.Command, options telltale.StartOptions, start func(context.Context, telltale.StartOptions) (*telltale.Run, error)) error {
+func runTraced(cmd *cobra.Command, options telltale.StartOptions, start func(context.Context, telltale.StartOptions) (*telltale.Run, error)) (err error) {
 	follow, tui, ui, sort, err := followOptions(cmd)
 	if err != nil {
 		return err
@@ -260,9 +263,18 @@ func runTraced(cmd *cobra.Command, options telltale.StartOptions, start func(con
 		return err
 	}
 	options.Connections = connections
+	var closeSessions func()
+	options.SessionStores, closeSessions, err = openSessionStores(cmd, options)
+	if err != nil {
+		return err
+	}
+	defer closeSessions()
 	started, err := start(cmd.Context(), options)
 	if err != nil {
 		return err
+	}
+	if options.SessionStores != nil {
+		defer func() { err = errors.Join(err, finishSessionRun(started)) }()
 	}
 	var viewer *server.Viewer
 	if ui {

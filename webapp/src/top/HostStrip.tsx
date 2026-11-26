@@ -54,7 +54,7 @@ export function HostStrip({ host, overhead }: { host: HostUsage; overhead?: Over
           { label: "Disk read/s", value: formatRate(host.diskReadBps) },
           { label: "Disk write/s", value: formatRate(host.diskWriteBps) },
           { label: "Load", value: [host.load1, host.load5, host.load15].map(load => load.toFixed(2)).join(" "), sub: "1 / 5 / 15 min" },
-          ...(overhead ? [{ label: "telltale overhead", value: shareText(overhead.cpuPercent), sub: `CPU · ${Math.round(overhead.tickMillis)} ms/tick` }] : []),
+          ...(overhead ? [{ label: "telltale overhead", value: shareText(overhead.cpuPercent), sub: `CPU over 60s · ${Math.round(overhead.tickMillis)} ms/tick` }] : []),
         ]}
       />
     </section>

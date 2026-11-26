@@ -64,6 +64,7 @@ final class RuntimeClient {
     Map<String, Object> description = (Map<String, Object>) request("captureOpen", request);
     return new Capture() {
       private boolean closed;
+      private Map<String, Object> closedReport;
 
       public byte[] dump() throws Exception {
         return (byte[]) request("captureDump", Collections.singletonMap("id", id));
@@ -79,7 +80,7 @@ final class RuntimeClient {
 
       public void close() throws Exception {
         if (!closed) {
-          request("captureClose", Collections.singletonMap("id", id));
+          closedReport = (Map<String, Object>) request("captureClose", Collections.singletonMap("id", id));
           closed = true;
         }
       }
@@ -105,6 +106,7 @@ final class RuntimeClient {
 
       @SuppressWarnings("unchecked")
       public Map<String, Object> report() {
+        if (closed) return closedReport;
         try {
           return (Map<String, Object>) request("captureReport", Collections.singletonMap("id", id));
         } catch (Exception error) {

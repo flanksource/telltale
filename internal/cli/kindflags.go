@@ -264,10 +264,7 @@ func describeType(schema *rpc.OpenAPISchema) string {
 	return schema.Type
 }
 
-// params are the params the flags set, nested by their JSON paths; nil when
-// no flag was set, so the kind's defaults apply. A value outside a param's
-// choices is refused, naming its flag.
-func (p paramFlags) params() (json.RawMessage, error) {
+func (p paramFlags) values() (map[string]any, error) {
 	values := map[string]any{}
 	for _, param := range p.bound {
 		if !param.flag.Changed {
@@ -291,8 +288,22 @@ func (p paramFlags) params() (json.RawMessage, error) {
 		}
 		object[param.path[len(param.path)-1]] = value
 	}
-	if err := validateRequiredParams(p.schema, values, nil); err != nil {
+	return values, nil
+}
+
+// params are the params the flags set, nested by their JSON paths; nil when
+// no flag was set, so the kind's defaults apply.
+func (p paramFlags) params() (json.RawMessage, error) {
+	values, err := p.values()
+	if err != nil {
 		return nil, err
+	}
+	missing, err := missingRequiredParams(p.schema, values, nil)
+	if err != nil {
+		return nil, err
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("--%s is required", missing[0])
 	}
 	if len(values) == 0 {
 		return nil, nil

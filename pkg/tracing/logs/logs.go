@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/flanksource/commons-db/connection"
 	dbcontext "github.com/flanksource/commons-db/context"
 	dblogs "github.com/flanksource/commons-db/logs"
 	"github.com/flanksource/commons-db/logs/container"
@@ -78,9 +79,7 @@ func (p Options) Validate() error {
 		if p.Connection == "" || p.Backend == "" {
 			return fmt.Errorf("cloud logs require backend and connection")
 		}
-		switch p.Backend {
-		case "cloudwatch", "gcpcloudlogging", "azureloganalytics", "loki", "opensearch":
-		default:
+		if _, supported := cloudConnectionTypes[p.Backend]; !supported {
 			return fmt.Errorf("unknown cloud logs backend %q", p.Backend)
 		}
 	default:
@@ -141,11 +140,19 @@ func (c capture) Handle(ctx dbcontext.Context, p Params, out tracing.Emitter[Log
 			return followCloud(ctx, p.Options, func(row Log) error { return out.Emit(ctx, row) })
 		}
 		if p.Source == "kubernetes" {
+			emit := func(row Log) error { return out.Emit(ctx, row) }
+			if p.Connection != "" {
+				client, _, err := (connection.KubeconfigConnection{ConnectionName: p.Connection}).Populate(ctx)
+				if err != nil {
+					return fmt.Errorf("kubernetes connection %q: %w", p.Connection, err)
+				}
+				return followKubernetes(ctx, client, p.Options, emit)
+			}
 			client, err := ctx.LocalKubernetes()
 			if err != nil {
 				return fmt.Errorf("kubernetes client: %w", err)
 			}
-			return followKubernetes(ctx, client.Interface, p.Options, func(row Log) error { return out.Emit(ctx, row) })
+			return followKubernetes(ctx, client.Interface, p.Options, emit)
 		}
 		followCtx, cancel := context.WithCancel(ctx)
 		defer cancel()

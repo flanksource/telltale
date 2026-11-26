@@ -88,6 +88,7 @@ var _ = Describe("sql top capture", func() {
 			{SessionID: 9, ElapsedMs: 250, StartedAt: started(time.Hour)},
 		}})
 		Expect(err).NotTo(HaveOccurred())
+		Expect(out.frames).To(ConsistOf(HaveField("Summary", map[string]any{"engine": EnginePostgres})))
 		Expect(out.rows).To(Equal([]Sample{
 			{SampledAt: serverTime, Engine: EnginePostgres, SessionID: 7, BlockedBy: 9, Blocked: true,
 				StartedAt: started(1500 * time.Millisecond), TransactionStartedAt: started(4 * time.Second), ElapsedMs: 1500, TransactionMs: 4000},
@@ -156,6 +157,6 @@ var _ = Describe("sql top capture", func() {
 			return snapshot{}, errors.New("login failed")
 		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(c.poll(context.Background(), &recorder{})).To(MatchError("sample sqlserver requests: login failed"))
+		Expect(c.poll(context.Background(), &recorder{})).To(MatchError("sample sqlserver: login failed"))
 	})
 })

@@ -1,12 +1,9 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Button, Tabs } from "@flanksource/clicky-ui/components";
 import { ProcessFacetTable, SAMPLE_FACET_ORDER, SAMPLE_FACETS, type ProcessSampleFacet } from "@flanksource/clicky-ui/data";
-import { fetchTopFacets, type GroupContext } from "./api";
+import { fetchTopFacets, topFacetsUrl, topFollow, type GroupContext } from "./api";
 import { useRefreshInterval } from "../monitoring/RefreshControl";
-
-/** How often a process's facets are read again: each reading runs lsof over it. */
-export const FACETS_POLL_MS = 5000;
+import { useSnapshotQuery } from "../monitoring/useSnapshotQuery";
 
 type FacetTab = "env" | ProcessSampleFacet;
 
@@ -39,11 +36,10 @@ function ContextList({ context }: { context: GroupContext }) {
 export function FacetsPanel({ pid }: { pid: number }) {
   const interval = useRefreshInterval();
   const [tab, setTab] = useState<FacetTab>("env");
-  const query = useQuery({
-    queryKey: ["top-facets", pid],
-    queryFn: ({ signal }) => fetchTopFacets(pid, signal),
-    retry: false,
-    refetchInterval: current => current.state.status === "error" || interval === false ? false : Math.max(FACETS_POLL_MS, interval),
+  const query = useSnapshotQuery({
+    key: ["top-facets", pid],
+    read: ({ signal }) => fetchTopFacets(pid, signal),
+    stream: topFollow(topFacetsUrl(pid), interval),
   });
   const facets = query.data;
   const tabs = [
@@ -59,7 +55,7 @@ export function FacetsPanel({ pid }: { pid: number }) {
       {query.isPending && <p role="status">Reading process {pid}…</p>}
       {query.isError && (
         <div className="space-y-2">
-          <p role="alert">{query.error.message}</p>
+          <p role="alert">{query.error?.message}</p>
           <Button onClick={() => void query.refetch()}>Retry</Button>
         </div>
       )}

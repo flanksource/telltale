@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 let testDir: string;
 let server: ChildProcessWithoutNullStreams;
 let apiURL: string;
+const postgresMetricsURL = process.env.TELLTALE_SQLTOP_TEST_POSTGRES_URL;
 
 function serve(): Promise<string> {
   server = spawn(".bin/telltale", ["serve", "--port", "0", "--data-dir", testDir], { env: { ...process.env, XDG_CONFIG_HOME: join(testDir, "config") } });
@@ -28,7 +29,10 @@ beforeAll(async () => {
   testDir = await mkdtemp(resolve(".tmp", "telltale-top-"));
   const connections = join(testDir, "config", "flanksource", "connections");
   await mkdir(connections, { recursive: true });
-  await writeFile(join(connections, "warehouse.yaml"), "apiVersion: mission-control.flanksource.com/v1\nkind: Connection\nmetadata: {name: warehouse, namespace: tenant}\nspec: {postgres: {url: {value: 'postgres://localhost/example'}}}\n");
+  await writeFile(join(connections, "warehouse.yaml"), JSON.stringify({
+    apiVersion: "mission-control.flanksource.com/v1", kind: "Connection", metadata: { name: "warehouse", namespace: "tenant" },
+    spec: { postgres: { url: { value: postgresMetricsURL ?? "postgres://localhost/example" } } },
+  }));
   await writeFile(join(connections, "metrics.yaml"), "apiVersion: mission-control.flanksource.com/v1\nkind: Connection\nmetadata: {name: metrics}\nspec: {type: prometheus, url: {value: 'http://localhost:9090'}}\n");
   apiURL = await serve();
 });
@@ -51,14 +55,52 @@ interface Usage {
 }
 
 describe("completed sample records",()=>{
+  it.skipIf(!postgresMetricsURL)("records Postgres server metrics on empty frames and replays a selected frame", async () => {
+    const definition = "sqltop-metrics-test";
+    const saved = await fetch(`${apiURL}/api/traces/definitions/${definition}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ layer: "global", resourceVersion: "", definition: {
+        apiVersion: "telltale.flanksource.com/v1alpha1", kind: "TraceDefinition", metadata: { name: definition },
+        spec: { collect: { postgres: { top: [{ connection: "connection://tenant/warehouse", poll: "250ms", databases: ["telltale_nonexistent"] }] } } },
+      } }),
+    });
+    expect(saved.status, await saved.text()).toBe(200);
+    const started = await fetch(`${apiURL}/api/traces`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ duration: "1s", definition }),
+    });
+    const body = await started.text();
+    expect(started.status, body).toBe(201);
+    const run = JSON.parse(body) as { mount: string; runId: string };
+    await expect.poll(async () => {
+      const { runs } = await (await fetch(`${apiURL}/api/traces`)).json() as { runs: { runId: string; status: string }[] };
+      return runs.find(item => item.runId === run.runId)?.status;
+    }, { timeout: 10000 }).toBe("succeeded");
+    const endpoint = `${apiURL}${run.mount}/traces/sql_top/records`;
+    const response = await fetch(`${endpoint}?view=frames`);
+    expect(response.status).toBe(200);
+    interface Frame { id: string; retained: number; summary: { engine: string; serverMetrics: Record<string, unknown> } }
+    const frames = await response.json() as Frame[];
+    expect(frames.length).toBeGreaterThan(1);
+    const first = frames[0]!;
+    expect(first).toMatchObject({ retained: 0, summary: { engine: "postgres", serverMetrics: {
+      bufferUsagePercent: expect.any(Number), unavailable: { readIOPS: "Waiting for next sample", writeIOPS: "Waiting for next sample" },
+    } } });
+    const latest = frames.at(-1)!;
+    expect(latest).toMatchObject({ retained: 0, summary: { serverMetrics: { readIOPS: expect.any(Number), writeIOPS: expect.any(Number) } } });
+    const historical = await fetch(`${endpoint}?view=top&frame=${first.id}`);
+    expect(historical.status).toBe(200);
+    expect(await historical.json()).toMatchObject({ selection: first.id, frame: first, rows: [], count: 0 });
+  }, 15000);
+
   it("publishes the same SQL connection chooser for CLI operation and web start forms",async()=>{
     const response=await fetch(`${apiURL}/api/openapi.json`);
     expect(response.status).toBe(200);
     const api=await response.json() as {paths:Record<string,{post:{requestBody:{content:{"application/json":{schema:{properties:Record<string,unknown>}}}}};get:{parameters:{name:string}[]}}>};
     expect(api.paths["/api/v1/run/sql_top"]?.post.requestBody.content["application/json"].schema.properties.connection).toMatchObject({title:"Connection","x-clicky-lookup":{url:"/api/v1/connection?types=postgres,sql_server",filter:"connection"}});
     expect(api.paths["/api/v1/connection"]?.get.parameters.map(parameter=>parameter.name)).toEqual(expect.arrayContaining(["types","__lookup","__lookup_filter","__lookup_q"]));
-    const form=await (await fetch(`${apiURL}/api/traces/start`)).json() as {schema:{properties:{traces:{properties:Record<string,{allOf:{then:{properties:Record<string,unknown>}}[]}>}}}};
-    expect(form.schema.properties.traces.properties.sql_top?.allOf[0]?.then.properties.connection).toMatchObject({title:"Connection","x-clicky-lookup":{url:"/api/v1/connection?types=postgres,sql_server",filter:"connection"}});
+    const form=await (await fetch(`${apiURL}/api/traces/start`)).json() as {schema:{properties:{traces:{properties:Record<string,{oneOf:{allOf:{then:{properties:Record<string,unknown>}}[]}[]}>}}}};
+    expect(form.schema.properties.traces.properties.sql_top?.oneOf[0]?.allOf[0]?.then.properties.connection).toMatchObject({title:"Connection","x-clicky-lookup":{url:"/api/v1/connection?types=postgres,sql_server",filter:"connection"}});
     const choices=await fetch(`${apiURL}/api/v1/connection?types=postgres,sql_server&__lookup=filters`);
     expect(choices.status).toBe(200);
     expect(await choices.json()).toMatchObject({filters:{connection:{options:{"connection://tenant/warehouse":{plain:"warehouse (postgres)"}},total:1}}});
@@ -70,6 +112,17 @@ describe("completed sample records",()=>{
     expect(started.status).toBe(201);
     const run=await started.json() as {mount:string;runId:string};
     await expect.poll(async()=>((await (await fetch(`${apiURL}/api/traces`)).json()) as {runs:{runId:string;status:string}[]}).runs.find(item=>item.runId===run.runId)?.status,{timeout:10000}).toBe("succeeded");
+    const kindsResponse = await fetch(`${apiURL}${run.mount}/api/v1/traces/kinds`);
+    expect(kindsResponse.status).toBe(200);
+    const kinds = await kindsResponse.json() as { name: string; columns: unknown[]; top?: { result: string } }[];
+    expect(kinds.find(kind => kind.name === "sql_top")).toMatchObject({
+      top: { result: "active" },
+      columns: expect.arrayContaining([
+        expect.objectContaining({ name: "percentComplete", type: "number", unit: "percent" }),
+        expect.objectContaining({ name: "estimatedRemainingMs", type: "duration", unit: "ms" }),
+        expect.objectContaining({ name: "transactionLogBytesUsed", type: "bytes" }),
+      ]),
+    });
     const endpoint=`${apiURL}${run.mount}/traces/query/records`;
     const frames=await (await fetch(`${endpoint}?view=frames`)).json() as {id:string;retained:number}[];
     expect(frames).toHaveLength(1);expect(frames[0]?.retained).toBe(150);
@@ -128,6 +181,42 @@ describe("live process groups", () => {
     expect(frame.groups.length).toBeGreaterThan(0);
     // The test runner itself is a process of the host: some group counts it, with memory.
     expect(frame.groups.some(group => group.total.processes > 0 && group.total.rssBytes > 0)).toBe(true);
+  });
+
+  it("delivers a host Top frame over SSE", async () => {
+    const controller = new AbortController();
+    const response = await fetch(`${apiURL}/api/top?all=true&follow=1`, { signal: controller.signal });
+    expect(response.headers.get("content-type")).toBe("text/event-stream");
+    const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
+    try {
+      let buffer = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) throw new Error("Top stream ended before its initial sample");
+        buffer += value;
+        const frame = /^data: (.*)\n\n/m.exec(buffer);
+        if (!frame) continue;
+        expect(JSON.parse(frame[1])).toMatchObject({ tick: expect.any(Number), groups: expect.any(Array) });
+        break;
+      }
+    } finally {
+      await reader.cancel();
+      controller.abort();
+    }
+  });
+
+  it("advertises the CPU-aware polling period and reuses a frame for immediate refreshes", async () => {
+    const url = `${apiURL}/api/top?all=true`;
+    const first = await fetch(url);
+    expect(first.status).toBe(200);
+    const frame = await first.json() as Frame & { polling: { minimumIntervalMs: number }; overhead: { cpuPercent: number } };
+    expect(frame.polling.minimumIntervalMs).toBeGreaterThanOrEqual(1000);
+    expect(frame.overhead.cpuPercent).toBeGreaterThan(0);
+    const cached = await fetch(url);
+    expect(await cached.json()).toMatchObject({ tick: frame.tick, sampledAt: frame.sampledAt, polling: { minimumIntervalMs: expect.any(Number) } });
+    const processes = await fetch(`${apiURL}/api/top/processes?pid=1&all=true`);
+    expect(processes.status).toBe(200);
+    expect(await processes.json()).toMatchObject({ tick: frame.tick, polling: { minimumIntervalMs: expect.any(Number) } });
   });
 
   it("refuses a query it cannot read as true or false", async () => {

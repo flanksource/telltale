@@ -16,6 +16,7 @@ import (
 	"github.com/flanksource/commons-db/recordstore"
 	"github.com/flanksource/commons-db/recordstore/recordresults"
 	"github.com/flanksource/commons-db/recordstore/recordresults/recordresultstest"
+	"github.com/flanksource/telltale/pkg/otlp/profilepublication"
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/target"
 	"github.com/flanksource/telltale/pkg/tracing/tracingtest"
@@ -66,6 +67,13 @@ func (labeller) Handle(ctx dbcontext.Context, p labelParams, records tracing.Emi
 }
 
 var _ = Describe("Kinds", func() {
+	It("predeclares profile identities for shared readers", func() {
+		identity, err := profilepublication.ResultType().KindSchema()
+		Expect(err).NotTo(HaveOccurred())
+		schemas, err := tracing.NewKinds().Schemas()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(schemas).To(ContainElement(Equal(identity)))
+	})
 	It("advertises named results under one capture and refuses table name collisions", func() {
 		kinds := tracing.NewKinds()
 		plugin := tickPlugin().WithResults(tracing.NewResultTable("metrics", ticker{}.Schema()))
@@ -132,7 +140,7 @@ var _ = Describe("Kinds", func() {
 			return nil
 		}}, tracing.Capabilities{Live: true}, "self").
 			WithDefaults(tickParams{Count: 7, Label: "host"})
-		schema, err := plugin.Params()
+		schema, err := plugin.Schema()
 		Expect(err).ToNot(HaveOccurred())
 		Expect(schema.Properties["count"].Default).To(Equal(float64(7)))
 		Expect(schema.Properties["label"].Default).To(Equal("host"))

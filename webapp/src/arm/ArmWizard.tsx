@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@flanksource/clicky-ui/components";
 import { UiArrowLeft, UiArrowRight } from "@flanksource/clicky-ui/icons";
 import type { RunTraces } from "../traces/api";
+import { captureBackend } from "./backends";
 import type { ArmCatalog } from "./catalog";
 import { captureTargetText, stepForError, validate, type ArmDraft, type DraftError, type StepId } from "./model";
 import { Stepper, useStepper, type Step } from "./stepper";
@@ -21,7 +22,7 @@ function stepSummary(id: StepId, draft: ArmDraft): string | undefined {
     case "source":
       return draft.source?.kind === "definition" ? `definition ${draft.source.name}` : draft.source ? "captures" : undefined;
     case "captures":
-      return draft.captures.map(capture => `${capture.kind} → ${captureTargetText(capture) || "?"}`).join(", ");
+      return draft.captures.map(capture => `${captureBackend(capture)?.title ?? capture.kind} → ${captureTargetText(capture) || "?"}`).join(", ");
     case "process":
       return draft.run.mode === "command" ? draft.run.command || "no command" : draft.run.mode === "pid" ? `pid ${draft.run.pid ?? "?"}` : "no process";
     case "window":

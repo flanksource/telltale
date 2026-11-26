@@ -21,6 +21,6 @@ export interface StepProps {
 
 export const errorAt = (errors: DraftError[], path: string) => errors.find(error => error.instancePath === path)?.message;
 
-export function connectionsFor(kind: Kind, connections: ConnectionInfo[]): ConnectionInfo[] {
-  return kind.connectionTypes.length ? connections.filter(connection => kind.connectionTypes.includes(connection.type)) : connections;
+export function connectionsFor(types: string[], connections: ConnectionInfo[]): ConnectionInfo[] {
+  return types.length ? connections.filter(connection => types.includes(connection.type)) : connections;
 }

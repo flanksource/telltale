@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/telltale/internal/lifetime"
 	"github.com/flanksource/telltale/internal/otelreceiver"
 	"github.com/flanksource/telltale/internal/selftrace"
@@ -48,7 +49,14 @@ func openTelemetry(ctx context.Context, options Options) (_ *telemetry, err erro
 	if options.SelfTrace && !t.listener.Addr().(*net.TCPAddr).IP.IsLoopback() {
 		return nil, fmt.Errorf("self-trace requires a loopback OTLP gRPC listener")
 	}
-	t.store, err = otelreceiver.OpenStore(otelreceiver.StoreOptions{DataDir: options.DataDir, Retention: options.OTLP.Retention, Writable: true})
+	var sessionStore query.SessionStore
+	if options.sessionStores != nil {
+		sessionStore, err = options.sessionStores(otelreceiver.SourceID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	t.store, err = otelreceiver.OpenStore(otelreceiver.StoreOptions{DataDir: options.DataDir, Retention: options.OTLP.Retention, Writable: true, SessionStore: sessionStore})
 	if err != nil {
 		return nil, err
 	}

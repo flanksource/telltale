@@ -16,6 +16,17 @@ import (
 )
 
 var _ = Describe("the start form", func() {
+	It("describes a single capture and a nonempty list using the same item schema", func() {
+		schema, _, err := telltale.StartSchema()
+		Expect(err).NotTo(HaveOccurred())
+		branches := schema.Properties["traces"].Properties["logs"].OneOf
+		Expect(branches).To(HaveLen(2))
+		Expect(branches[0].Type).To(Equal("object"))
+		Expect(branches[1].Type).To(Equal("array"))
+		Expect(branches[1].Extensions).To(HaveKeyWithValue("minItems", 1))
+		Expect(branches[1].Items).To(Equal(branches[0]))
+	})
+
 	It("describes the command, the process tree and each armable kind's params behind its enabled switch", func() {
 		schema, defaults, err := telltale.StartSchema()
 		Expect(err).ToNot(HaveOccurred())
@@ -30,15 +41,19 @@ var _ = Describe("the start form", func() {
 		Expect(properties).To(HaveKeyWithValue("tree", HaveKeyWithValue("properties", And(HaveKeyWithValue("facets", HaveKeyWithValue("type", "boolean")), HaveKey("environment")))))
 		Expect(properties).To(HaveKeyWithValue("pid", HaveKeyWithValue("type", "integer")))
 		captures := properties["traces"].(map[string]any)["properties"].(map[string]any)
+		logItem := captures["logs"].(map[string]any)["oneOf"].([]any)[0].(map[string]any)
+		logFields := logItem["allOf"].([]any)[0].(map[string]any)["then"].(map[string]any)["properties"].(map[string]any)
+		Expect(logFields["options"]).To(HaveKeyWithValue("x-telltale-provider-options", HaveKeyWithValue("loki",
+			HaveKeyWithValue("properties", HaveKey("direction")))))
 		Expect(captures[pgproxy.Kind]).To(HaveKeyWithValue("title", "SQL"))
-		proxy := captures[httpproxy.Kind].(map[string]any)
+		proxy := captures[httpproxy.Kind].(map[string]any)["oneOf"].([]any)[0].(map[string]any)
 		fields := proxy["allOf"].([]any)[0].(map[string]any)["then"].(map[string]any)["properties"].(map[string]any)
 		Expect(fields).To(HaveKey("target"))
 		Expect(fields["target"]).To(HaveKeyWithValue("properties", Not(HaveKey("pid"))))
-		Expect(proxy).To(HaveKeyWithValue("title", "HTTP"))
+		Expect(captures[httpproxy.Kind]).To(HaveKeyWithValue("title", "HTTP"))
 		Expect(proxy["properties"]).To(HaveKeyWithValue("enabled", HaveKeyWithValue("type", "boolean")))
 		Expect(proxy["allOf"]).To(ConsistOf(And(
-			HaveKeyWithValue("if", map[string]any{"properties": map[string]any{"enabled": map[string]any{"const": true}}}),
+			HaveKeyWithValue("if", map[string]any{"required": []any{"enabled"}, "properties": map[string]any{"enabled": map[string]any{"const": true}}}),
 			HaveKeyWithValue("then", HaveKeyWithValue("properties", HaveKeyWithValue("mode", And(
 				HaveKeyWithValue("enum", ConsistOf("connect", "mitm")),
 				HaveKeyWithValue("default", "connect"),
@@ -67,7 +82,7 @@ var _ = Describe("the start form", func() {
 				HaveKeyWithValue("x-telltale-default-seam", string(registration.DefaultSeam)),
 			))
 		},
-		Entry("sql_top, aimed only at a connection", "sql_top", Equal([]any{string(target.Connection)})),
+		Entry("sql_deadlock, aimed only at a connection", "sql_deadlock", Equal([]any{string(target.Connection)})),
 		Entry("http, through a proxy or an agent", httpproxy.Kind, ContainElements(string(target.Proxy), string(target.Agent))),
 	)
 
@@ -77,7 +92,7 @@ var _ = Describe("the start form", func() {
 			Expect(err).ToNot(HaveOccurred())
 			plugin, err := traces.Lookup(kinds, kind)
 			Expect(err).ToNot(HaveOccurred())
-			params, err := plugin.Params()
+			params, err := plugin.Schema()
 			Expect(err).ToNot(HaveOccurred())
 			Expect(params.Properties["connection"].Extensions).To(HaveKeyWithValue("x-clicky-lookup", HaveKeyWithValue("url", "/api/v1/connection?types=sql_server")))
 		},

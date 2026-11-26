@@ -32,11 +32,12 @@ func objectDefaults(schema *rpc.OpenAPISchema) (map[string]any, error) {
 	return defaults, nil
 }
 
-func validateRequiredParams(schema *rpc.OpenAPISchema, values map[string]any, prefix []string) error {
+func missingRequiredParams(schema *rpc.OpenAPISchema, values map[string]any, prefix []string) ([]string, error) {
 	defaults, err := objectDefaults(schema)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	var missing []string
 	for _, name := range slices.Sorted(maps.Keys(schema.Properties)) {
 		property := schema.Properties[name]
 		value, given := values[name]
@@ -47,18 +48,24 @@ func validateRequiredParams(schema *rpc.OpenAPISchema, values map[string]any, pr
 			value, given = property.Default, true
 		}
 		path := append(slices.Clone(prefix), name)
-		if !given && slices.Contains(schema.Required, name) {
-			return fmt.Errorf("--%s is required", flagName(path))
-		}
-		if property.Type == "object" && property.AdditionalProperties == nil && property.Format != "json" && given {
+		required := slices.Contains(schema.Required, name)
+		if property.Type == "object" && property.AdditionalProperties == nil && property.Format != "json" && (given || required) {
 			nested, ok := value.(map[string]any)
-			if !ok {
-				return fmt.Errorf("param %s: expected an object", strings.Join(path, "."))
+			if given && !ok {
+				return nil, fmt.Errorf("param %s: expected an object", strings.Join(path, "."))
 			}
-			if err := validateRequiredParams(property, nested, path); err != nil {
-				return err
+			children, err := missingRequiredParams(property, nested, path)
+			if err != nil {
+				return nil, err
 			}
+			if given || len(children) > 0 {
+				missing = append(missing, children...)
+				continue
+			}
+		}
+		if !given && required {
+			missing = append(missing, flagName(path))
 		}
 	}
-	return nil
+	return missing, nil
 }

@@ -9,20 +9,23 @@ import (
 	"sync"
 	"time"
 
-	"github.com/flanksource/commons-db/query/sqlactivity"
 	"github.com/flanksource/commons-db/recordstore/sampleframe"
 	"github.com/flanksource/commons/collections"
 	"github.com/flanksource/telltale/pkg/tracing"
 )
 
-// snapshot is one read of an engine: the server's time and its requests.
-type snapshot = sqlactivity.Snapshot
+type snapshot struct {
+	ServerTime time.Time
+	Rows       []Sample
+	Metrics    *serverReading
+}
 
 type capture struct {
 	mu         sync.Mutex
 	options    Options
 	engine     string
 	read       func(context.Context, bool) (snapshot, error)
+	previous   *serverReading
 	databases  []string
 	text       []string
 	minElapsed time.Duration
@@ -45,7 +48,7 @@ func (c *capture) poll(ctx context.Context, out tracing.Emitter[Sample]) error {
 	defer c.mu.Unlock()
 	result, err := c.read(ctx, c.options.Idle)
 	if err != nil {
-		return fmt.Errorf("sample %s requests: %w", c.engine, err)
+		return fmt.Errorf("sample %s: %w", c.engine, err)
 	}
 	rows, err := c.keep(result)
 	if err != nil {
@@ -63,9 +66,14 @@ func (c *capture) poll(ctx context.Context, out tracing.Emitter[Sample]) error {
 	if len(rows) > c.options.top() {
 		rows = rows[:c.options.top()]
 	}
-	if err := tracing.PublishFrame(ctx, out, sampleframe.Frame{Source: c.options.Connection, StartedAt: result.ServerTime, CompletedAt: result.ServerTime, Observed: active, Limit: c.options.top()}, rows); err != nil {
+	frame := sampleframe.Frame{Source: c.options.Connection, StartedAt: result.ServerTime, CompletedAt: result.ServerTime, Observed: active, Limit: c.options.top(), Summary: map[string]any{"engine": c.engine}}
+	if result.Metrics != nil {
+		frame.Summary["serverMetrics"] = result.Metrics.summary(c.previous)
+	}
+	if err := tracing.PublishFrame(ctx, out, frame, rows); err != nil {
 		return err
 	}
+	c.previous = result.Metrics
 	c.polls++
 	out.Report(map[string]any{"engine": c.engine, "polls": c.polls, "active": active, "blocked": blocked, "recorded": len(rows)})
 	return nil

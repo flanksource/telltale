@@ -18,7 +18,7 @@ func kindSchema(kind string) *rpc.OpenAPISchema {
 	Expect(err).ToNot(HaveOccurred())
 	plugin, err := traces.Lookup(kinds, kind)
 	Expect(err).ToNot(HaveOccurred())
-	schema, err := plugin.Params()
+	schema, err := plugin.Schema()
 	Expect(err).ToNot(HaveOccurred())
 	return schema
 }

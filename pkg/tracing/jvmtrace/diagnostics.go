@@ -3,6 +3,7 @@ package jvmtrace
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	dbcontext "github.com/flanksource/commons-db/context"
@@ -11,6 +12,7 @@ import (
 	"github.com/flanksource/telltale/pkg/tracing"
 	"github.com/flanksource/telltale/pkg/tracing/seam"
 	"github.com/flanksource/telltale/pkg/tracing/target"
+	"github.com/flanksource/telltale/sdk/protocol"
 )
 
 const NotificationsKind = "jvm_notifications"
@@ -53,17 +55,28 @@ type Notification struct {
 	Resource       map[string]string `json:"resource,omitempty"`
 }
 type ExpressionOptions struct {
-	Expression string `json:"expression" clicky:"required,title=OGNL expression,type=code"`
-	Loader     string `json:"loader,omitempty" clicky:"title=Application loader hash"`
-	IntervalMs int    `json:"intervalMs,omitempty" clicky:"title=Interval in milliseconds"`
+	Expression   string `json:"expression" clicky:"required,title=OGNL expression,type=code"`
+	Loader       string `json:"loader,omitempty" clicky:"title=Application loader hash"`
+	IntervalMs   int    `json:"intervalMs,omitempty" clicky:"title=Interval in milliseconds,desc=Defaults to 1000"`
+	UntilStopped bool   `json:"untilStopped,omitempty" clicky:"title=Until stopped,desc=Evaluate at explicit checkpoints only"`
 }
 
 func (o ExpressionOptions) Validate() error {
-	if o.Expression == "" {
+	if strings.TrimSpace(o.Expression) == "" {
 		return fmt.Errorf("expression is required")
+	}
+	if o.UntilStopped && o.IntervalMs != 0 {
+		return fmt.Errorf("untilStopped evaluates at checkpoints and takes no intervalMs")
 	}
 	if o.IntervalMs != 0 && (o.IntervalMs < 100 || o.IntervalMs > 3600000) {
 		return fmt.Errorf("intervalMs must be between 100 and 3600000")
+	}
+	return nil
+}
+
+func (o ExpressionOptions) CompatibleWith(spec protocol.ProbeSpec) error {
+	if o.UntilStopped && spec.Version < 1 {
+		return fmt.Errorf("untilStopped requires a jvm_ognl probe with checkpoint-only support; update the agent")
 	}
 	return nil
 }
@@ -78,7 +91,8 @@ func (p ExpressionParams) Validate() error { return p.ExpressionOptions.Validate
 type Expression struct {
 	Timestamp  time.Time         `json:"timestamp"`
 	Expression string            `json:"expression"`
-	Result     json.RawMessage   `json:"result"`
+	Result     json.RawMessage   `json:"result,omitempty"`
+	Error      string            `json:"error,omitempty"`
 	Resource   map[string]string `json:"resource,omitempty"`
 }
 
@@ -137,6 +151,6 @@ func NewExpressionKind(registry *agentclient.Registry) *tracing.Handler[Expressi
 			rows[i].Resource = resource
 		}
 		return seam.DecodedBlob[Expression]{Rows: rows}, nil
-	}}
-	return tracing.NewHandler[ExpressionParams, Expression](diagnostic[ExpressionParams, Expression]{agent: agent, defaults: ExpressionParams{ExpressionOptions: ExpressionOptions{IntervalMs: 1000}}, schema: recordresults.ResultType[Expression]{Title: "OGNL samples", TimeColumn: "timestamp", Follow: true, SearchColumns: []string{"expression"}}}, tracing.Capabilities{Live: true}, target.Agent)
+	}, Compatible: func(p ExpressionParams, spec protocol.ProbeSpec) error { return p.CompatibleWith(spec) }}
+	return tracing.NewHandler[ExpressionParams, Expression](diagnostic[ExpressionParams, Expression]{agent: agent, schema: recordresults.ResultType[Expression]{Title: "OGNL samples", TimeColumn: "timestamp", Follow: true, SearchColumns: []string{"expression"}}}, tracing.Capabilities{Live: true}, target.Agent)
 }

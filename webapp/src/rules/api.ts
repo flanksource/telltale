@@ -33,7 +33,12 @@ export async function fetchRules<T>(operation: string, signal?: AbortSignal): Pr
 }
 
 export function fetchRuleEvents(filters: EventFilters, signal?: AbortSignal): Promise<RuleEvent[]> {
+  return fetchRules(ruleEventsOperation(filters), signal);
+}
+
+export function ruleEventsOperation(filters: EventFilters, follow = false): string {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) if (value) query.set(key, value);
-  return fetchRules(`/events?${query}`, signal);
+  if (follow) query.set("follow", "1");
+  return `/events?${query}`;
 }

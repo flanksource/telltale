@@ -89,7 +89,7 @@ func (f topFlags) run(cmd *cobra.Command) error {
 	}
 	ctx := cmd.Context()
 	if f.record {
-		return f.recordRun(ctx)
+		return f.recordRun(cmd)
 	}
 	if f.duration > 0 {
 		var cancel context.CancelFunc
@@ -169,7 +169,8 @@ func (f topFlags) printOnce(ctx context.Context, top *groups.Top) error {
 // recordRun records a host run of process_groups, showing the frames its
 // store commits until it is stopped or its duration passes, then what it
 // recorded.
-func (f topFlags) recordRun(ctx context.Context) error {
+func (f topFlags) recordRun(cmd *cobra.Command) (err error) {
+	ctx := cmd.Context()
 	raw, err := json.Marshal(processcapture.Params{Options: processcapture.Options{Options: process.Options{Interval: f.params.Interval}, Catalog: f.params.Catalog, Net: f.params.Net, Facets: []string{processcapture.Files, processcapture.Sockets, "connections"}}, Target: target.Target{Seam: target.Host}})
 	if err != nil {
 		return fmt.Errorf("encode %s params: %w", processcapture.Kind, err)
@@ -178,12 +179,22 @@ func (f topFlags) recordRun(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	run, err := telltale.Start(ctx, telltale.StartOptions{
+	options := telltale.StartOptions{
 		DataDir: f.dataDir, Duration: f.duration, Connections: connections,
 		Traces: []telltale.TraceSpec{{Kind: processcapture.Kind, Params: raw}},
-	})
+	}
+	stores, closeSessions, err := openSessionStores(cmd, options)
 	if err != nil {
 		return err
+	}
+	defer closeSessions()
+	options.SessionStores = stores
+	run, err := telltale.Start(ctx, options)
+	if err != nil {
+		return err
+	}
+	if stores != nil {
+		defer func() { err = errors.Join(err, finishSessionRun(run)) }()
 	}
 	if interactive() {
 		follower, err := processcapture.NewFollower(run.Runtime(), run.Info().Captures[0].Ref)

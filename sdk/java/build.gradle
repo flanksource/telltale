@@ -22,7 +22,7 @@ sourceSets {
     jvmDemo { java.srcDir '../../hack/jvm-demo/java' }
 }
 configurations { bridgeRuntime; otelGateAgent; jakartaJmsClient; spring6Jms; spring7Jms; spring6Http; spring7Http; spring6Mvc; spring7Mvc; spring6Sql; spring7Sql; httpClients3Runtime; httpClients4Runtime; h2Fixture; gateH2Java8 }
-configurations.testImplementation.extendsFrom(configurations.h2Fixture)
+configurations.testImplementation.extendsFrom(configurations.gateH2Java8)
 configurations.testCompileClasspath.attributes.attribute(org.gradle.api.attributes.java.TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, JavaVersion.current().majorVersion.toInteger())
 configurations.testRuntimeClasspath.attributes.attribute(org.gradle.api.attributes.java.TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, JavaVersion.current().majorVersion.toInteger())
 configurations.jvmDemoCompileClasspath.attributes.attribute(org.gradle.api.attributes.java.TargetJvmVersion.TARGET_JVM_VERSION_ATTRIBUTE, 17)
@@ -219,15 +219,26 @@ tasks.register('tomcatHarnessJar', com.github.jengelman.gradle.plugins.shadow.ta
     exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA', 'module-info.class'
     manifest { attributes('Main-Class':'com.flanksource.telltale.harness.TomcatHarness') }
 }
-test {
+// Artemis, Jakarta JMS 3 and Spring 6/7 fixtures require newer bytecode.
+def modernJvmTests = [
+    '**/JmsObserverTest*.class', '**/JmsOtelCompositionTest.class', '**/JmsJakartaTest*.class',
+    '**/SpringJdbcClientObserverTest.class', '**/SpringModernHttpObserverTest.class', '**/SpringModernMvcObserverTest.class',
+]
+tasks.register('testInstrumentationAgent', Jar) {
+    archiveFileName = 'telltale-test-instrumentation.jar'
+    destinationDirectory = layout.buildDirectory.dir('bridge')
+    from(sourceSets.main.output) { include 'com/flanksource/telltale/diag/agent/**' }
+    manifest { attributes('Premain-Class':'com.flanksource.telltale.diag.agent.DiagAgent','Can-Redefine-Classes':'true','Can-Retransform-Classes':'true') }
+}
+tasks.withType(Test).configureEach {
     useJUnitPlatform()
-    dependsOn 'war', 'exampleExtensionJar', 'tomcatHarnessJar', 'diagnosticAgentJar', 'jvmDemoClasses'
+    dependsOn 'war', 'exampleExtensionJar', 'tomcatHarnessJar', 'testInstrumentationAgent', 'jvmDemoClasses'
     systemProperty 'telltale.jvm.catalog', file('../../internal/jvm/catalog.json').absolutePath
-    // The diag agent attached as it is in a pod, so a test can redefine and
-    // retransform a live class through the real Instrumentation: how HotSpot
-    // treats those bytes is behaviour no bytecode assertion can stand in for.
+    // The same DiagAgent entry point supplies a real Instrumentation. Keep the
+    // shadowed runtime off the test JVM's system classpath, where Java 8 would
+    // otherwise load those relocated classes before the test runtime classes.
     jvmArgumentProviders.add({
-        ["-javaagent:" + tasks.named('diagnosticAgentJar').get().archiveFile.get().asFile.absolutePath]
+        ["-javaagent:" + tasks.named('testInstrumentationAgent').get().archiveFile.get().asFile.absolutePath]
     } as CommandLineArgumentProvider)
     systemProperty 'telltale.observer.bootstrap', layout.buildDirectory.file('bridge/telltale-observer-bootstrap.jar').get().asFile.absolutePath
     systemProperty 'telltale.gate.otel', configurations.otelGateAgent.singleFile.absolutePath
@@ -250,6 +261,26 @@ test {
         if (System.getProperty(key) != null) systemProperty key, System.getProperty(key)
     }
 }
+test {
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(8)
+    }
+    exclude modernJvmTests
+    if (System.getProperty('telltale.gate.fixtureJava') == null) {
+        jvmArgumentProviders.add({
+            ["-Dtelltale.gate.fixtureJava=" + javaLauncher.get().executablePath.asFile.absolutePath]
+        } as CommandLineArgumentProvider)
+    }
+}
+tasks.register('testModern', Test) {
+    description = 'Run the Artemis, Jakarta and Spring 6/7 integration tests on the Gradle JVM (JDK 17+)'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    include modernJvmTests
+    shouldRunAfter test
+}
+tasks.named('check') { dependsOn 'testModern' }
 sourceSets.test.java.srcDir 'examples'
 tasks.register('jvmCatalog', JavaExec) {
     description = 'Write the built-in JVM operation catalog the Go CLI and OpenAPI are generated from'

@@ -24,12 +24,16 @@ func NewRoot(version string) *cobra.Command {
 		},
 	}
 	clicky.BindAllFlags(root.PersistentFlags(), "format")
+	root.PersistentFlags().String(sessionStoreFlag, "", "Redis or Valkey connection:// reference for trace session state")
 	options := server.Options{Root: root, Version: version, Host: "localhost", Port: 8080, WebDirectory: "webapp", OTLP: otelreceiver.DefaultOptions()}
 	serve := &cobra.Command{
 		Use: "serve", Short: "Start the HTTP API and web UI", Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			var err error
 			if options.ConfigDirs, err = datadir.ConfigDirs(); err != nil {
+				return err
+			}
+			if options.SessionStore, err = sessionStoreReference(cmd); err != nil {
 				return err
 			}
 			return server.Run(cmd.Context(), options)

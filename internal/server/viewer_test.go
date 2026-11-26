@@ -12,6 +12,7 @@ import (
 	"github.com/flanksource/telltale"
 	"github.com/flanksource/telltale/internal/server"
 	"github.com/flanksource/telltale/pkg/traces"
+	"github.com/flanksource/telltale/pkg/tracing"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -39,14 +40,21 @@ var _ = Describe("trace replay viewer", func() {
 		Expect(json.NewDecoder(response.Body).Decode(&listed)).To(Succeed())
 		Expect(response.Body.Close()).To(Succeed())
 		Expect(listed.Runs).To(HaveExactElements(HaveField("RunID", ids[0]), HaveField("RunID", ids[1])))
-		for _, path := range []string{"/api/traces/unselected/records", "/api/traces/unselected/processes", "/api/traces/unselected/api/v1/traces/process/export", "/api/traces/first/api/v1/traces/process/start", "/api/traces/start", "/api/v1/trace/run"} {
+		for _, path := range []string{"/api/traces/unselected/records", "/api/traces/unselected/processes", "/api/traces/unselected/api/v1/traces/kinds", "/api/traces/unselected/api/v1/traces/process/export", "/api/traces/first/api/v1/traces/process/start", "/api/traces/start", "/api/v1/trace/run"} {
 			response, err := http.Get(base + path)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(response.StatusCode).To(Equal(http.StatusNotFound), path)
 			Expect(response.Body.Close()).To(Succeed())
 		}
 		for _, id := range ids[:2] {
-			response, err := http.Get(base + "/api/traces/" + id + "/processes")
+			response, err := http.Get(base + "/api/traces/" + id + "/api/v1/traces/kinds")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(response.StatusCode).To(Equal(http.StatusOK))
+			var kinds []tracing.KindInfo
+			Expect(json.NewDecoder(response.Body).Decode(&kinds)).To(Succeed())
+			Expect(response.Body.Close()).To(Succeed())
+			Expect(kinds).To(ContainElement(And(HaveField("Name", "sql_top"), HaveField("Top.Result", "active"))))
+			response, err = http.Get(base + "/api/traces/" + id + "/processes")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(response.StatusCode).To(Equal(http.StatusOK))
 			Expect(response.Body.Close()).To(Succeed())

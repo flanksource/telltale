@@ -1,7 +1,7 @@
 package com.flanksource.telltale;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.flanksource.telltale.diag.fixture.RetransformFixture;
@@ -42,10 +42,17 @@ final class MethodCaptureFilterTest {
   }
 
   @Test
-  void anUnfilteredCaptureHasNoReport() throws Exception {
+  void reportsInstrumentationAndRestoreForAnUnfilteredCapture() throws Exception {
     MethodCapture capture = capture(null);
     try {
-      assertNull(capture.report());
+      assertEquals(Boolean.TRUE, capture.report().get("instrumented"));
+      assertEquals(Boolean.FALSE, capture.report().get("restored"));
+      assertFalse(capture.report().containsKey("filtered"));
+      String finalEvents = new String(capture.finish(), StandardCharsets.UTF_8);
+      assertEquals("[]", finalEvents);
+      assertEquals(Boolean.FALSE, capture.report().get("restored"));
+      capture.close();
+      assertEquals(Boolean.TRUE, capture.report().get("restored"));
     } finally {
       capture.close();
     }

@@ -27,6 +27,7 @@ public final class ClassOperations {
     String className = body.required("class");
     ClassIndex index = index();
     ClassIndex.Entry entry = index.resolveForWrite(className, body.string("loader"));
+    requireNoManagedSourceConflict(body, entry);
     return body.string("method") == null
         ? patchWholeClass(body, className, index, entry)
         : patchMethod(body, className, index, entry);
@@ -44,7 +45,7 @@ public final class ClassOperations {
       return out;
     }
     registerLease(body, entry, className);
-    out.putAll(patchService().apply(index, entry, compiled.getClasses()));
+    out.putAll(patchService().apply(index, entry, compiled.getClasses(), body.string("leaseId")));
     out.put("applied", true);
     return out;
   }
@@ -60,7 +61,7 @@ public final class ClassOperations {
     }
     byte[] patched = methodPatches.splice(className, compiled, entry.getType().getClassLoader());
     registerLease(body, entry, className);
-    out.putAll(patchService().apply(index, entry, Collections.singletonMap(className, patched)));
+    out.putAll(patchService().apply(index, entry, Collections.singletonMap(className, patched), body.string("leaseId")));
     out.put("applied", true);
     return out;
   }
@@ -90,6 +91,7 @@ public final class ClassOperations {
     ClassIndex index = index();
     ClassIndex.Entry entry = index.resolveForWrite(className, body.string("loader"));
     Class<?> target = liveClass(entry, className);
+    requireNoManagedSourceConflict(body, entry);
     JsonBody probe = body.object("probe");
     requireAgentVisibleTo(target);
     requireProbeApiFor(probe.fields());
@@ -127,6 +129,13 @@ public final class ClassOperations {
     out.put("gc", Boolean.TRUE.equals(opened.get("gc")));
     out.put("instrumented", Boolean.TRUE.equals(out.get("patched")));
     return out;
+  }
+
+  private static void requireNoManagedSourceConflict(JsonBody body, ClassIndex.Entry entry) {
+    if (Boolean.TRUE.equals(body.fields().get("managedCapture"))
+        && SourceTransformations.contains(liveClass(entry, entry.getName()))) {
+      throw new IllegalStateException(entry.getName() + " is held by a source redefinition");
+    }
   }
 
   /** The root-call filter options {@code probe} names, or null when it names none. */
@@ -215,7 +224,7 @@ public final class ClassOperations {
         return held;
       }
       Map<String, Object> out = new LinkedHashMap<>(patchService().restore(index,
-          new PatchService.RestoreRequest(entry, PatchService.RestoreScope.PROBES)));
+          new PatchService.RestoreRequest(entry, PatchService.RestoreScope.PROBES, null)));
       out.put("released", probeKey);
       out.put("heldBy", Collections.emptyList());
       out.put("probesClosed", probesClosed(released));
@@ -225,7 +234,8 @@ public final class ClassOperations {
     boolean sourceOnly = body.string("source") != null;
     List<Map<String, Object>> closed = sourceOnly ? Collections.emptyList() : AgentBridge.closeProbesOwnedBy(loaderHash, className);
     Map<String, Object> out = new LinkedHashMap<>(patchService().restore(index,
-        new PatchService.RestoreRequest(entry, sourceOnly ? PatchService.RestoreScope.SOURCE : PatchService.RestoreScope.ALL)));
+        new PatchService.RestoreRequest(entry, sourceOnly ? PatchService.RestoreScope.SOURCE : PatchService.RestoreScope.ALL,
+            sourceOnly ? body.string("leaseId") : null)));
     out.put("probesClosed", closed);
     return out;
   }
@@ -242,7 +252,8 @@ public final class ClassOperations {
     ClassIndex.Entry entry = index().resolveForWrite(className, body.string("loader"));
     Map<String, Object> held = patchService().heldStatus(entry);
     String probeKey = body.optionalObject("probe").string("key");
-    if (body.string("source") != null) held.put("patched", SourceTransformations.contains(liveClass(entry, className)));
+    if (body.string("source") != null)
+      held.put("patched", SourceTransformations.ownsLease(liveClass(entry, className), body.string("leaseId")));
     if (probeKey != null) held.put("patched", AgentBridge.probeKeysOwnedBy(entry.getLoaderHash(), className).contains(probeKey));
     if (!Boolean.TRUE.equals(held.get("patched"))) return held;
     AgentBridge.lease(entry.getLoaderHash(), className, body.integer("seconds"));

@@ -10,4 +10,6 @@ telltale run jvm_ognl --agent 1234 --allow-mutation --duration 5s --expression '
 
 Expressions can invoke application code and require both agent and caller mutation consent. `--interval-ms` sets the sample interval. See [JVM diagnostics](/jvm-diagnostics-port) for loader selection and one-shot expressions or Groovy scripts.
 
+Use `--until-stopped` to evaluate only when the host checkpoints the capture. It takes no `--interval-ms`; use `--every` to have the run mark checkpoints on a schedule. Evaluation failures appear as rows with their error.
+
 <KindReference kind="jvm_ognl" />

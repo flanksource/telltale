@@ -12,6 +12,7 @@ import (
 	"github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/flanksource/commons-db/cmd/query/sessionstore"
 	"github.com/flanksource/commons-db/query"
 	"github.com/flanksource/commons-db/recordstore/recordstoretest"
 )
@@ -59,7 +60,7 @@ var _ = ginkgo.Describe("GET /sessions", func() {
 	})
 
 	ginkgo.It("derives the overlays each item carries", func() {
-		live := h.track(map[string]string{"target": "oipa"})
+		live := h.track(map[string]string{"target": "example"})
 		ref, err := h.records.Append(context.Background(), "stream-c", recordstoretest.Kind, []query.Row{{"name": "x"}})
 		Expect(err).ToNot(HaveOccurred())
 		meta, err := h.records.Meta(context.Background(), "stream-c")
@@ -183,7 +184,7 @@ var _ = ginkgo.Describe("GET /sessions", func() {
 		Expect(body.Total).To(Equal(5))
 		Expect(recording.last()).To(And(HaveField("Limit", 2), HaveField("Offset", 1)))
 
-		h.track(map[string]string{"target": "oipa"})
+		h.track(map[string]string{"target": "example"})
 		body = h.list("sort=eventCount&limit=2&offset=1")
 		Expect(body.Total).To(Equal(6))
 		Expect(recording.last()).To(And(HaveField("Limit", 0), HaveField("Offset", 0)),
@@ -192,7 +193,7 @@ var _ = ginkgo.Describe("GET /sessions", func() {
 
 	ginkgo.It("reads each stored record at most once to list a page with its lineage", func() {
 		counting := &countingCache{Store: cache.NewMemory(), reads: map[string]int{}}
-		store, err := NewKVStore(func(context.Context) (cache.Store, string, error) { return counting, "", nil }, KVStoreOptions{})
+		store, err := sessionstore.NewKVStore(func(context.Context) (cache.Store, string, error) { return counting, "", nil }, sessionstore.KVStoreOptions{})
 		Expect(err).ToNot(HaveOccurred())
 		for _, rec := range contractFixture(h.epoch) {
 			Expect(store.Begin(context.Background(), rec)).To(Succeed())
