@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/flanksource/commons-db/connection"
+	"github.com/flanksource/commons-db/connection/sqlobserve"
 	dbcontext "github.com/flanksource/commons-db/context"
 	"github.com/flanksource/commons-db/observability"
 	"github.com/flanksource/commons/har"
@@ -81,7 +81,7 @@ func (sqlProbe) Arm(_ context.Context, raw json.RawMessage, sink telltale.Sink) 
 	}
 	var releases []func()
 	for _, name := range params.Connections {
-		releases = append(releases, connection.ObserveSQL(name, func(statement connection.Statement) {
+		releases = append(releases, sqlobserve.ObserveSQL(name, func(statement sqlobserve.Statement) {
 			if statement.Duration >= minimum {
 				sink.TryEmit(statement)
 			}
